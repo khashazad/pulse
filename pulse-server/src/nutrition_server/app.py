@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI
+from fastapi import FastAPI
 
 from nutrition_server import auth, db
-from nutrition_server.auth import require_api_key
 from nutrition_server.config import get_settings
+from nutrition_server.routers import entries
 from nutrition_server.usda import USDAClient
 
 usda_client: USDAClient | None = None
@@ -62,14 +62,4 @@ app = FastAPI(title="Nutrition Server", version="0.1.0", lifespan=lifespan)
 async def health() -> dict[str, str]:
     return {"status": "ok"}
 
-
-# Summary: Temporary auth-protected probe route used before entries router wiring is added.
-# Parameters:
-# - _api_key (str): Resolved API key from the auth dependency.
-# Returns:
-# - dict[str, list[object]]: Empty entries payload for route availability checks.
-# Raises/Throws:
-# - fastapi.HTTPException: Raised by auth dependency when key validation fails.
-@app.get("/entries")
-async def protected_entries_probe(_api_key: str = Depends(require_api_key)) -> dict[str, list[object]]:
-    return {"entries": []}
+app.include_router(entries.router)
