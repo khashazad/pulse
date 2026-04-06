@@ -7,6 +7,9 @@ dependencies = [
     "uvicorn[standard]>=0.34",
     "psycopg[binary]>=3.2",
     "psycopg-pool>=3.2",
+    "sqlalchemy>=2.0",
+    "greenlet>=3.0",
+    "alembic>=1.16",
     "pydantic-settings>=2.7",
     "httpx>=0.28",
 ]
@@ -27,3 +30,6 @@ packages = ["src/nutrition_server"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 pythonpath = ["src"]
+markers = [
+    "integration: marks tests that require a real PostgreSQL database",
+]
