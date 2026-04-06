@@ -103,3 +103,64 @@ def test_auth_accepts_valid_key() -> None:
         client = TestClient(app)
         response = client.get("/test", headers={"X-API-Key": "secret"})
         assert response.status_code == 200
+
+
+# Summary: Confirms valid food-entry payloads are accepted by FoodEntryCreate.
+# Parameters:
+# - None: Uses hardcoded representative payload data.
+# Returns:
+# - None: Performs field assertions only.
+# Raises/Throws:
+# - AssertionError: Raised when parsed model values are unexpected.
+def test_food_entry_create_validation() -> None:
+    from nutrition_server.models import FoodEntryCreate
+
+    entry = FoodEntryCreate(
+        display_name="eggs",
+        quantity_text="3 eggs",
+        usda_fdc_id=171287,
+        usda_description="Egg, whole, raw",
+        calories=216,
+        protein_g=18.9,
+        carbs_g=1.1,
+        fat_g=14.3,
+    )
+    assert entry.display_name == "eggs"
+    assert entry.date is None
+
+
+# Summary: Ensures FoodEntryCreate rejects payloads with negative calories.
+# Parameters:
+# - None: Uses a payload with an invalid negative calorie value.
+# Returns:
+# - None: Validates exception behavior.
+# Raises/Throws:
+# - AssertionError: Raised when invalid payloads do not fail validation.
+def test_food_entry_create_rejects_negative_calories() -> None:
+    from nutrition_server.models import FoodEntryCreate
+
+    with pytest.raises(Exception):
+        FoodEntryCreate(
+            display_name="eggs",
+            quantity_text="3 eggs",
+            usda_fdc_id=171287,
+            usda_description="Egg",
+            calories=-100,
+            protein_g=0,
+            carbs_g=0,
+            fat_g=0,
+        )
+
+
+# Summary: Confirms macro target payloads are parsed and validated successfully.
+# Parameters:
+# - None: Uses a valid macro target payload.
+# Returns:
+# - None: Performs field assertions only.
+# Raises/Throws:
+# - AssertionError: Raised when parsed model values are unexpected.
+def test_macro_targets_validation() -> None:
+    from nutrition_server.models import MacroTargets
+
+    targets = MacroTargets(calories=2000, protein_g=150.0, carbs_g=200.0, fat_g=80.0)
+    assert targets.calories == 2000
