@@ -6,7 +6,7 @@ from fastapi import FastAPI
 
 from nutrition_server import auth, db
 from nutrition_server.config import get_settings
-from nutrition_server.routers import entries
+from nutrition_server.routers import aliases, entries, history
 from nutrition_server.usda import USDAClient
 
 usda_client: USDAClient | None = None
@@ -63,3 +63,5 @@ async def health() -> dict[str, str]:
     return {"status": "ok"}
 
 app.include_router(entries.router)
+app.include_router(aliases.router)
+app.include_router(history.router)
