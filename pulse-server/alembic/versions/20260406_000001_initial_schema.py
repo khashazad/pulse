@@ -101,57 +101,6 @@ def upgrade() -> None:
         unique=False,
     )
 
-    op.create_table(
-        "food_aliases",
-        sa.Column(
-            "id",
-            postgresql.UUID(as_uuid=True),
-            primary_key=True,
-            nullable=False,
-            server_default=sa.text("gen_random_uuid()"),
-        ),
-        sa.Column("user_key", sa.Text(), nullable=False),
-        sa.Column("alias_text", sa.Text(), nullable=False),
-        sa.Column("preferred_label", sa.Text(), nullable=False),
-        sa.Column("default_quantity_value", sa.Numeric(), nullable=True),
-        sa.Column("default_quantity_unit", sa.Text(), nullable=True),
-        sa.Column("preferred_usda_fdc_id", sa.BigInteger(), nullable=False),
-        sa.Column("preferred_usda_description", sa.Text(), nullable=False),
-        sa.Column("confidence_score", sa.Numeric(), nullable=False, server_default=sa.text("0")),
-        sa.Column("last_confirmed_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
-        sa.UniqueConstraint("user_key", "alias_text", name="uq_food_aliases_user_key_alias_text"),
-    )
-    op.create_index("idx_food_aliases_user_key", "food_aliases", ["user_key"], unique=False)
-
-    op.create_table(
-        "food_match_history",
-        sa.Column(
-            "id",
-            postgresql.UUID(as_uuid=True),
-            primary_key=True,
-            nullable=False,
-            server_default=sa.text("gen_random_uuid()"),
-        ),
-        sa.Column("user_key", sa.Text(), nullable=False),
-        sa.Column("raw_phrase", sa.Text(), nullable=False),
-        sa.Column("quantity_text", sa.Text(), nullable=True),
-        sa.Column("usda_fdc_id", sa.BigInteger(), nullable=False),
-        sa.Column("usda_description", sa.Text(), nullable=False),
-        sa.Column("times_confirmed", sa.Integer(), nullable=False, server_default=sa.text("1")),
-        sa.Column("last_confirmed_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
-    )
-    op.create_index("idx_food_match_history_user_key", "food_match_history", ["user_key"], unique=False)
-    op.create_index(
-        "idx_food_match_history_match_key",
-        "food_match_history",
-        ["user_key", "raw_phrase", sa.text("coalesce(quantity_text, '')"), "usda_fdc_id"],
-        unique=True,
-    )
-
 
 # Summary: Reverts the initial nutrition schema migration and drops all managed tables/indexes.
 # Parameters:
@@ -161,13 +110,6 @@ def upgrade() -> None:
 # Raises/Throws:
 # - sqlalchemy.exc.SQLAlchemyError: Raised when DDL rollback execution fails.
 def downgrade() -> None:
-    op.drop_index("idx_food_match_history_match_key", table_name="food_match_history")
-    op.drop_index("idx_food_match_history_user_key", table_name="food_match_history")
-    op.drop_table("food_match_history")
-
-    op.drop_index("idx_food_aliases_user_key", table_name="food_aliases")
-    op.drop_table("food_aliases")
-
     op.drop_index("idx_food_entries_daily_log_id_consumed_at", table_name="food_entries")
     op.drop_index("idx_food_entries_user_key", table_name="food_entries")
     op.drop_table("food_entries")

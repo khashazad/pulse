@@ -27,7 +27,7 @@ router = APIRouter(dependencies=[Depends(require_api_key)])
 TZ = ZoneInfo(settings.timezone)
 
 
-# Summary: Creates one or more food entries and updates alias/history tables atomically.
+# Summary: Creates one or more food entries atomically.
 # Parameters:
 # - body (EntriesCreateRequest): Requested entries plus optional user key override.
 # Returns:

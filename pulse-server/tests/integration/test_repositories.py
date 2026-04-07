@@ -14,9 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from nutrition_server.db import to_sqlalchemy_url, transaction
 from nutrition_server.models import FoodEntryCreate
-from nutrition_server.repositories.aliases import AliasesRepository
 from nutrition_server.repositories.entries import EntriesRepository
-from nutrition_server.repositories.history import HistoryRepository
 from nutrition_server.repositories.logs import LogsRepository
 from nutrition_server.repositories.targets import TargetsRepository
 from nutrition_server.services.entries_service import create_entries_with_side_effects
@@ -49,8 +47,6 @@ def _integration_database_url() -> str:
 async def _truncate_tables(engine) -> None:
     table_names = [
         "food_entries",
-        "food_aliases",
-        "food_match_history",
         "daily_logs",
         "daily_target_profile",
     ]
@@ -100,75 +96,6 @@ async def clean_database(session_factory: async_sessionmaker[AsyncSession]) -> N
 async def session(session_factory: async_sessionmaker[AsyncSession]) -> AsyncSession:
     async with session_factory() as db_session:
         yield db_session
-
-
-# Summary: Verifies alias and match-history upserts increment confidence and confirmation counters.
-# Parameters:
-# - session (AsyncSession): Active integration database session.
-# Returns:
-# - None: Performs assertions against repository upsert outputs.
-# Raises/Throws:
-# - AssertionError: Raised when counters do not increment as expected.
-@pytest.mark.asyncio
-async def test_upsert_counters_increment(session: AsyncSession) -> None:
-    aliases_repo = AliasesRepository(session)
-    history_repo = HistoryRepository(session)
-    user_key = f"user-{uuid.uuid4()}"
-    now = DateTimeValue.now(tz=TimezoneValue.utc)
-
-    async with transaction(session):
-        first_alias = await aliases_repo.create_or_update_alias(
-            user_key=user_key,
-            alias_text="eggs",
-            preferred_label="eggs",
-            preferred_usda_fdc_id=171287,
-            preferred_usda_description="Egg, whole, raw",
-            default_quantity_value=2,
-            default_quantity_unit="item",
-            confirmed_at=now,
-            updated_at=now,
-            increment_confidence=True,
-        )
-
-    async with transaction(session):
-        second_alias = await aliases_repo.create_or_update_alias(
-            user_key=user_key,
-            alias_text="eggs",
-            preferred_label="eggs",
-            preferred_usda_fdc_id=171287,
-            preferred_usda_description="Egg, whole, raw",
-            default_quantity_value=2,
-            default_quantity_unit="item",
-            confirmed_at=now,
-            updated_at=now,
-            increment_confidence=True,
-        )
-
-    assert float(second_alias["confidence_score"]) == float(first_alias["confidence_score"]) + 1
-
-    async with transaction(session):
-        first_match = await history_repo.record_confirmed_match(
-            user_key=user_key,
-            raw_phrase="eggs",
-            quantity_text="2 eggs",
-            usda_fdc_id=171287,
-            usda_description="Egg, whole, raw",
-            confirmed_at=now,
-            updated_at=now,
-        )
-
-    async with transaction(session):
-        second_match = await history_repo.record_confirmed_match(
-            user_key=user_key,
-            raw_phrase="eggs",
-            quantity_text="2 eggs",
-            usda_fdc_id=171287,
-            usda_description="Egg, whole, raw",
-            confirmed_at=now,
-            updated_at=now,
-        )
-
-    assert int(second_match["times_confirmed"]) == int(first_match["times_confirmed"]) + 1
 
 
 # Summary: Verifies create-entries flow runs atomically and rolls back all writes on mid-transaction failure.
