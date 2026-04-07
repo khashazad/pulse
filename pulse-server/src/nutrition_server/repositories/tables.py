@@ -38,7 +38,6 @@ food_entries = Table(
     Column("id", UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")),
     Column("daily_log_id", UUID(as_uuid=True), ForeignKey("daily_logs.id", ondelete="CASCADE"), nullable=False),
     Column("user_key", Text, nullable=False),
-    Column("source_message_id", Text, nullable=True),
     Column("entry_group_id", UUID(as_uuid=True), nullable=False),
     Column("display_name", Text, nullable=False),
     Column("quantity_text", Text, nullable=False),

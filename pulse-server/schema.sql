@@ -26,7 +26,6 @@ create table if not exists food_entries (
   id uuid primary key default gen_random_uuid(),
   daily_log_id uuid not null references daily_logs(id) on delete cascade,
   user_key text not null,
-  source_message_id text,
   entry_group_id uuid not null,
   display_name text not null,
   quantity_text text not null,

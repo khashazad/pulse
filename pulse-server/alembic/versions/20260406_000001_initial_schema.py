@@ -79,7 +79,6 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.Column("user_key", sa.Text(), nullable=False),
-        sa.Column("source_message_id", sa.Text(), nullable=True),
         sa.Column("entry_group_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("display_name", sa.Text(), nullable=False),
         sa.Column("quantity_text", sa.Text(), nullable=False),
