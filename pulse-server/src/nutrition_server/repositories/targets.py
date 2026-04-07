@@ -63,6 +63,7 @@ class TargetsRepository:
             protein_g_target=protein_g,
             carbs_g_target=carbs_g,
             fat_g_target=fat_g,
+            updated_at=updated_at,
         )
         stmt = stmt.on_conflict_do_update(
             index_elements=[daily_target_profile.c.user_key],

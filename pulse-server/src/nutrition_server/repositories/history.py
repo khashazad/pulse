@@ -3,11 +3,22 @@ from __future__ import annotations
 from datetime import datetime as DateTimeValue
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import bindparam, func, literal_column, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from nutrition_server.repositories.tables import food_match_history
+
+
+# Summary: Escapes LIKE/ILIKE wildcard characters in user-provided search terms.
+# Parameters:
+# - query (str): Raw user query string used for historical phrase lookup.
+# Returns:
+# - str: Escaped string safe for use inside a LIKE pattern with backslash escape semantics.
+# Raises/Throws:
+# - None: String replacement is deterministic and non-throwing.
+def _escape_like_query(query: str) -> str:
+    return query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 class HistoryRepository:
@@ -30,6 +41,8 @@ class HistoryRepository:
     # Raises/Throws:
     # - sqlalchemy.exc.SQLAlchemyError: Raised when SQL execution fails.
     async def search_matches(self, user_key: str, query: str) -> list[dict[str, Any]]:
+        escaped_query = _escape_like_query(query)
+        pattern = f"%{escaped_query}%"
         stmt = (
             select(
                 food_match_history.c.raw_phrase,
@@ -40,11 +53,11 @@ class HistoryRepository:
                 food_match_history.c.last_confirmed_at,
             )
             .where(food_match_history.c.user_key == user_key)
-            .where(food_match_history.c.raw_phrase.ilike(f"%{query}%"))
+            .where(food_match_history.c.raw_phrase.ilike(bindparam("match_pattern"), escape="\\"))
             .order_by(food_match_history.c.times_confirmed.desc(), food_match_history.c.last_confirmed_at.desc())
             .limit(10)
         )
-        result = await self._session.execute(stmt)
+        result = await self._session.execute(stmt, {"match_pattern": pattern})
         return [dict(row) for row in result.mappings().all()]
 
     # Summary: Inserts or updates a confirmed phrase-to-food mapping and increments confirmation count.
@@ -83,7 +96,12 @@ class HistoryRepository:
 
         stmt = (
             stmt.on_conflict_do_update(
-                constraint="idx_food_match_history_match_key",
+                index_elements=[
+                    food_match_history.c.user_key,
+                    food_match_history.c.raw_phrase,
+                    func.coalesce(food_match_history.c.quantity_text, literal_column("''")),
+                    food_match_history.c.usda_fdc_id,
+                ],
                 set_={
                     "times_confirmed": food_match_history.c.times_confirmed + 1,
                     "last_confirmed_at": stmt.excluded.last_confirmed_at,

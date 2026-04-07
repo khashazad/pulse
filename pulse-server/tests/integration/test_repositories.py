@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 import pytest
 import pytest_asyncio
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from nutrition_server.db import to_sqlalchemy_url, transaction
@@ -200,7 +201,7 @@ async def test_create_entries_rolls_back_on_error(session: AsyncSession) -> None
     uuid_side_effect = [uuid.uuid4(), duplicate_entry_id, uuid.uuid4(), duplicate_entry_id]
 
     with patch("nutrition_server.services.entries_service.uuid.uuid4", side_effect=uuid_side_effect):
-        with pytest.raises(Exception):
+        with pytest.raises(IntegrityError):
             await create_entries_with_side_effects(
                 session=session,
                 user_key=user_key,
@@ -302,8 +303,11 @@ async def test_logs_and_summary_aggregates(session: AsyncSession) -> None:
 
     log_rows = await logs_repo.list_logs(user_key=user_key, from_date=first_date, to_date=second_date)
     assert len(log_rows) == 2
-    assert int(log_rows[1]["total_calories"]) == 400
-    assert float(log_rows[1]["total_protein_g"]) == 18.0
+    rows_by_date = {row["log_date"]: row for row in log_rows}
+    assert int(rows_by_date[first_date]["total_calories"]) == 400
+    assert float(rows_by_date[first_date]["total_protein_g"]) == 18.0
+    assert int(rows_by_date[second_date]["total_calories"]) == 120
+    assert float(rows_by_date[second_date]["total_protein_g"]) == 1.0
 
     summary = await build_daily_summary(session=session, user_key=user_key, summary_date=first_date)
     assert summary.consumed.calories == 400

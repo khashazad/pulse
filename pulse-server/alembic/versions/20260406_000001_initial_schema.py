@@ -95,6 +95,12 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
     )
     op.create_index("idx_food_entries_user_key", "food_entries", ["user_key"], unique=False)
+    op.create_index(
+        "idx_food_entries_daily_log_id_consumed_at",
+        "food_entries",
+        ["daily_log_id", "consumed_at"],
+        unique=False,
+    )
 
     op.create_table(
         "food_aliases",
@@ -163,6 +169,7 @@ def downgrade() -> None:
     op.drop_index("idx_food_aliases_user_key", table_name="food_aliases")
     op.drop_table("food_aliases")
 
+    op.drop_index("idx_food_entries_daily_log_id_consumed_at", table_name="food_entries")
     op.drop_index("idx_food_entries_user_key", table_name="food_entries")
     op.drop_table("food_entries")
 

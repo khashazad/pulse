@@ -4,12 +4,42 @@ import uuid
 from datetime import date as DateValue
 from datetime import datetime as DateTimeValue
 from typing import Any
+from uuid import UUID
 
 from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from nutrition_server.repositories.tables import daily_logs, food_entries
+from nutrition_server.services.log_ids import daily_log_id as canonical_daily_log_id
+
+
+# Summary: Returns food-entry columns that match the public FoodEntryResponse schema.
+# Parameters:
+# - None: Uses module-level SQLAlchemy table metadata for food_entries.
+# Returns:
+# - tuple[Any, ...]: Ordered SQLAlchemy column elements excluding internal-only columns.
+# Raises/Throws:
+# - None: Column tuple construction is deterministic and non-throwing.
+def _food_entry_response_columns() -> tuple[Any, ...]:
+    return (
+        food_entries.c.id,
+        food_entries.c.daily_log_id,
+        food_entries.c.user_key,
+        food_entries.c.entry_group_id,
+        food_entries.c.display_name,
+        food_entries.c.quantity_text,
+        food_entries.c.normalized_quantity_value,
+        food_entries.c.normalized_quantity_unit,
+        food_entries.c.usda_fdc_id,
+        food_entries.c.usda_description,
+        food_entries.c.calories,
+        food_entries.c.protein_g,
+        food_entries.c.carbs_g,
+        food_entries.c.fat_g,
+        food_entries.c.consumed_at,
+        food_entries.c.created_at,
+    )
 
 
 class EntriesRepository:
@@ -33,7 +63,7 @@ class EntriesRepository:
     # - None: UUID derivation is deterministic for valid inputs.
     @staticmethod
     def daily_log_id(user_key: str, log_date: DateValue) -> str:
-        return str(uuid.uuid5(uuid.NAMESPACE_URL, f"{user_key}:{log_date.isoformat()}"))
+        return canonical_daily_log_id(user_key, log_date)
 
     # Summary: Inserts a daily log if it does not already exist for the user/date pair.
     # Parameters:
@@ -110,7 +140,7 @@ class EntriesRepository:
                 fat_g=fat_g,
                 consumed_at=consumed_at,
             )
-            .returning(*food_entries.c)
+            .returning(*_food_entry_response_columns())
         )
         result = await self._session.execute(stmt)
         row = result.mappings().one()
@@ -125,21 +155,21 @@ class EntriesRepository:
     # - sqlalchemy.exc.SQLAlchemyError: Raised when SQL execution fails.
     async def list_entries_by_daily_log_id(self, daily_log_id: str) -> list[dict[str, Any]]:
         stmt = (
-            select(*food_entries.c)
+            select(*_food_entry_response_columns())
             .where(food_entries.c.daily_log_id == daily_log_id)
-            .order_by(food_entries.c.consumed_at)
+            .order_by(food_entries.c.consumed_at, food_entries.c.id)
         )
         result = await self._session.execute(stmt)
         return [dict(row) for row in result.mappings().all()]
 
     # Summary: Deletes a food entry by primary key and reports whether a row was removed.
     # Parameters:
-    # - entry_id (str): UUID string of the food-entry row to delete.
+    # - entry_id (UUID): UUID of the food-entry row to delete.
     # Returns:
     # - bool: True when a row is deleted, otherwise False.
     # Raises/Throws:
     # - sqlalchemy.exc.SQLAlchemyError: Raised when SQL execution fails.
-    async def delete_entry(self, entry_id: str) -> bool:
+    async def delete_entry(self, entry_id: UUID) -> bool:
         stmt = delete(food_entries).where(food_entries.c.id == entry_id).returning(food_entries.c.id)
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none() is not None

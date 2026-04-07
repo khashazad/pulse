@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date as DateValue
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from nutrition_server.auth import require_api_key
@@ -32,6 +32,9 @@ async def list_logs(
     user_key: str | None = Query(default=None),
     session: AsyncSession = Depends(get_session_dependency),
 ) -> LogsListResponse:
+    if from_date > to_date:
+        raise HTTPException(status_code=400, detail="'from' date must be on or before 'to' date")
+
     effective_user_key = user_key or settings.default_user_key
     repository = LogsRepository(session)
     rows = await repository.list_logs(

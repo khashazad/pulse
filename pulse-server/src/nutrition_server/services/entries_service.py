@@ -21,7 +21,7 @@ from nutrition_server.services.log_ids import daily_log_id
 # - items (Sequence[FoodEntryCreate]): Requested food entries to persist.
 # - now (DateTimeValue): Request-scoped timestamp used for default date/time fields.
 # Returns:
-# - tuple[list[dict[str, Any]], list[dict[str, Any]]]: Newly created rows and all rows for the current day.
+# - tuple[list[dict[str, Any]], list[dict[str, Any]]]: Newly created rows and all rows for `now.date()` only.
 # Raises/Throws:
 # - sqlalchemy.exc.SQLAlchemyError: Raised when any SQL operation fails; transaction is rolled back.
 async def create_entries_with_side_effects(

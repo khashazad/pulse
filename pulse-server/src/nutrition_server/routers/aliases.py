@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime as DateTimeValue
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from nutrition_server.auth import require_api_key
@@ -42,21 +42,24 @@ async def search_aliases(
 # Summary: Creates or updates an alias preference for a food phrase.
 # Parameters:
 # - body (AliasCreate): Alias payload describing preferred USDA mapping and defaults.
+# - response (fastapi.Response): Response object used to emit 201 on insert and 200 on update.
+# - session (AsyncSession): Request-scoped SQLAlchemy session used for persistence.
 # Returns:
 # - AliasResponse: Persisted alias row after insert or upsert update.
 # Raises/Throws:
 # - RuntimeError: Raised when the database pool is not initialized.
 # - sqlalchemy.exc.SQLAlchemyError: Raised when SQL execution fails.
-@router.post("/aliases", status_code=201, response_model=AliasResponse)
+@router.post("/aliases", response_model=AliasResponse)
 async def create_alias(
     body: AliasCreate,
+    response: Response,
     session: AsyncSession = Depends(get_session_dependency),
 ) -> AliasResponse:
     effective_user_key = body.user_key or settings.default_user_key
     now = DateTimeValue.now(tz=TZ)
     repository = AliasesRepository(session)
     async with transaction(session):
-        row = await repository.create_or_update_alias(
+        row, created = await repository.create_or_update_alias_with_state(
             user_key=effective_user_key,
             alias_text=body.alias_text,
             preferred_label=body.preferred_label,
@@ -69,4 +72,5 @@ async def create_alias(
             increment_confidence=False,
         )
 
+    response.status_code = status.HTTP_201_CREATED if created else status.HTTP_200_OK
     return AliasResponse(**row)

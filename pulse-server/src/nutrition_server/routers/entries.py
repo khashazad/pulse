@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date as DateValue
 from datetime import datetime as DateTimeValue
+from uuid import UUID
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -96,7 +97,7 @@ async def list_entries(
 
 # Summary: Deletes a single food entry by ID.
 # Parameters:
-# - entry_id (str): UUID string identifying the food entry row.
+# - entry_id (UUID): UUID identifying the food entry row.
 # Returns:
 # - None: Endpoint returns HTTP 204 when deletion succeeds.
 # Raises/Throws:
@@ -105,7 +106,7 @@ async def list_entries(
 # - sqlalchemy.exc.SQLAlchemyError: Raised when SQL execution fails.
 @router.delete("/entries/{entry_id}", status_code=204)
 async def delete_entry(
-    entry_id: str,
+    entry_id: UUID,
     session: AsyncSession = Depends(get_session_dependency),
 ) -> None:
     repository = EntriesRepository(session)

@@ -42,6 +42,8 @@ create table if not exists food_entries (
   created_at timestamptz not null default now()
 );
 create index if not exists idx_food_entries_user_key on food_entries(user_key);
+create index if not exists idx_food_entries_daily_log_id_consumed_at
+  on food_entries(daily_log_id, consumed_at);
 
 create table if not exists food_aliases (
   id uuid primary key default gen_random_uuid(),

@@ -34,7 +34,7 @@ def to_sqlalchemy_url(database_url: str) -> str:
 # Returns:
 # - list[str]: Ordered list of executable SQL statements with surrounding whitespace trimmed.
 # Raises/Throws:
-# - None: Statement parsing is best-effort for migration/bootstrap scripts in this repository.
+# - None: This splitter assumes schema SQL does not contain semicolons inside quoted string literals.
 def _split_sql_statements(sql_script: str) -> list[str]:
     statements: list[str] = []
     chunks = sql_script.split(";")
