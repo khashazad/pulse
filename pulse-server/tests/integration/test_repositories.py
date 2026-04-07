@@ -198,7 +198,16 @@ async def test_create_entries_rolls_back_on_error(session: AsyncSession) -> None
     )
 
     duplicate_entry_id = uuid.uuid4()
-    uuid_side_effect = [uuid.uuid4(), duplicate_entry_id, uuid.uuid4(), duplicate_entry_id]
+    first_entry_group_id = uuid.uuid4()
+    second_entry_group_id = uuid.uuid4()
+    # create_entries_with_side_effects calls uuid4 in this order per item:
+    # 1) entry_id, 2) entry_group_id. Duplicate entry_id forces PK violation.
+    uuid_side_effect = [
+        duplicate_entry_id,
+        first_entry_group_id,
+        duplicate_entry_id,
+        second_entry_group_id,
+    ]
 
     with patch("nutrition_server.services.entries_service.uuid.uuid4", side_effect=uuid_side_effect):
         with pytest.raises(IntegrityError):
