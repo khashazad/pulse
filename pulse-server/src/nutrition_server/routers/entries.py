@@ -11,12 +11,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from nutrition_server.auth import require_api_key
 from nutrition_server.config import get_settings
 from nutrition_server.db import get_session_dependency, transaction
+from nutrition_server.macro_aggregates import sum_food_entry_macros
 from nutrition_server.models import (
     EntriesCreateRequest,
     EntriesCreateResponse,
     EntriesListResponse,
     FoodEntryResponse,
-    MacroTotals,
 )
 from nutrition_server.repositories.entries import EntriesRepository
 from nutrition_server.services.entries_service import create_entries_with_side_effects
@@ -27,27 +27,12 @@ router = APIRouter(dependencies=[Depends(require_api_key)])
 TZ = ZoneInfo(settings.timezone)
 
 
-# Summary: Aggregates a list of food entries into total macro values.
-# Parameters:
-# - entries (list[FoodEntryResponse]): Food entry records to total.
-# Returns:
-# - MacroTotals: Summed calories/protein/carbs/fat rounded to one decimal place.
-# Raises/Throws:
-# - None: Numeric aggregation is deterministic for valid entry payloads.
-def _sum_totals(entries: list[FoodEntryResponse]) -> MacroTotals:
-    return MacroTotals(
-        calories=sum(entry.calories for entry in entries),
-        protein_g=round(sum(entry.protein_g for entry in entries), 1),
-        carbs_g=round(sum(entry.carbs_g for entry in entries), 1),
-        fat_g=round(sum(entry.fat_g for entry in entries), 1),
-    )
-
-
 # Summary: Creates one or more food entries and updates alias/history tables atomically.
 # Parameters:
 # - body (EntriesCreateRequest): Requested entries plus optional user key override.
 # Returns:
-# - EntriesCreateResponse: Persisted entries and the day's aggregate macro totals.
+# - EntriesCreateResponse: Persisted entries and macro totals (full day when the batch uses one
+#   calendar date; sums of the created rows only when dates are mixed).
 # Raises/Throws:
 # - RuntimeError: Raised when the database pool is not initialized.
 # - sqlalchemy.exc.SQLAlchemyError: Raised when SQL execution fails.
@@ -68,7 +53,7 @@ async def create_entries(
     created = [FoodEntryResponse(**row) for row in created_rows]
     all_entries = [FoodEntryResponse(**row) for row in all_rows]
 
-    return EntriesCreateResponse(entries=created, daily_totals=_sum_totals(all_entries))
+    return EntriesCreateResponse(entries=created, daily_totals=sum_food_entry_macros(all_entries))
 
 
 # Summary: Lists all entries for a user's requested log date.
@@ -92,7 +77,7 @@ async def list_entries(
     rows = await repository.list_entries_by_daily_log_id(daily_log)
 
     entries = [FoodEntryResponse(**row) for row in rows]
-    return EntriesListResponse(date=log_date, entries=entries, totals=_sum_totals(entries))
+    return EntriesListResponse(date=log_date, entries=entries, totals=sum_food_entry_macros(entries))
 
 
 # Summary: Deletes a single food entry by ID.

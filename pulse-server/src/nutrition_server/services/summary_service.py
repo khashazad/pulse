@@ -5,6 +5,7 @@ from datetime import date as DateValue
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from nutrition_server.macro_aggregates import sum_food_entry_macros
 from nutrition_server.models import DailySummaryResponse, FoodEntryResponse, MacroTargets, MacroTotals
 from nutrition_server.repositories.entries import EntriesRepository
 from nutrition_server.repositories.targets import TargetsRepository
@@ -43,12 +44,7 @@ async def build_daily_summary(
         carbs_g=float(target_row["carbs_g_target"]),
         fat_g=float(target_row["fat_g_target"]),
     )
-    consumed = MacroTotals(
-        calories=sum(entry.calories for entry in entries),
-        protein_g=round(sum(entry.protein_g for entry in entries), 1),
-        carbs_g=round(sum(entry.carbs_g for entry in entries), 1),
-        fat_g=round(sum(entry.fat_g for entry in entries), 1),
-    )
+    consumed = sum_food_entry_macros(entries)
     remaining = MacroTotals(
         calories=target.calories - consumed.calories,
         protein_g=round(target.protein_g - consumed.protein_g, 1),

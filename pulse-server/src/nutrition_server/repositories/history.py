@@ -8,17 +8,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from nutrition_server.repositories.tables import food_match_history
-
-
-# Summary: Escapes LIKE/ILIKE wildcard characters in user-provided search terms.
-# Parameters:
-# - query (str): Raw user query string used for historical phrase lookup.
-# Returns:
-# - str: Escaped string safe for use inside a LIKE pattern with backslash escape semantics.
-# Raises/Throws:
-# - None: String replacement is deterministic and non-throwing.
-def _escape_like_query(query: str) -> str:
-    return query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+from nutrition_server.sql_like import escape_like_query
 
 
 class HistoryRepository:
@@ -41,7 +31,7 @@ class HistoryRepository:
     # Raises/Throws:
     # - sqlalchemy.exc.SQLAlchemyError: Raised when SQL execution fails.
     async def search_matches(self, user_key: str, query: str) -> list[dict[str, Any]]:
-        escaped_query = _escape_like_query(query)
+        escaped_query = escape_like_query(query)
         pattern = f"%{escaped_query}%"
         stmt = (
             select(
