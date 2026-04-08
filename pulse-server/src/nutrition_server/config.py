@@ -48,7 +48,7 @@ class Settings(BaseSettings):
     port: int = 8787
     timezone: str = "America/Toronto"
 
-    model_config = {"env_prefix": "", "case_sensitive": False}
+    model_config = {"env_prefix": "", "case_sensitive": False, "env_file": ".env", "env_file_encoding": "utf-8"}
 
     # Summary: Builds validated settings from legacy config, process env, and explicit overrides.
     # Parameters:
