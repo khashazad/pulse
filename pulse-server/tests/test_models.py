@@ -18,7 +18,7 @@ def test_settings_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
     from nutrition_server.config import Settings
 
-    settings = Settings()
+    settings = Settings(_env_file=None)
     assert settings.database_url == "postgresql://localhost/test"
     assert settings.usda_api_key == "test-usda-key"
     assert settings.api_key == "test-api-key"
@@ -42,7 +42,7 @@ def test_settings_requires_database_url(monkeypatch: pytest.MonkeyPatch) -> None
     from nutrition_server.config import Settings
 
     with pytest.raises(Exception):
-        Settings()
+        Settings(_env_file=None)
 
 
 # Summary: Verifies auth dependency rejects requests without a matching API key header.
