@@ -1,14 +1,42 @@
 from __future__ import annotations
 
+import socket
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import AsyncIterator
+from urllib.parse import urlparse, urlunparse
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 
 _engine: AsyncEngine | None = None
 _session_factory: async_sessionmaker[AsyncSession] | None = None
+
+
+# Summary: Adds `hostaddr=<IPv4>` to the connection URL when the host has IPv4 records.
+# Parameters:
+# - database_url (str): SQLAlchemy-style PostgreSQL connection URL.
+# Returns:
+# - str: Same URL with a hostaddr query param appended; unchanged when IPv4 resolution fails.
+# Raises/Throws:
+# - None: Resolution failures fall through; libpq will surface a clearer error if connecting fails.
+def _force_ipv4(database_url: str) -> str:
+    parsed = urlparse(database_url)
+    host = parsed.hostname
+    if not host:
+        return database_url
+    try:
+        info = socket.getaddrinfo(host, parsed.port or 5432, socket.AF_INET, socket.SOCK_STREAM)
+    except socket.gaierror:
+        return database_url
+    if not info:
+        return database_url
+    ipv4 = info[0][4][0]
+    existing_query = parsed.query
+    if "hostaddr=" in existing_query:
+        return database_url
+    new_query = f"{existing_query}&hostaddr={ipv4}" if existing_query else f"hostaddr={ipv4}"
+    return urlunparse(parsed._replace(query=new_query))
 
 
 # Summary: Converts an application database URL into a SQLAlchemy async driver URL.
@@ -56,7 +84,7 @@ async def init_pool(database_url: str) -> None:
     global _engine
     global _session_factory
 
-    sqlalchemy_url = to_sqlalchemy_url(database_url)
+    sqlalchemy_url = _force_ipv4(to_sqlalchemy_url(database_url))
     _engine = create_async_engine(sqlalchemy_url, pool_pre_ping=True)
     _session_factory = async_sessionmaker(_engine, expire_on_commit=False)
 
