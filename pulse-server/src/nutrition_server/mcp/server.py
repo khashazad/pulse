@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 from nutrition_server.config import get_settings
 from nutrition_server.db import get_session, transaction
 from nutrition_server.macro_aggregates import sum_food_entry_macros
-from nutrition_server.mcp.auth import ApiKeyMiddleware
+from nutrition_server.mcp.auth import ApiKeyMiddleware, GitHubAllowlistMiddleware
 from nutrition_server.models import FoodEntryCreate, FoodEntryResponse, MacroTargets, MacroTotals
 from nutrition_server.repositories.entries import EntriesRepository
 from nutrition_server.repositories.targets import TargetsRepository
@@ -67,11 +67,27 @@ def build_mcp(usda_getter) -> FastMCP:
     """Construct the FastMCP server. `usda_getter` is a callable returning the live USDAClient.
 
     Indirection lets callers bind to `app.get_usda_client` after lifespan startup without import cycles.
+
+    Auth: GitHubProvider when GITHUB_CLIENT_ID/SECRET + PUBLIC_BASE_URL are set (claude.ai connector
+    requires OAuth + DCR). Otherwise falls back to X-API-Key middleware for local dev / curl.
     """
     settings = get_settings()
     tz = ZoneInfo(settings.timezone)
-    mcp = FastMCP(name="nutrition")
-    mcp.add_middleware(ApiKeyMiddleware(settings.api_key))
+
+    if settings.oauth_enabled:
+        from fastmcp.server.auth.providers.github import GitHubProvider
+
+        auth_provider = GitHubProvider(
+            client_id=settings.github_client_id,
+            client_secret=settings.github_client_secret,
+            base_url=settings.public_base_url.rstrip("/"),
+        )
+        mcp = FastMCP(name="nutrition", auth=auth_provider)
+        if settings.allowed_github_users_set:
+            mcp.add_middleware(GitHubAllowlistMiddleware(settings.allowed_github_users_set))
+    else:
+        mcp = FastMCP(name="nutrition")
+        mcp.add_middleware(ApiKeyMiddleware(settings.api_key))
 
     @mcp.tool
     async def search_food(

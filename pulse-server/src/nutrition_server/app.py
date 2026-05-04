@@ -77,4 +77,12 @@ app.include_router(summary.router)
 app.include_router(targets.router)
 app.include_router(usda_router.router)
 app.include_router(logs.router)
+
+# OAuth metadata routes (.well-known/oauth-authorization-server, /authorize, /token, etc.)
+# must live at the root so claude.ai's connector can discover them. The MCP server itself
+# stays mounted at /mcp.
+if mcp.auth is not None:
+    for route in mcp.auth.get_routes(mcp_path="/mcp/"):
+        app.routes.append(route)
+
 app.mount("/mcp", mcp_app)

@@ -47,8 +47,21 @@ class Settings(BaseSettings):
     default_user_key: str = "default"
     port: int = 8787
     timezone: str = "America/Toronto"
+    # OAuth (claude.ai connector path). Empty values disable OAuth; the MCP layer falls back to X-API-Key.
+    github_client_id: str = ""
+    github_client_secret: str = ""
+    allowed_github_users: str = ""  # comma-separated GitHub logins
+    public_base_url: str = ""  # e.g. https://nutrition-tracker-production-c54f.up.railway.app
 
     model_config = {"env_prefix": "", "case_sensitive": False, "env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
+
+    @property
+    def allowed_github_users_set(self) -> set[str]:
+        return {u.strip().lower() for u in self.allowed_github_users.split(",") if u.strip()}
+
+    @property
+    def oauth_enabled(self) -> bool:
+        return bool(self.github_client_id and self.github_client_secret and self.public_base_url)
 
     # Summary: Builds validated settings from legacy config, process env, and explicit overrides.
     # Parameters:
