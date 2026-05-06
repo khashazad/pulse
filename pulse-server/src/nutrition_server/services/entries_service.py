@@ -52,6 +52,7 @@ async def create_entries_with_side_effects(
                     normalized_quantity_unit=item.normalized_quantity_unit,
                     usda_fdc_id=item.usda_fdc_id,
                     usda_description=item.usda_description,
+                    custom_food_id=item.custom_food_id,
                     calories=item.calories,
                     protein_g=item.protein_g,
                     carbs_g=item.carbs_g,

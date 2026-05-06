@@ -56,20 +56,47 @@ def to_sqlalchemy_url(database_url: str) -> str:
     return database_url
 
 
-# Summary: Splits a SQL script into executable statements using semicolon terminators.
+# Summary: Splits a SQL script into executable statements, respecting dollar-quoted blocks.
 # Parameters:
-# - sql_script (str): Raw SQL text possibly containing multiple statements.
+# - sql_script (str): Raw SQL text possibly containing multiple statements and `$tag$ ... $tag$` blocks.
 # Returns:
 # - list[str]: Ordered list of executable SQL statements with surrounding whitespace trimmed.
 # Raises/Throws:
-# - None: This splitter assumes schema SQL does not contain semicolons inside quoted string literals.
+# - None: Statements are split on top-level semicolons; semicolons inside dollar quotes are preserved.
 def _split_sql_statements(sql_script: str) -> list[str]:
     statements: list[str] = []
-    chunks = sql_script.split(";")
-    for chunk in chunks:
-        statement = chunk.strip()
-        if statement:
-            statements.append(statement)
+    buffer: list[str] = []
+    current_tag: str | None = None
+    i = 0
+    length = len(sql_script)
+
+    while i < length:
+        if current_tag is None and sql_script[i] == "$":
+            end = sql_script.find("$", i + 1)
+            if end != -1 and all(c.isalnum() or c == "_" for c in sql_script[i + 1 : end]):
+                tag = sql_script[i : end + 1]
+                current_tag = tag
+                buffer.append(tag)
+                i = end + 1
+                continue
+        if current_tag is not None and sql_script.startswith(current_tag, i):
+            buffer.append(current_tag)
+            i += len(current_tag)
+            current_tag = None
+            continue
+        if current_tag is None and sql_script[i] == ";":
+            statement = "".join(buffer).strip()
+            if statement:
+                statements.append(statement)
+            buffer = []
+            i += 1
+            continue
+        buffer.append(sql_script[i])
+        i += 1
+
+    tail = "".join(buffer).strip()
+    if tail:
+        statements.append(tail)
     return statements
 
 

@@ -47,6 +47,10 @@ def _integration_database_url() -> str:
 async def _truncate_tables(engine) -> None:
     table_names = [
         "food_entries",
+        "meal_items",
+        "meals",
+        "food_memory",
+        "custom_foods",
         "daily_logs",
         "daily_target_profile",
     ]
@@ -194,6 +198,7 @@ async def test_logs_and_summary_aggregates(session: AsyncSession) -> None:
             normalized_quantity_unit="bowl",
             usda_fdc_id=200001,
             usda_description="Oats",
+            custom_food_id=None,
             calories=300,
             protein_g=10,
             carbs_g=50,
@@ -211,6 +216,7 @@ async def test_logs_and_summary_aggregates(session: AsyncSession) -> None:
             normalized_quantity_unit="cup",
             usda_fdc_id=200002,
             usda_description="Milk",
+            custom_food_id=None,
             calories=100,
             protein_g=8,
             carbs_g=12,
@@ -228,6 +234,7 @@ async def test_logs_and_summary_aggregates(session: AsyncSession) -> None:
             normalized_quantity_unit="item",
             usda_fdc_id=200003,
             usda_description="Banana",
+            custom_food_id=None,
             calories=120,
             protein_g=1,
             carbs_g=31,
