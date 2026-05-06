@@ -8,7 +8,15 @@ from fastmcp.utilities.lifespan import combine_lifespans
 from nutrition_server import auth, db
 from nutrition_server.config import get_settings
 from nutrition_server.mcp import build_mcp
-from nutrition_server.routers import entries, logs, summary, targets
+from nutrition_server.routers import (
+    custom_foods as custom_foods_router,
+    entries,
+    food_memory as food_memory_router,
+    logs,
+    meals as meals_router,
+    summary,
+    targets,
+)
 from nutrition_server.routers import usda as usda_router
 from nutrition_server.usda import USDAClient
 
@@ -77,6 +85,9 @@ app.include_router(summary.router)
 app.include_router(targets.router)
 app.include_router(usda_router.router)
 app.include_router(logs.router)
+app.include_router(custom_foods_router.router)
+app.include_router(food_memory_router.router)
+app.include_router(meals_router.router)
 
 # OAuth metadata routes (.well-known/oauth-authorization-server, /authorize, /token, etc.)
 # must live at the root so claude.ai's connector can discover them. The MCP server itself

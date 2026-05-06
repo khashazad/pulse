@@ -33,6 +33,7 @@ def _food_entry_response_columns() -> tuple[Any, ...]:
         food_entries.c.normalized_quantity_unit,
         food_entries.c.usda_fdc_id,
         food_entries.c.usda_description,
+        food_entries.c.custom_food_id,
         food_entries.c.calories,
         food_entries.c.protein_g,
         food_entries.c.carbs_g,
@@ -92,8 +93,9 @@ class EntriesRepository:
     # - quantity_text (str): Original quantity phrase supplied by the user.
     # - normalized_quantity_value (float | None): Parsed numeric quantity value when available.
     # - normalized_quantity_unit (str | None): Parsed quantity unit when available.
-    # - usda_fdc_id (int): USDA FDC identifier for mapped food.
-    # - usda_description (str): USDA description for mapped food.
+    # - usda_fdc_id (int | None): USDA FDC identifier when entry maps to a USDA food.
+    # - usda_description (str | None): USDA description when entry maps to a USDA food.
+    # - custom_food_id (UUID | None): Custom-food identifier when entry maps to a user-defined food.
     # - calories (int): Calories for this entry.
     # - protein_g (float): Protein grams for this entry.
     # - carbs_g (float): Carbohydrate grams for this entry.
@@ -102,7 +104,8 @@ class EntriesRepository:
     # Returns:
     # - dict[str, Any]: Inserted food-entry row as a mapping.
     # Raises/Throws:
-    # - sqlalchemy.exc.SQLAlchemyError: Raised when SQL execution fails.
+    # - sqlalchemy.exc.SQLAlchemyError: Raised when SQL execution fails (including the
+    #   exactly-one-of source CHECK constraint).
     async def create_food_entry(
         self,
         entry_id: uuid.UUID,
@@ -113,8 +116,9 @@ class EntriesRepository:
         quantity_text: str,
         normalized_quantity_value: float | None,
         normalized_quantity_unit: str | None,
-        usda_fdc_id: int,
-        usda_description: str,
+        usda_fdc_id: int | None,
+        usda_description: str | None,
+        custom_food_id: UUID | None,
         calories: int,
         protein_g: float,
         carbs_g: float,
@@ -134,6 +138,7 @@ class EntriesRepository:
                 normalized_quantity_unit=normalized_quantity_unit,
                 usda_fdc_id=usda_fdc_id,
                 usda_description=usda_description,
+                custom_food_id=custom_food_id,
                 calories=calories,
                 protein_g=protein_g,
                 carbs_g=carbs_g,

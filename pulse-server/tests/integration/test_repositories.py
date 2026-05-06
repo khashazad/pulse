@@ -47,6 +47,10 @@ def _integration_database_url() -> str:
 async def _truncate_tables(engine) -> None:
     table_names = [
         "food_entries",
+        "meal_items",
+        "meals",
+        "food_memory",
+        "custom_foods",
         "daily_logs",
         "daily_target_profile",
     ]
