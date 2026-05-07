@@ -141,7 +141,7 @@ class MealsRepository:
         row = result.mappings().first()
         return dict(row) if row else None
 
-    # Summary: Lists meals owned by the user with their item counts (lightweight summary form).
+    # Summary: Lists meals owned by the user with item counts and macro totals (single SQL pass).
     async def list_meals(self, user_key: str) -> list[dict[str, Any]]:
         stmt = (
             select(
@@ -150,6 +150,10 @@ class MealsRepository:
                 meals.c.normalized_name,
                 meals.c.notes,
                 func.count(meal_items.c.id).label("item_count"),
+                func.coalesce(func.sum(meal_items.c.calories), 0).label("total_calories"),
+                func.coalesce(func.sum(meal_items.c.protein_g), 0.0).label("total_protein_g"),
+                func.coalesce(func.sum(meal_items.c.carbs_g), 0.0).label("total_carbs_g"),
+                func.coalesce(func.sum(meal_items.c.fat_g), 0.0).label("total_fat_g"),
             )
             .select_from(meals.outerjoin(meal_items, meal_items.c.meal_id == meals.c.id))
             .where(meals.c.user_key == user_key)
