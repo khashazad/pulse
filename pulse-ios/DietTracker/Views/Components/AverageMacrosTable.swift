@@ -1,45 +1,69 @@
 import SwiftUI
 
 struct AverageMacrosTable: View {
-    let logs: [DailyLog]
+    let avgKcal: Int
+    let avgProteinG: Int
+    let avgCarbsG: Int
+    let avgFatG: Int
 
     var body: some View {
-        VStack(spacing: 0) {
-            row(label: "Avg / day", value: "\(WeekModel.avgCalories(logs)) kcal", isHeader: true)
-            row(label: "Protein",   value: "\(Int(WeekModel.avgProtein(logs).rounded())) g")
-            row(label: "Carbs",     value: "\(Int(WeekModel.avgCarbs(logs).rounded())) g")
-            row(label: "Fat",       value: "\(Int(WeekModel.avgFat(logs).rounded())) g")
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Avg / day")
+                    .font(.system(size: 11, weight: .semibold))
+                    .tracking(0.6)
+                    .textCase(.uppercase)
+                    .foregroundStyle(Theme.FG.secondary)
+                Spacer()
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    Text("\(avgKcal)")
+                        .font(.system(size: 22, weight: .bold, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundStyle(Theme.FG.primary)
+                    Text("kcal")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.FG.tertiary)
+                }
+            }
+
+            Rectangle().fill(Theme.separator).frame(height: 0.5)
+
+            VStack(spacing: 8) {
+                row(.protein, value: avgProteinG)
+                row(.carbs,   value: avgCarbsG)
+                row(.fat,     value: avgFatG)
+            }
         }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .ctpCard()
     }
 
-    private func row(label: String, value: String, isHeader: Bool = false) -> some View {
-        HStack {
-            Text(label)
-                .font(isHeader ? .subheadline.bold() : .subheadline)
+    private func row(_ macro: Theme.Macro, value: Int) -> some View {
+        HStack(spacing: 10) {
+            Circle()
+                .fill(macro.color)
+                .frame(width: 8, height: 8)
+            Text(macro.label)
+                .font(.system(size: 14))
+                .foregroundStyle(Theme.FG.primary)
             Spacer()
-            Text(value)
-                .font(isHeader ? .subheadline.bold() : .subheadline)
-                .monospacedDigit()
-        }
-        .padding(.vertical, 8)
-        .overlay(alignment: .bottom) {
-            Divider()
+            HStack(alignment: .firstTextBaseline, spacing: 2) {
+                Text("\(value)")
+                    .font(.system(size: 14, weight: .semibold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(Theme.FG.primary)
+                Text("g")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.FG.tertiary)
+            }
         }
     }
 }
 
 #Preview {
-    let cal = Calendar.current
-    let today = Date()
-    let logs: [DailyLog] = (0..<7).reversed().map { offset in
-        DailyLog(
-            date: cal.date(byAdding: .day, value: -offset, to: today)!,
-            totalCalories: 2000 + offset * 50,
-            totalProteinG: 120,
-            totalCarbsG: 220,
-            totalFatG: 70,
-            entryCount: 4
-        )
-    }
-    return AverageMacrosTable(logs: logs).padding()
+    AverageMacrosTable(avgKcal: 2010, avgProteinG: 124, avgCarbsG: 217, avgFatG: 69)
+        .padding()
+        .background(Theme.BG.primary)
+        .preferredColorScheme(.dark)
 }

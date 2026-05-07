@@ -6,41 +6,72 @@ struct MacroTotalsRow: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            cell(label: "Protein", value: totals.proteinG, target: targets?.proteinG, color: .blue)
-            cell(label: "Carbs",   value: totals.carbsG,   target: targets?.carbsG,   color: .orange)
-            cell(label: "Fat",     value: totals.fatG,     target: targets?.fatG,     color: .pink)
+            chip(.protein, value: totals.proteinG, target: targets?.proteinG)
+            chip(.carbs,   value: totals.carbsG,   target: targets?.carbsG)
+            chip(.fat,     value: totals.fatG,     target: targets?.fatG)
         }
     }
 
-    private func cell(label: String, value: Double, target: Double?, color: Color) -> some View {
-        VStack(spacing: 2) {
-            Text(label)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-            HStack(spacing: 2) {
-                Text("\(Int(value.rounded()))")
-                    .font(.headline)
+    private func chip(_ macro: Theme.Macro, value: Double, target: Double?) -> some View {
+        let v = Int(value.rounded())
+        let pct: Double = {
+            guard let t = target, t > 0 else { return 0 }
+            return min(1.0, value / t)
+        }()
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(macro.color)
+                    .frame(width: 8, height: 8)
+                    .shadow(color: macro.color.opacity(0.8), radius: 4)
+                Text(macro.label)
+                    .font(.system(size: 11, weight: .semibold))
+                    .tracking(0.4)
+                    .textCase(.uppercase)
+                    .foregroundStyle(Theme.FG.secondary)
+            }
+
+            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                Text("\(v)")
+                    .font(.system(size: 22, weight: .bold, design: .rounded))
                     .monospacedDigit()
+                    .foregroundStyle(Theme.FG.primary)
                 Text("g")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Theme.FG.tertiary)
+                Spacer(minLength: 0)
+                if let target {
+                    Text("/\(Int(target.rounded()))")
+                        .font(.system(size: 11, design: .monospaced))
+                        .monospacedDigit()
+                        .foregroundStyle(Theme.FG.tertiary)
+                }
             }
-            if let target {
-                Text("/ \(Int(target.rounded()))g")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Theme.CTP.surface1.opacity(0.45))
+                    Capsule()
+                        .fill(macro.color)
+                        .frame(width: geo.size.width * pct)
+                }
             }
+            .frame(height: 4)
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 8)
-        .background(color.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+        .padding(.horizontal, 10)
+        .padding(.top, 10)
+        .padding(.bottom, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .ctpCard()
     }
 }
 
 #Preview {
     MacroTotalsRow(
-        totals: MacroTotals(calories: 740, proteinG: 67, carbsG: 55, fatG: 25),
+        totals: MacroTotals(calories: 1240, proteinG: 92, carbsG: 138, fatG: 42),
         targets: MacroTargets(calories: 2200, proteinG: 150, carbsG: 250, fatG: 70)
     )
     .padding()
+    .background(Theme.BG.primary)
+    .preferredColorScheme(.dark)
 }

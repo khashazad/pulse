@@ -4,6 +4,9 @@ import Observation
 @Observable
 final class WeekModel {
     private(set) var state: LoadState<LogsList> = .idle
+    /// User's daily macro targets, fetched alongside logs. Nil if the server
+    /// has no targets for the user (404) or the request failed.
+    private(set) var targets: MacroTargets?
     private weak var settings: AppSettings?
 
     init(settings: AppSettings) {
@@ -18,8 +21,12 @@ final class WeekModel {
         let cal = Calendar.current
         let from = cal.date(byAdding: .day, value: -6, to: today) ?? today
         state = .loading
+        async let logsTask = client.logs(from: from, to: today)
+        async let summaryTask = client.summary(date: today)
         do {
-            let logs = try await client.logs(from: from, to: today)
+            let logs = try await logsTask
+            // Targets are best-effort; missing targets shouldn't block the chart.
+            self.targets = (try? await summaryTask)?.target
             state = .loaded(logs)
         } catch let error as DietTrackerError {
             state = .failed(error)
