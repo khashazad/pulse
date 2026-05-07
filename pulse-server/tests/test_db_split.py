@@ -1,4 +1,4 @@
-from dietracker_server.db import _split_sql_statements
+from diet_tracker_server.db import _split_sql_statements
 
 
 def test_splits_simple_statements() -> None:

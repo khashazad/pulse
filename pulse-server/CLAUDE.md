@@ -9,7 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 uv sync --extra dev
 
 # Run server
-uv run uvicorn dietracker_server.app:app --port 8787 --reload
+uv run uvicorn diet_tracker_server.app:app --port 8787 --reload
 
 # Run all unit tests
 uv run pytest tests/ -v

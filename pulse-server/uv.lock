@@ -308,7 +308,7 @@ wheels = [
 ]
 
 [[package]]
-name = "dietracker-server"
+name = "diet-tracker-server"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [

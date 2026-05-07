@@ -12,13 +12,13 @@ import pytest_asyncio
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from dietracker_server.db import to_sqlalchemy_url, transaction
-from dietracker_server.models import FoodEntryCreate
-from dietracker_server.repositories.entries import EntriesRepository
-from dietracker_server.repositories.logs import LogsRepository
-from dietracker_server.repositories.targets import TargetsRepository
-from dietracker_server.services.entries_service import create_entries_with_side_effects
-from dietracker_server.services.summary_service import build_daily_summary
+from diet_tracker_server.db import to_sqlalchemy_url, transaction
+from diet_tracker_server.models import FoodEntryCreate
+from diet_tracker_server.repositories.entries import EntriesRepository
+from diet_tracker_server.repositories.logs import LogsRepository
+from diet_tracker_server.repositories.targets import TargetsRepository
+from diet_tracker_server.services.entries_service import create_entries_with_side_effects
+from diet_tracker_server.services.summary_service import build_daily_summary
 
 pytestmark = pytest.mark.integration
 
@@ -138,7 +138,7 @@ async def test_create_entries_rolls_back_on_error(session: AsyncSession) -> None
         duplicate_entry_id,
     ]
 
-    with patch("dietracker_server.services.entries_service.uuid.uuid4", side_effect=uuid_side_effect):
+    with patch("diet_tracker_server.services.entries_service.uuid.uuid4", side_effect=uuid_side_effect):
         with pytest.raises(IntegrityError):
             await create_entries_with_side_effects(
                 session=session,
