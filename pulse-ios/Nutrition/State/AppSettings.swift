@@ -18,11 +18,17 @@ final class AppSettings {
     var isConfigured: Bool {
         !baseURLString.trimmingCharacters(in: .whitespaces).isEmpty
             && !apiKey.trimmingCharacters(in: .whitespaces).isEmpty
-            && URL(string: baseURLString) != nil
+    }
+
+    private var normalizedBaseURL: URL? {
+        let trimmed = baseURLString.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        let withScheme = trimmed.contains("://") ? trimmed : "https://\(trimmed)"
+        return URL(string: withScheme)
     }
 
     func makeClient() -> NutritionClient? {
-        guard isConfigured, let url = URL(string: baseURLString) else { return nil }
-        return NutritionClient(baseURL: url, apiKey: apiKey)
+        guard isConfigured, let url = normalizedBaseURL else { return nil }
+        return NutritionClient(baseURL: url, apiKey: apiKey.trimmingCharacters(in: .whitespacesAndNewlines))
     }
 }
