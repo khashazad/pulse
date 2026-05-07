@@ -127,6 +127,9 @@ create table if not exists food_entries (
 );
 create index if not exists idx_food_entries_user_key on food_entries(user_key);
 create index if not exists idx_food_entries_daily_log_id_consumed_at on food_entries(daily_log_id, consumed_at);
+
+alter table food_entries add column if not exists custom_food_id uuid references custom_foods(id) on delete restrict;
+
 create index if not exists idx_food_entries_custom_food_id on food_entries(custom_food_id);
 
 do $body$
@@ -140,6 +143,19 @@ begin
   ) then
     alter table food_entries alter column usda_fdc_id drop not null;
     alter table food_entries alter column usda_description drop not null;
+  end if;
+end
+$body$;
+
+do $body$
+begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'food_entries_one_source'
+  ) then
+    alter table food_entries add constraint food_entries_one_source check (
+      (usda_fdc_id is not null and custom_food_id is null) or
+      (usda_fdc_id is null and custom_food_id is not null)
+    );
   end if;
 end
 $body$;
