@@ -94,6 +94,10 @@ async def list_meals(
                 normalized_name=row["normalized_name"],
                 notes=row["notes"],
                 item_count=int(row["item_count"]),
+                total_calories=int(row["total_calories"]),
+                total_protein_g=float(row["total_protein_g"]),
+                total_carbs_g=float(row["total_carbs_g"]),
+                total_fat_g=float(row["total_fat_g"]),
             )
             for row in rows
         ]

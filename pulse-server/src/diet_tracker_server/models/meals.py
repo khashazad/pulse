@@ -66,6 +66,10 @@ class MealSummary(BaseModel):
     normalized_name: str
     notes: str | None
     item_count: int
+    total_calories: int = 0
+    total_protein_g: float = 0.0
+    total_carbs_g: float = 0.0
+    total_fat_g: float = 0.0
 
 
 class MealsListResponse(BaseModel):
