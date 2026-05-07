@@ -9,7 +9,7 @@ os.environ.setdefault("API_KEY", "test")
 
 
 def test_food_entry_create_accepts_usda_only() -> None:
-    from nutrition_server.models import FoodEntryCreate
+    from diet_tracker_server.models import FoodEntryCreate
 
     entry = FoodEntryCreate(
         display_name="eggs",
@@ -26,7 +26,7 @@ def test_food_entry_create_accepts_usda_only() -> None:
 
 
 def test_food_entry_create_accepts_custom_only() -> None:
-    from nutrition_server.models import FoodEntryCreate
+    from diet_tracker_server.models import FoodEntryCreate
 
     cf_id = uuid4()
     entry = FoodEntryCreate(
@@ -43,7 +43,7 @@ def test_food_entry_create_accepts_custom_only() -> None:
 
 
 def test_food_entry_create_rejects_both_sources() -> None:
-    from nutrition_server.models import FoodEntryCreate
+    from diet_tracker_server.models import FoodEntryCreate
 
     with pytest.raises(Exception):
         FoodEntryCreate(
@@ -60,7 +60,7 @@ def test_food_entry_create_rejects_both_sources() -> None:
 
 
 def test_food_entry_create_rejects_neither_source() -> None:
-    from nutrition_server.models import FoodEntryCreate
+    from diet_tracker_server.models import FoodEntryCreate
 
     with pytest.raises(Exception):
         FoodEntryCreate(
@@ -74,7 +74,7 @@ def test_food_entry_create_rejects_neither_source() -> None:
 
 
 def test_food_entry_create_rejects_missing_usda_description() -> None:
-    from nutrition_server.models import FoodEntryCreate
+    from diet_tracker_server.models import FoodEntryCreate
 
     with pytest.raises(Exception):
         FoodEntryCreate(

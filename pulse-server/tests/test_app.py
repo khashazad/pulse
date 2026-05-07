@@ -18,13 +18,13 @@ os.environ.setdefault("API_KEY", "test-key")
 # - None: Fixture yields a configured client or fails test setup naturally.
 @pytest.fixture
 def client() -> TestClient:
-    with patch("nutrition_server.db.init_pool", new_callable=AsyncMock), patch(
-        "nutrition_server.db.bootstrap_schema", new_callable=AsyncMock
-    ), patch("nutrition_server.db.close_pool", new_callable=AsyncMock), patch(
-        "nutrition_server.usda.USDAClient"
+    with patch("diet_tracker_server.db.init_pool", new_callable=AsyncMock), patch(
+        "diet_tracker_server.db.bootstrap_schema", new_callable=AsyncMock
+    ), patch("diet_tracker_server.db.close_pool", new_callable=AsyncMock), patch(
+        "diet_tracker_server.usda.USDAClient"
     ) as mock_usda_client:
         mock_usda_client.return_value.close = AsyncMock()
-        from nutrition_server.app import app
+        from diet_tracker_server.app import app
 
         with TestClient(app) as test_client:
             yield test_client

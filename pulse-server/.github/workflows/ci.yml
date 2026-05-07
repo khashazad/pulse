@@ -37,20 +37,20 @@ jobs:
       postgres:
         image: postgres:16
         env:
-          POSTGRES_DB: nutrition_test
+          POSTGRES_DB: diet_test
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
         ports:
           - 5432:5432
         options: >-
-          --health-cmd="pg_isready -U postgres -d nutrition_test"
+          --health-cmd="pg_isready -U postgres -d diet_test"
           --health-interval=5s
           --health-timeout=5s
           --health-retries=10
 
     env:
-      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/nutrition_test
-      TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/nutrition_test
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/diet_test
+      TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/diet_test
       USDA_API_KEY: test
       API_KEY: test-key
 

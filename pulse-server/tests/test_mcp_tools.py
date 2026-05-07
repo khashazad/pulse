@@ -12,7 +12,7 @@ os.environ.setdefault("API_KEY", "test-api-key")
 
 @pytest.mark.asyncio
 async def test_build_mcp_registers_expected_tools() -> None:
-    from nutrition_server.mcp import build_mcp
+    from diet_tracker_server.mcp import build_mcp
 
     mcp = build_mcp(lambda: MagicMock())
     tools = await mcp.list_tools()
@@ -47,8 +47,8 @@ async def test_build_mcp_registers_expected_tools() -> None:
 
 @pytest.mark.asyncio
 async def test_build_mcp_emits_workflow_instructions() -> None:
-    from nutrition_server.mcp import build_mcp
-    from nutrition_server.mcp.server import WORKFLOW_INSTRUCTIONS
+    from diet_tracker_server.mcp import build_mcp
+    from diet_tracker_server.mcp.server import WORKFLOW_INSTRUCTIONS
 
     mcp = build_mcp(lambda: MagicMock())
     assert mcp.instructions is not None
@@ -58,7 +58,7 @@ async def test_build_mcp_emits_workflow_instructions() -> None:
 
 
 def test_api_key_middleware_imports_cleanly() -> None:
-    from nutrition_server.mcp.auth import ApiKeyMiddleware
+    from diet_tracker_server.mcp.auth import ApiKeyMiddleware
 
     mw = ApiKeyMiddleware("secret")
     assert mw._configured_key == "secret"

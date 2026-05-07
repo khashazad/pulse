@@ -10,19 +10,19 @@ import pytest_asyncio
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from nutrition_server.db import to_sqlalchemy_url, transaction
-from nutrition_server.models import (
+from diet_tracker_server.db import to_sqlalchemy_url, transaction
+from diet_tracker_server.models import (
     CustomFoodCreate,
     MealCreate,
     MealItemCreate,
 )
-from nutrition_server.repositories.custom_foods import CustomFoodsRepository
-from nutrition_server.repositories.entries import EntriesRepository
-from nutrition_server.repositories.food_memory import FoodMemoryRepository
-from nutrition_server.repositories.meals import MealsRepository
-from nutrition_server.services.custom_foods_service import upsert_custom_food_and_remember
-from nutrition_server.services.food_memory_service import resolve_food_by_name
-from nutrition_server.services.meals_service import create_meal_with_items, log_meal
+from diet_tracker_server.repositories.custom_foods import CustomFoodsRepository
+from diet_tracker_server.repositories.entries import EntriesRepository
+from diet_tracker_server.repositories.food_memory import FoodMemoryRepository
+from diet_tracker_server.repositories.meals import MealsRepository
+from diet_tracker_server.services.custom_foods_service import upsert_custom_food_and_remember
+from diet_tracker_server.services.food_memory_service import resolve_food_by_name
+from diet_tracker_server.services.meals_service import create_meal_with_items, log_meal
 
 pytestmark = pytest.mark.integration
 

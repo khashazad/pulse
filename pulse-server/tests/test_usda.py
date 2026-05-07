@@ -1,4 +1,4 @@
-from nutrition_server.usda import normalize_food_nutrients
+from diet_tracker_server.usda import normalize_food_nutrients
 
 
 # Summary: Ensures nutrient normalization extracts standard macros from search-style payloads.

@@ -16,7 +16,7 @@ def test_settings_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("USDA_API_KEY", "test-usda-key")
     monkeypatch.setenv("API_KEY", "test-api-key")
 
-    from nutrition_server.config import Settings
+    from diet_tracker_server.config import Settings
 
     settings = Settings(_env_file=None)
     assert settings.database_url == "postgresql://localhost/test"
@@ -39,7 +39,7 @@ def test_settings_requires_database_url(monkeypatch: pytest.MonkeyPatch) -> None
     monkeypatch.setenv("USDA_API_KEY", "k")
     monkeypatch.setenv("API_KEY", "k")
 
-    from nutrition_server.config import Settings
+    from diet_tracker_server.config import Settings
 
     with pytest.raises(Exception):
         Settings(_env_file=None)
@@ -53,8 +53,8 @@ def test_settings_requires_database_url(monkeypatch: pytest.MonkeyPatch) -> None
 # Raises/Throws:
 # - AssertionError: Raised if unauthorized requests are not rejected.
 def test_auth_rejects_missing_key() -> None:
-    with patch("nutrition_server.auth._configured_key", "secret"):
-        from nutrition_server.auth import require_api_key
+    with patch("diet_tracker_server.auth._configured_key", "secret"):
+        from diet_tracker_server.auth import require_api_key
 
         app = FastAPI()
 
@@ -83,8 +83,8 @@ def test_auth_rejects_missing_key() -> None:
 # Raises/Throws:
 # - AssertionError: Raised if authorized requests are rejected.
 def test_auth_accepts_valid_key() -> None:
-    with patch("nutrition_server.auth._configured_key", "secret"):
-        from nutrition_server.auth import require_api_key
+    with patch("diet_tracker_server.auth._configured_key", "secret"):
+        from diet_tracker_server.auth import require_api_key
 
         app = FastAPI()
 
@@ -113,7 +113,7 @@ def test_auth_accepts_valid_key() -> None:
 # Raises/Throws:
 # - AssertionError: Raised when parsed model values are unexpected.
 def test_food_entry_create_validation() -> None:
-    from nutrition_server.models import FoodEntryCreate
+    from diet_tracker_server.models import FoodEntryCreate
 
     entry = FoodEntryCreate(
         display_name="eggs",
@@ -137,7 +137,7 @@ def test_food_entry_create_validation() -> None:
 # Raises/Throws:
 # - AssertionError: Raised when invalid payloads do not fail validation.
 def test_food_entry_create_rejects_negative_calories() -> None:
-    from nutrition_server.models import FoodEntryCreate
+    from diet_tracker_server.models import FoodEntryCreate
 
     with pytest.raises(Exception):
         FoodEntryCreate(
@@ -160,7 +160,7 @@ def test_food_entry_create_rejects_negative_calories() -> None:
 # Raises/Throws:
 # - AssertionError: Raised when parsed model values are unexpected.
 def test_macro_targets_validation() -> None:
-    from nutrition_server.models import MacroTargets
+    from diet_tracker_server.models import MacroTargets
 
     targets = MacroTargets(calories=2000, protein_g=150.0, carbs_g=200.0, fat_g=80.0)
     assert targets.calories == 2000

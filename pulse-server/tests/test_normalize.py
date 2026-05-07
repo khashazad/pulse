@@ -1,4 +1,4 @@
-from nutrition_server.services.normalize import normalize_name
+from diet_tracker_server.services.normalize import normalize_name
 
 
 def test_normalize_lowercases_and_trims() -> None:
