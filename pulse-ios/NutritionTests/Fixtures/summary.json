@@ -1,0 +1,80 @@
+{
+  "date": "2026-05-06",
+  "target": {
+    "calories": 2200,
+    "protein_g": 150.0,
+    "carbs_g": 250.0,
+    "fat_g": 70.0
+  },
+  "consumed": {
+    "calories": 740,
+    "protein_g": 67.0,
+    "carbs_g": 55.0,
+    "fat_g": 25.0
+  },
+  "remaining": {
+    "calories": 1460,
+    "protein_g": 83.0,
+    "carbs_g": 195.0,
+    "fat_g": 45.0
+  },
+  "entries": [
+    {
+      "id": "11111111-1111-1111-1111-111111111111",
+      "daily_log_id": "22222222-2222-2222-2222-222222222222",
+      "user_key": "khash",
+      "entry_group_id": "33333333-3333-3333-3333-333333333333",
+      "display_name": "Oats, raw",
+      "quantity_text": "80 g",
+      "normalized_quantity_value": 80.0,
+      "normalized_quantity_unit": "g",
+      "usda_fdc_id": 173904,
+      "usda_description": "Oats, raw",
+      "custom_food_id": null,
+      "calories": 320,
+      "protein_g": 10.0,
+      "carbs_g": 54.0,
+      "fat_g": 6.0,
+      "consumed_at": "2026-05-06T08:30:00+00:00",
+      "created_at": "2026-05-06T08:31:00+00:00"
+    },
+    {
+      "id": "44444444-4444-4444-4444-444444444444",
+      "daily_log_id": "22222222-2222-2222-2222-222222222222",
+      "user_key": "khash",
+      "entry_group_id": "55555555-5555-5555-5555-555555555555",
+      "display_name": "Eggs",
+      "quantity_text": "2 large",
+      "normalized_quantity_value": 100.0,
+      "normalized_quantity_unit": "g",
+      "usda_fdc_id": 748967,
+      "usda_description": "Egg, whole, raw, large",
+      "custom_food_id": null,
+      "calories": 180,
+      "protein_g": 12.0,
+      "carbs_g": 1.0,
+      "fat_g": 14.0,
+      "consumed_at": "2026-05-06T08:35:00+00:00",
+      "created_at": "2026-05-06T08:36:00+00:00"
+    },
+    {
+      "id": "66666666-6666-6666-6666-666666666666",
+      "daily_log_id": "22222222-2222-2222-2222-222222222222",
+      "user_key": "khash",
+      "entry_group_id": "77777777-7777-7777-7777-777777777777",
+      "display_name": "Chicken breast",
+      "quantity_text": "150 g",
+      "normalized_quantity_value": 150.0,
+      "normalized_quantity_unit": "g",
+      "usda_fdc_id": null,
+      "usda_description": null,
+      "custom_food_id": "88888888-8888-8888-8888-888888888888",
+      "calories": 240,
+      "protein_g": 45.0,
+      "carbs_g": 0.0,
+      "fat_g": 5.0,
+      "consumed_at": "2026-05-06T13:00:00+00:00",
+      "created_at": "2026-05-06T13:01:00+00:00"
+    }
+  ]
+}

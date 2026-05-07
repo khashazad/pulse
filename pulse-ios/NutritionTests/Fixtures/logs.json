@@ -1,0 +1,11 @@
+{
+  "logs": [
+    { "date": "2026-05-06", "total_calories": 740, "total_protein_g": 67.0, "total_carbs_g": 55.0, "total_fat_g": 25.0, "entry_count": 3 },
+    { "date": "2026-05-05", "total_calories": 1980, "total_protein_g": 120.0, "total_carbs_g": 180.0, "total_fat_g": 70.0, "entry_count": 5 },
+    { "date": "2026-05-04", "total_calories": 2460, "total_protein_g": 145.0, "total_carbs_g": 280.0, "total_fat_g": 90.0, "entry_count": 6 },
+    { "date": "2026-05-03", "total_calories": 2210, "total_protein_g": 130.0, "total_carbs_g": 240.0, "total_fat_g": 75.0, "entry_count": 4 },
+    { "date": "2026-05-02", "total_calories": 1890, "total_protein_g": 110.0, "total_carbs_g": 195.0, "total_fat_g": 65.0, "entry_count": 5 },
+    { "date": "2026-05-01", "total_calories": 2050, "total_protein_g": 125.0, "total_carbs_g": 220.0, "total_fat_g": 68.0, "entry_count": 4 },
+    { "date": "2026-04-30", "total_calories": 2300, "total_protein_g": 140.0, "total_carbs_g": 260.0, "total_fat_g": 72.0, "entry_count": 5 }
+  ]
+}
