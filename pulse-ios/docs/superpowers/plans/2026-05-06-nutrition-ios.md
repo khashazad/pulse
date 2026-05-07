@@ -201,7 +201,7 @@ Expected: `Nutrition.xcodeproj` exists, contains `project.pbxproj`.
 ```bash
 cd /Users/khxsh/Documents/repos/projects/nutrition-ios
 xcodebuild -project Nutrition.xcodeproj -scheme Nutrition \
-  -destination 'platform=iOS Simulator,OS=18.3,name=iPhone 15 Pro' \
+  -destination 'platform=iOS Simulator,name=iPhone 16 Pro,OS=18.3.1' \
   -quiet build
 ```
 
@@ -211,7 +211,7 @@ Expected: `BUILD SUCCEEDED`. If iPhone 15 Pro isn't available, run `xcrun simctl
 
 ```bash
 xcodebuild -project Nutrition.xcodeproj -scheme Nutrition \
-  -destination 'platform=iOS Simulator,OS=18.3,name=iPhone 15 Pro' \
+  -destination 'platform=iOS Simulator,name=iPhone 16 Pro,OS=18.3.1' \
   test -quiet
 ```
 
@@ -268,7 +268,7 @@ enum Constants {
 ```bash
 xcodegen generate
 xcodebuild -project Nutrition.xcodeproj -scheme Nutrition \
-  -destination 'platform=iOS Simulator,OS=18.3,name=iPhone 15 Pro' -quiet build
+  -destination 'platform=iOS Simulator,name=iPhone 16 Pro,OS=18.3.1' -quiet build
 ```
 
 Expected: `BUILD SUCCEEDED`.
@@ -346,7 +346,7 @@ enum KeychainStore {
 ```bash
 xcodegen generate
 xcodebuild -project Nutrition.xcodeproj -scheme Nutrition \
-  -destination 'platform=iOS Simulator,OS=18.3,name=iPhone 15 Pro' -quiet build
+  -destination 'platform=iOS Simulator,name=iPhone 16 Pro,OS=18.3.1' -quiet build
 ```
 
 Expected: `BUILD SUCCEEDED`.
@@ -771,7 +771,7 @@ final class DecodingTests: XCTestCase {
 cd /Users/khxsh/Documents/repos/projects/nutrition-ios
 xcodegen generate
 xcodebuild -project Nutrition.xcodeproj -scheme Nutrition \
-  -destination 'platform=iOS Simulator,OS=18.3,name=iPhone 15 Pro' \
+  -destination 'platform=iOS Simulator,name=iPhone 16 Pro,OS=18.3.1' \
   test -quiet 2>&1 | grep -E "(Test Suite|TEST|FAIL|error:)" | head -20
 ```
 
@@ -785,7 +785,7 @@ If a test fails: read the assertion message and fix the model/decoder. Do not mo
 rm NutritionTests/PlaceholderTests.swift
 xcodegen generate
 xcodebuild -project Nutrition.xcodeproj -scheme Nutrition \
-  -destination 'platform=iOS Simulator,OS=18.3,name=iPhone 15 Pro' test -quiet
+  -destination 'platform=iOS Simulator,name=iPhone 16 Pro,OS=18.3.1' test -quiet
 ```
 
 Expected: 3 tests pass.
@@ -854,7 +854,7 @@ enum NutritionError: Error, Equatable {
 ```bash
 xcodegen generate
 xcodebuild -project Nutrition.xcodeproj -scheme Nutrition \
-  -destination 'platform=iOS Simulator,OS=18.3,name=iPhone 15 Pro' -quiet build
+  -destination 'platform=iOS Simulator,name=iPhone 16 Pro,OS=18.3.1' -quiet build
 git add Nutrition/Networking/NutritionError.swift
 git commit -m "feat: NutritionError with user-facing messages"
 ```
@@ -1009,7 +1009,7 @@ final class NutritionClientTests: XCTestCase {
 ```bash
 xcodegen generate
 xcodebuild -project Nutrition.xcodeproj -scheme Nutrition \
-  -destination 'platform=iOS Simulator,OS=18.3,name=iPhone 15 Pro' test -quiet 2>&1 | tail -10
+  -destination 'platform=iOS Simulator,name=iPhone 16 Pro,OS=18.3.1' test -quiet 2>&1 | tail -10
 ```
 
 Expected: build error referencing `NutritionClient`.
@@ -1105,7 +1105,7 @@ actor NutritionClient {
 ```bash
 xcodegen generate
 xcodebuild -project Nutrition.xcodeproj -scheme Nutrition \
-  -destination 'platform=iOS Simulator,OS=18.3,name=iPhone 15 Pro' test -quiet 2>&1 | grep -E "(Test Suite|Executed|FAIL)" | tail -10
+  -destination 'platform=iOS Simulator,name=iPhone 16 Pro,OS=18.3.1' test -quiet 2>&1 | grep -E "(Test Suite|Executed|FAIL)" | tail -10
 ```
 
 Expected: All tests pass (3 decoding + 4 client = 7 tests).
@@ -1164,7 +1164,7 @@ final class AppSettings {
 ```bash
 xcodegen generate
 xcodebuild -project Nutrition.xcodeproj -scheme Nutrition \
-  -destination 'platform=iOS Simulator,OS=18.3,name=iPhone 15 Pro' -quiet build
+  -destination 'platform=iOS Simulator,name=iPhone 16 Pro,OS=18.3.1' -quiet build
 git add Nutrition/State/AppSettings.swift
 git commit -m "feat: AppSettings @Observable wires UserDefaults + Keychain"
 ```
@@ -1196,7 +1196,7 @@ enum LoadState<T> {
 ```bash
 xcodegen generate
 xcodebuild -project Nutrition.xcodeproj -scheme Nutrition \
-  -destination 'platform=iOS Simulator,OS=18.3,name=iPhone 15 Pro' -quiet build
+  -destination 'platform=iOS Simulator,name=iPhone 16 Pro,OS=18.3.1' -quiet build
 git add Nutrition/State/LoadState.swift
 git commit -m "feat: LoadState enum"
 ```
@@ -1250,7 +1250,7 @@ final class DayMacroModel {
 ```bash
 xcodegen generate
 xcodebuild -project Nutrition.xcodeproj -scheme Nutrition \
-  -destination 'platform=iOS Simulator,OS=18.3,name=iPhone 15 Pro' -quiet build
+  -destination 'platform=iOS Simulator,name=iPhone 16 Pro,OS=18.3.1' -quiet build
 git add Nutrition/State/DayMacroModel.swift
 git commit -m "feat: DayMacroModel @Observable"
 ```
@@ -1329,7 +1329,7 @@ final class WeekModel {
 ```bash
 xcodegen generate
 xcodebuild -project Nutrition.xcodeproj -scheme Nutrition \
-  -destination 'platform=iOS Simulator,OS=18.3,name=iPhone 15 Pro' -quiet build
+  -destination 'platform=iOS Simulator,name=iPhone 16 Pro,OS=18.3.1' -quiet build
 git add Nutrition/State/WeekModel.swift
 git commit -m "feat: WeekModel @Observable + average helpers"
 ```
@@ -1628,7 +1628,7 @@ struct AverageMacrosTable: View {
 ```bash
 xcodegen generate
 xcodebuild -project Nutrition.xcodeproj -scheme Nutrition \
-  -destination 'platform=iOS Simulator,OS=18.3,name=iPhone 15 Pro' -quiet build
+  -destination 'platform=iOS Simulator,name=iPhone 16 Pro,OS=18.3.1' -quiet build
 git add Nutrition/Views/Components
 git commit -m "feat: UI components — ring, totals row, entry row, bars, averages"
 ```
@@ -1740,7 +1740,7 @@ struct DayMacroView: View {
 ```bash
 xcodegen generate
 xcodebuild -project Nutrition.xcodeproj -scheme Nutrition \
-  -destination 'platform=iOS Simulator,OS=18.3,name=iPhone 15 Pro' -quiet build
+  -destination 'platform=iOS Simulator,name=iPhone 16 Pro,OS=18.3.1' -quiet build
 git add Nutrition/Views/DayMacroView.swift
 git commit -m "feat: DayMacroView for Today + DayDetail"
 ```
@@ -1812,7 +1812,7 @@ struct WeekView: View {
 ```bash
 xcodegen generate
 xcodebuild -project Nutrition.xcodeproj -scheme Nutrition \
-  -destination 'platform=iOS Simulator,OS=18.3,name=iPhone 15 Pro' -quiet build
+  -destination 'platform=iOS Simulator,name=iPhone 16 Pro,OS=18.3.1' -quiet build
 git add Nutrition/Views/WeekView.swift
 git commit -m "feat: WeekView with bar chart + averages"
 ```
@@ -1881,7 +1881,7 @@ struct SettingsView: View {
 ```bash
 xcodegen generate
 xcodebuild -project Nutrition.xcodeproj -scheme Nutrition \
-  -destination 'platform=iOS Simulator,OS=18.3,name=iPhone 15 Pro' -quiet build
+  -destination 'platform=iOS Simulator,name=iPhone 16 Pro,OS=18.3.1' -quiet build
 git add Nutrition/Views/SettingsView.swift
 git commit -m "feat: SettingsView with required-config gate"
 ```
@@ -1945,7 +1945,7 @@ struct DatePickerSheet: View {
 ```bash
 xcodegen generate
 xcodebuild -project Nutrition.xcodeproj -scheme Nutrition \
-  -destination 'platform=iOS Simulator,OS=18.3,name=iPhone 15 Pro' -quiet build
+  -destination 'platform=iOS Simulator,name=iPhone 16 Pro,OS=18.3.1' -quiet build
 git add Nutrition/Views/DatePickerSheet.swift
 git commit -m "feat: DatePickerSheet capped at today"
 ```
@@ -2021,7 +2021,7 @@ struct FloatingDock: View {
 ```bash
 xcodegen generate
 xcodebuild -project Nutrition.xcodeproj -scheme Nutrition \
-  -destination 'platform=iOS Simulator,OS=18.3,name=iPhone 15 Pro' -quiet build
+  -destination 'platform=iOS Simulator,name=iPhone 16 Pro,OS=18.3.1' -quiet build
 git add Nutrition/Views/FloatingDock.swift
 git commit -m "feat: FloatingDock with Today/Week/Date buttons"
 ```
@@ -2119,7 +2119,7 @@ struct NutritionApp: App {
 ```bash
 xcodegen generate
 xcodebuild -project Nutrition.xcodeproj -scheme Nutrition \
-  -destination 'platform=iOS Simulator,OS=18.3,name=iPhone 15 Pro' test -quiet 2>&1 | tail -5
+  -destination 'platform=iOS Simulator,name=iPhone 16 Pro,OS=18.3.1' test -quiet 2>&1 | tail -5
 ```
 
 Expected: `BUILD SUCCEEDED`, all 7 tests pass.
@@ -2139,10 +2139,10 @@ git commit -m "feat: RootView wiring + tab/sheet/dock orchestration"
 
 ```bash
 cd /Users/khxsh/Documents/repos/projects/nutrition-ios
-xcrun simctl boot "iPhone 15 Pro" 2>/dev/null || true
+xcrun simctl boot "iPhone 16 Pro" 2>/dev/null || true
 open -a Simulator
 xcodebuild -project Nutrition.xcodeproj -scheme Nutrition \
-  -destination 'platform=iOS Simulator,OS=18.3,name=iPhone 15 Pro' \
+  -destination 'platform=iOS Simulator,name=iPhone 16 Pro,OS=18.3.1' \
   -derivedDataPath build -quiet build
 APP_PATH="build/Build/Products/Debug-iphonesimulator/Nutrition.app"
 xcrun simctl install booted "$APP_PATH"
