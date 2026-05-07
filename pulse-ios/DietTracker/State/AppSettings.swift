@@ -7,8 +7,13 @@ final class AppSettings {
         didSet { UserDefaults.standard.set(baseURLString, forKey: Constants.Defaults.baseURL) }
     }
     var apiKey: String {
-        didSet { KeychainStore.write(apiKey) }
+        didSet {
+            keychainWriteFailed = !KeychainStore.write(apiKey.trimmingCharacters(in: .whitespacesAndNewlines))
+        }
     }
+
+    /// True if the most recent Keychain write didn't succeed. Surfaced in Settings.
+    private(set) var keychainWriteFailed: Bool = false
 
     init() {
         self.baseURLString = UserDefaults.standard.string(forKey: Constants.Defaults.baseURL) ?? ""
@@ -16,8 +21,9 @@ final class AppSettings {
     }
 
     var isConfigured: Bool {
-        !baseURLString.trimmingCharacters(in: .whitespaces).isEmpty
-            && !apiKey.trimmingCharacters(in: .whitespaces).isEmpty
+        guard let url = normalizedBaseURL else { return false }
+        let trimmedKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        return url.scheme != nil && !trimmedKey.isEmpty
     }
 
     private var normalizedBaseURL: URL? {
@@ -28,7 +34,9 @@ final class AppSettings {
     }
 
     func makeClient() -> DietTrackerClient? {
-        guard isConfigured, let url = normalizedBaseURL else { return nil }
-        return DietTrackerClient(baseURL: url, apiKey: apiKey.trimmingCharacters(in: .whitespacesAndNewlines))
+        guard let url = normalizedBaseURL else { return nil }
+        let trimmedKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedKey.isEmpty else { return nil }
+        return DietTrackerClient(baseURL: url, apiKey: trimmedKey)
     }
 }

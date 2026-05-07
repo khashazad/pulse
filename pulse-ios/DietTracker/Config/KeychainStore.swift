@@ -19,7 +19,9 @@ enum KeychainStore {
         return string
     }
 
-    static func write(_ value: String) {
+    /// Returns true on successful persist, false if both update and add failed.
+    @discardableResult
+    static func write(_ value: String) -> Bool {
         let data = Data(value.utf8)
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -28,20 +30,25 @@ enum KeychainStore {
         ]
         let attrs: [String: Any] = [kSecValueData as String: data]
 
-        let status = SecItemUpdate(query as CFDictionary, attrs as CFDictionary)
-        if status == errSecItemNotFound {
+        let updateStatus = SecItemUpdate(query as CFDictionary, attrs as CFDictionary)
+        if updateStatus == errSecSuccess { return true }
+        if updateStatus == errSecItemNotFound {
             var insert = query
             insert[kSecValueData as String] = data
-            SecItemAdd(insert as CFDictionary, nil)
+            return SecItemAdd(insert as CFDictionary, nil) == errSecSuccess
         }
+        return false
     }
 
-    static func delete() {
+    /// Returns true if the item was deleted or didn't exist; false on real failure.
+    @discardableResult
+    static func delete() -> Bool {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: Constants.Keychain.service,
             kSecAttrAccount as String: Constants.Keychain.account,
         ]
-        SecItemDelete(query as CFDictionary)
+        let status = SecItemDelete(query as CFDictionary)
+        return status == errSecSuccess || status == errSecItemNotFound
     }
 }

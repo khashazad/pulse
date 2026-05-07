@@ -19,6 +19,12 @@ struct SettingsView: View {
                     TextField("API key", text: $settings.apiKey)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
+                    if settings.keychainWriteFailed {
+                        Label("Couldn't save API key to Keychain.",
+                              systemImage: "exclamationmark.triangle.fill")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                    }
                 }
                 Section {
                     Text("User: \(Constants.userKey)")
