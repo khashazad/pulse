@@ -1,6 +1,9 @@
 # Brainstorming session artifacts
 .superpowers/
 
+# Design handoff reference material — kept locally, not in repo
+design_handoff_macchiato_redesign/
+
 # Xcode
 xcuserdata/
 *.xcuserstate

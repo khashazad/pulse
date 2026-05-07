@@ -8,6 +8,8 @@ struct DietTrackerApp: App {
         WindowGroup {
             RootView()
                 .environment(settings)
+                .preferredColorScheme(.dark)
+                .tint(Theme.tint)
         }
     }
 }

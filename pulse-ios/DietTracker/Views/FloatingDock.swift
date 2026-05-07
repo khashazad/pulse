@@ -1,7 +1,7 @@
 import SwiftUI
 
-enum DockTab {
-    case today, week
+enum DockTab: Hashable {
+    case today, week, date
 }
 
 struct FloatingDock: View {
@@ -9,44 +9,76 @@ struct FloatingDock: View {
     let onPickDate: () -> Void
 
     var body: some View {
-        HStack(spacing: 18) {
-            button(label: "Today", system: "circle.fill", active: tab == .today) {
-                tab = .today
+        HStack(spacing: 4) {
+            tabButton(.today, system: "circle.fill",    label: "Today")
+            tabButton(.week,  system: "chart.bar.fill", label: "Week")
+            Button {
+                onPickDate()
+            } label: {
+                tabContents(system: "calendar", label: "Date", isActive: tab == .date)
             }
-            button(label: "Week", system: "chart.bar.fill", active: tab == .week) {
-                tab = .week
-            }
-            button(label: "Date", system: "calendar", active: false, action: onPickDate)
+            .buttonStyle(.plain)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .background(.ultraThinMaterial, in: Capsule())
-        .overlay(
-            Capsule().stroke(.separator, lineWidth: 0.5)
+        .padding(6)
+        .background(
+            ZStack {
+                Capsule(style: .continuous)
+                    .fill(Theme.BG.secondary.opacity(0.72))
+                Capsule(style: .continuous)
+                    .fill(.ultraThinMaterial)
+                    .opacity(0.6)
+            }
         )
-        .shadow(color: .black.opacity(0.15), radius: 10, y: 4)
-        .padding(.bottom, 12)
+        .overlay(
+            Capsule(style: .continuous)
+                .strokeBorder(Theme.CTP.lavender.opacity(0.18), lineWidth: 0.5)
+        )
+        .shadow(
+            color: Theme.dockShadow.color,
+            radius: Theme.dockShadow.radius,
+            x: Theme.dockShadow.x,
+            y: Theme.dockShadow.y
+        )
     }
 
-    private func button(label: String, system: String, active: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            VStack(spacing: 2) {
-                Image(systemName: system)
-                    .font(.system(size: 14))
-                Text(label)
-                    .font(.caption2)
-            }
-            .foregroundStyle(active ? Color.accentColor : .secondary)
-            .padding(.horizontal, 6)
+    private func tabButton(_ target: DockTab, system: String, label: String) -> some View {
+        Button {
+            tab = target
+        } label: {
+            tabContents(system: system, label: label, isActive: tab == target)
         }
         .buttonStyle(.plain)
+    }
+
+    private func tabContents(system: String, label: String, isActive: Bool) -> some View {
+        VStack(spacing: 3) {
+            Image(systemName: system)
+                .font(.system(size: 16, weight: isActive ? .semibold : .regular))
+            Text(label)
+                .font(.system(size: 10, weight: isActive ? .semibold : .medium))
+                .tracking(0.2)
+        }
+        .foregroundStyle(isActive ? Theme.CTP.mauve : Theme.FG.secondary)
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(
+            Capsule().fill(isActive ? Theme.CTP.mauve.opacity(0.16) : .clear)
+        )
+        .contentShape(Capsule())
     }
 }
 
 #Preview {
     @Previewable @State var tab: DockTab = .today
-    return ZStack(alignment: .bottom) {
-        Color.gray.opacity(0.1).ignoresSafeArea()
-        FloatingDock(tab: $tab, onPickDate: {})
+    ZStack {
+        Theme.BG.primary.ignoresSafeArea()
+        VStack {
+            Spacer()
+            FloatingDock(tab: $tab, onPickDate: {})
+                .padding(.horizontal, 24)
+                .padding(.bottom, 16)
+        }
     }
+    .preferredColorScheme(.dark)
 }
