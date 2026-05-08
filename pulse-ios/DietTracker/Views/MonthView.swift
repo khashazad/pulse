@@ -1,8 +1,8 @@
 import SwiftUI
 
-struct WeekView: View {
+struct MonthView: View {
     @Environment(AppSettings.self) private var settings
-    @State private var model: WeekModel?
+    @State private var model: MonthModel?
 
     var body: some View {
         ZStack {
@@ -20,39 +20,47 @@ struct WeekView: View {
                         icon: "exclamationmark.triangle",
                         title: "Couldn't load",
                         description: error.userMessage,
-                        action: { Task { await model?.loadLast7Days() } },
+                        action: { Task { await model?.loadCurrentMonth() } },
                         actionLabel: "Retry"
                     )
                 }
             }
         }
-        .navigationTitle("This week")
+        .navigationTitle("This month")
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(Theme.BG.primary, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
         .task {
-            if model == nil { model = WeekModel(settings: settings) }
-            await model?.loadLast7Days()
+            if model == nil { model = MonthModel(settings: settings) }
+            await model?.loadCurrentMonth()
         }
-        .refreshable { await model?.loadLast7Days() }
+        .refreshable { await model?.loadCurrentMonth() }
     }
 
     private func loadedBody(_ logs: [DailyLog]) -> some View {
         let chronological = logs.sorted { $0.date < $1.date }
-        let total = chronological.map(\.totalCalories).reduce(0, +)
+        let buckets = MonthModel.weeklyBuckets(chronological)
+        let avgKcal = WeekModel.avgCalories(chronological)
         let dailyTarget = model?.targets?.calories
-        let weeklyTarget = dailyTarget.map { $0 * chronological.count }
         let pct: Int? = {
-            guard let weeklyTarget, weeklyTarget > 0 else { return nil }
-            return Int((Double(total) / Double(weeklyTarget) * 100).rounded())
+            guard let dailyTarget, dailyTarget > 0, avgKcal > 0 else { return nil }
+            return Int((Double(avgKcal) / Double(dailyTarget) * 100).rounded())
         }()
+
         return ScrollView {
             VStack(spacing: Theme.Layout.sectionSpacing) {
-                weekSummaryCard(logs: chronological, total: total, pct: pct, dailyTarget: dailyTarget)
-                    .padding(.horizontal, 16)
+                summaryCard(
+                    title: "Month avg / day",
+                    avgKcal: avgKcal,
+                    pct: pct,
+                    buckets: buckets,
+                    barsHeader: "Weekly avg",
+                    dailyTarget: dailyTarget
+                )
+                .padding(.horizontal, 16)
 
                 AverageMacrosTable(
-                    avgKcal: WeekModel.avgCalories(chronological),
+                    avgKcal: avgKcal,
                     avgProteinG: Int(WeekModel.avgProtein(chronological).rounded()),
                     avgCarbsG: Int(WeekModel.avgCarbs(chronological).rounded()),
                     avgFatG: Int(WeekModel.avgFat(chronological).rounded())
@@ -65,17 +73,24 @@ struct WeekView: View {
         }
     }
 
-    private func weekSummaryCard(logs: [DailyLog], total: Int, pct: Int?, dailyTarget: Int?) -> some View {
+    private func summaryCard(
+        title: String,
+        avgKcal: Int,
+        pct: Int?,
+        buckets: [PeriodBucket],
+        barsHeader: String,
+        dailyTarget: Int?
+    ) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Week total")
+                    Text(title)
                         .font(.system(size: 11, weight: .semibold))
                         .tracking(0.8)
                         .textCase(.uppercase)
                         .foregroundStyle(Theme.FG.secondary)
                     HStack(alignment: .firstTextBaseline, spacing: 4) {
-                        Text(total.formatted())
+                        Text(avgKcal.formatted())
                             .font(.system(size: 28, weight: .bold, design: .rounded))
                             .monospacedDigit()
                             .foregroundStyle(Theme.FG.primary)
@@ -92,13 +107,11 @@ struct WeekView: View {
                         .foregroundStyle(Theme.CTP.green)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 4)
-                        .background(
-                            Capsule().fill(Theme.CTP.green.opacity(0.14))
-                        )
+                        .background(Capsule().fill(Theme.CTP.green.opacity(0.14)))
                 }
             }
 
-            DailyKcalBars(logs: logs, targetCalories: dailyTarget)
+            BucketKcalBars(buckets: buckets, header: barsHeader, targetCalories: dailyTarget)
         }
         .padding(.horizontal, 16)
         .padding(.top, 14)

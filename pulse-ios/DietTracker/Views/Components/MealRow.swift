@@ -23,7 +23,7 @@ struct MealRow: View {
                         .font(.system(size: 14, weight: .semibold, design: .rounded))
                         .monospacedDigit()
                         .foregroundStyle(Theme.CTP.mauve)
-                    Text("kcal")
+                    Text("cal")
                         .font(.system(size: 10))
                         .foregroundStyle(Theme.FG.tertiary)
                 }

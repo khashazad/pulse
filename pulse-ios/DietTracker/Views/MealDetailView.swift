@@ -92,7 +92,7 @@ struct MealDetailView: View {
                         .font(.system(size: 26, weight: .bold, design: .rounded))
                         .monospacedDigit()
                         .foregroundStyle(Theme.FG.primary)
-                    Text("kcal")
+                    Text("cal")
                         .font(.system(size: 12))
                         .foregroundStyle(Theme.FG.tertiary)
                 }
@@ -142,7 +142,7 @@ struct MealDetailView: View {
                     .font(.system(size: 13, weight: .semibold, design: .rounded))
                     .monospacedDigit()
                     .foregroundStyle(Theme.CTP.mauve)
-                Text("kcal")
+                Text("cal")
                     .font(.system(size: 10))
                     .foregroundStyle(Theme.FG.tertiary)
             }

@@ -96,7 +96,7 @@ struct DayMacroView: View {
                 .textCase(.uppercase)
                 .foregroundStyle(Theme.FG.secondary)
             Spacer()
-            Text("\(count) · \(kcal) kcal")
+            Text("\(count) · \(kcal) cal")
                 .font(.system(size: 11, design: .monospaced))
                 .monospacedDigit()
                 .foregroundStyle(Theme.FG.tertiary)

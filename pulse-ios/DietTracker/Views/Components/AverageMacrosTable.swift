@@ -20,7 +20,7 @@ struct AverageMacrosTable: View {
                         .font(.system(size: 22, weight: .bold, design: .rounded))
                         .monospacedDigit()
                         .foregroundStyle(Theme.FG.primary)
-                    Text("kcal")
+                    Text("cal")
                         .font(.system(size: 12))
                         .foregroundStyle(Theme.FG.tertiary)
                 }

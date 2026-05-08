@@ -20,7 +20,7 @@ struct EntryRow: View {
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
                         .monospacedDigit()
                         .foregroundStyle(Theme.CTP.mauve)
-                    Text("kcal")
+                    Text("cal")
                         .font(.system(size: 11))
                         .foregroundStyle(Theme.FG.tertiary)
                 }
