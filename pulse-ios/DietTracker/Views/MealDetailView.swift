@@ -31,8 +31,8 @@ struct MealDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(Theme.BG.primary, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
-        .task {
-            if model == nil { model = MealDetailModel(mealId: summary.id, settings: settings) }
+        .task(id: summary.id) {
+            model = MealDetailModel(mealId: summary.id, settings: settings)
             await model?.load()
         }
         .refreshable { await model?.load() }

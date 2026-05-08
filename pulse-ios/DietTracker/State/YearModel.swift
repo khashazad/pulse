@@ -43,13 +43,13 @@ final class YearModel {
         let groups = Dictionary(grouping: logs) { calendar.component(.month, from: $0.date) }
         let symbols = calendar.shortMonthSymbols
         let currentMonth = calendar.component(.month, from: today)
-        return groups.keys.sorted().enumerated().map { idx, monthKey in
+        return groups.keys.sorted().map { monthKey in
             let bucket = groups[monthKey] ?? []
             let logged = bucket.filter { $0.entryCount > 0 }
             let avg = logged.isEmpty ? 0 : logged.map(\.totalCalories).reduce(0, +) / logged.count
             let label = (1...12).contains(monthKey) ? symbols[monthKey - 1] : "?"
             return PeriodBucket(
-                id: idx,
+                id: "month-\(monthKey)",
                 label: label,
                 avgKcalPerDay: avg,
                 isCurrent: monthKey == currentMonth

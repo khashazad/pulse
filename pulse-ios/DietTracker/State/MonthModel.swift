@@ -51,7 +51,7 @@ final class MonthModel {
             let logged = bucket.filter { $0.entryCount > 0 }
             let avg = logged.isEmpty ? 0 : logged.map(\.totalCalories).reduce(0, +) / logged.count
             return PeriodBucket(
-                id: idx,
+                id: "week-\(Int(key.timeIntervalSince1970))",
                 label: "W\(idx + 1)",
                 avgKcalPerDay: avg,
                 isCurrent: key == todayWeekStart
