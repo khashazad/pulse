@@ -159,3 +159,18 @@ begin
   end if;
 end
 $body$;
+
+create table if not exists containers (
+  id uuid primary key default gen_random_uuid(),
+  user_key text not null,
+  name text not null,
+  normalized_name text not null,
+  tare_weight_g numeric not null check (tare_weight_g > 0),
+  photo bytea,
+  photo_thumb bytea,
+  photo_mime text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create unique index if not exists idx_containers_user_key_name on containers(user_key, normalized_name);
+create index if not exists idx_containers_user_key on containers(user_key);
