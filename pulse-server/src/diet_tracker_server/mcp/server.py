@@ -227,7 +227,8 @@ def build_mcp(usda_getter) -> FastMCP:
         # PUBLIC_BASE_URL so the GitHub OAuth path activates.
         mcp = FastMCP(name="diet", instructions=WORKFLOW_INSTRUCTIONS)
 
-    user_key = settings.default_user_key
+    # Match REST surface so data created via either path lives in the same tenant.
+    user_key = settings.legacy_user_key
 
     # ---------------- core search/log ----------------
 

@@ -132,3 +132,52 @@ def test_user_key_query_guardrail_skips_health_and_auth_routes():
         r2 = c.get("/auth/google/start?user_key=foo")
     assert r1.status_code == 200
     assert r2.status_code != 400
+
+
+def _build_app_with_mcp_exemptions():
+    from diet_tracker_server.auth.middleware import (
+        SessionAuthMiddleware,
+        UserKeyGuardrailMiddleware,
+    )
+
+    app = FastAPI()
+    app.add_middleware(
+        SessionAuthMiddleware,
+        exempt_paths=frozenset({"/authorize", "/token", "/.well-known/oauth-authorization-server"}),
+        exempt_prefixes=("/mcp",),
+    )
+    app.add_middleware(
+        UserKeyGuardrailMiddleware,
+        exempt_paths=frozenset({"/authorize", "/token", "/.well-known/oauth-authorization-server"}),
+        exempt_prefixes=("/mcp",),
+    )
+
+    @app.get("/mcp/probe")
+    async def mcp_probe():
+        return {"ok": True}
+
+    @app.get("/authorize")
+    async def authorize():
+        return {"ok": True}
+
+    @app.get("/.well-known/oauth-authorization-server")
+    async def metadata():
+        return {"ok": True}
+
+    return app
+
+
+def test_mcp_prefix_bypasses_session_auth():
+    app = _build_app_with_mcp_exemptions()
+    with TestClient(app) as c:
+        r = c.get("/mcp/probe")  # no Bearer header
+    assert r.status_code == 200
+
+
+def test_oauth_metadata_bypasses_session_auth():
+    app = _build_app_with_mcp_exemptions()
+    with TestClient(app) as c:
+        r1 = c.get("/authorize")
+        r2 = c.get("/.well-known/oauth-authorization-server")
+    assert r1.status_code == 200
+    assert r2.status_code == 200

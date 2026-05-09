@@ -12,27 +12,43 @@ from diet_tracker_server.db import get_session
 from diet_tracker_server.repositories.sessions import SessionsRepository
 
 
-# Paths that bypass auth + guardrail. The OAuth bootstrap routes handle their own
-# credential lifecycle; /auth/whoami and /auth/logout require a valid session.
-PUBLIC_PATHS: frozenset[str] = frozenset({"/health"})
-PUBLIC_AUTH_PREFIXES: tuple[str, ...] = ("/auth/google/",)
+# Paths that always bypass session auth + the ?user_key= guardrail. The OAuth bootstrap
+# routes handle their own credential lifecycle; /auth/whoami and /auth/logout still
+# require a valid session and are intentionally NOT exempted here.
+DEFAULT_EXEMPT_PATHS: frozenset[str] = frozenset({"/health"})
+DEFAULT_EXEMPT_PREFIXES: tuple[str, ...] = ("/auth/google/",)
 
 
-# Summary: Reports whether a path should bypass session auth and the user_key guardrail.
-# Parameters:
-# - path (str): Request path from `request.url.path`.
-# Returns:
-# - bool: True when the request must skip both middleware checks.
-# Raises/Throws:
-# - None: Pure string predicate.
-def _is_public(path: str) -> bool:
-    if path in PUBLIC_PATHS:
-        return True
-    return any(path.startswith(prefix) for prefix in PUBLIC_AUTH_PREFIXES)
+class _ExemptionMixin:
+    _exempt_paths: frozenset[str]
+    _exempt_prefixes: tuple[str, ...]
+
+    def _init_exemptions(
+        self,
+        exempt_paths: frozenset[str] | None,
+        exempt_prefixes: tuple[str, ...] | None,
+    ) -> None:
+        self._exempt_paths = DEFAULT_EXEMPT_PATHS | (exempt_paths or frozenset())
+        self._exempt_prefixes = DEFAULT_EXEMPT_PREFIXES + (exempt_prefixes or ())
+
+    def _is_exempt(self, path: str) -> bool:
+        if path in self._exempt_paths:
+            return True
+        return any(path.startswith(prefix) for prefix in self._exempt_prefixes)
 
 
-class UserKeyGuardrailMiddleware(BaseHTTPMiddleware):
+class UserKeyGuardrailMiddleware(_ExemptionMixin, BaseHTTPMiddleware):
     """Rejects `?user_key=` on protected routes during the cutover window."""
+
+    def __init__(
+        self,
+        app,
+        *,
+        exempt_paths: frozenset[str] | None = None,
+        exempt_prefixes: tuple[str, ...] | None = None,
+    ) -> None:
+        super().__init__(app)
+        self._init_exemptions(exempt_paths, exempt_prefixes)
 
     # Summary: Short-circuits requests that smuggle a stale `user_key` query param.
     # Parameters:
@@ -43,7 +59,7 @@ class UserKeyGuardrailMiddleware(BaseHTTPMiddleware):
     # Raises/Throws:
     # - None: Errors from downstream handlers propagate as their own responses.
     async def dispatch(self, request: Request, call_next):
-        if not _is_public(request.url.path) and "user_key" in request.query_params:
+        if not self._is_exempt(request.url.path) and "user_key" in request.query_params:
             return JSONResponse(
                 status_code=400,
                 content={"error": "user_key query param is no longer accepted"},
@@ -51,11 +67,24 @@ class UserKeyGuardrailMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
-class SessionAuthMiddleware(BaseHTTPMiddleware):
+class SessionAuthMiddleware(_ExemptionMixin, BaseHTTPMiddleware):
     """Validates Bearer session tokens and slides the session TTL.
 
     Sets `request.state.email`, `request.state.user_key`, `request.state.session_expires_at`.
+    Routes outside this app's REST surface (e.g. the MCP mount and FastMCP-emitted OAuth
+    routes) must be passed via `exempt_paths`/`exempt_prefixes` so they aren't 401'd before
+    their own auth layer can run.
     """
+
+    def __init__(
+        self,
+        app,
+        *,
+        exempt_paths: frozenset[str] | None = None,
+        exempt_prefixes: tuple[str, ...] | None = None,
+    ) -> None:
+        super().__init__(app)
+        self._init_exemptions(exempt_paths, exempt_prefixes)
 
     # Summary: Authenticates the request by Bearer token, sliding the session TTL on success.
     # Parameters:
@@ -66,7 +95,7 @@ class SessionAuthMiddleware(BaseHTTPMiddleware):
     # Raises/Throws:
     # - sqlalchemy.exc.SQLAlchemyError: Surfaces if the sessions DB write fails mid-request.
     async def dispatch(self, request: Request, call_next):
-        if _is_public(request.url.path):
+        if self._is_exempt(request.url.path):
             return await call_next(request)
 
         header = request.headers.get("authorization", "")

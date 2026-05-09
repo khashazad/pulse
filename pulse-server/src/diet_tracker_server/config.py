@@ -21,7 +21,6 @@ class Settings(BaseSettings):
     legacy_user_key: str = "khash"
 
     # Existing.
-    default_user_key: str = "default"
     port: int = 8787
     timezone: str = "America/Toronto"
     app_env: str = "local"

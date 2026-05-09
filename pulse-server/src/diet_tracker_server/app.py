@@ -71,8 +71,26 @@ app = FastAPI(
     lifespan=combine_lifespans(lifespan, mcp_app.lifespan),
 )
 
-app.add_middleware(SessionAuthMiddleware)
-app.add_middleware(UserKeyGuardrailMiddleware)
+# MCP and FastMCP-emitted OAuth routes must bypass the diet session middleware. The MCP
+# layer has its own auth (GitHub OAuth or unauth in local dev); session bearer tokens
+# don't apply there.
+_mcp_exempt_paths: frozenset[str] = frozenset(
+    route.path
+    for route in (mcp.auth.get_routes(mcp_path="/mcp/") if mcp.auth is not None else [])
+    if hasattr(route, "path")
+)
+_mcp_exempt_prefixes: tuple[str, ...] = ("/mcp",)
+
+app.add_middleware(
+    SessionAuthMiddleware,
+    exempt_paths=_mcp_exempt_paths,
+    exempt_prefixes=_mcp_exempt_prefixes,
+)
+app.add_middleware(
+    UserKeyGuardrailMiddleware,
+    exempt_paths=_mcp_exempt_paths,
+    exempt_prefixes=_mcp_exempt_prefixes,
+)
 
 
 # Summary: Returns a simple health status payload for service monitoring.
