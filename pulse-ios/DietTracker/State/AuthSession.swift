@@ -149,17 +149,27 @@ extension AuthSession {
     func signInWithGoogle(presentationAnchor: ASPresentationAnchor) async {
         state = .signingIn
         let url = startSignInURL()
+        print("[AuthSession] signInWithGoogle url=\(url.absoluteString) scheme=\(Constants.Auth.callbackScheme)")
         do {
             let callback = try await startWebAuth(
                 url: url,
                 callbackScheme: Constants.Auth.callbackScheme,
                 presentationAnchor: presentationAnchor
             )
+            print("[AuthSession] callback received: \(callback.absoluteString)")
             handleSignInCallback(url: callback)
         } catch let asError as ASWebAuthenticationSessionError where asError.code == .canceledLogin {
+            print("[AuthSession] user cancelled (canceledLogin)")
             state = .signedOut
+        } catch let asError as ASWebAuthenticationSessionError {
+            print("[AuthSession] ASWebAuth error: code=\(asError.code.rawValue) desc=\(asError.localizedDescription)")
+            state = .error(.signInFailed(reason: "aswebauth_\(asError.code.rawValue)"))
+        } catch let dtError as DietTrackerError {
+            print("[AuthSession] DietTracker error: \(dtError)")
+            state = .error(dtError)
         } catch {
-            state = .error(.signInFailed(reason: "invalid_callback"))
+            print("[AuthSession] unknown sign-in error: \(error)")
+            state = .error(.signInFailed(reason: "unknown:\(String(describing: type(of: error)))"))
         }
     }
 
@@ -193,11 +203,13 @@ extension AuthSession {
             session.presentationContextProvider = SignInPresentationContextProvider(anchor: presentationAnchor)
             session.prefersEphemeralWebBrowserSession = false
             self.activeWebAuthSession = session
+            print("[AuthSession] starting ASWebAuthenticationSession (canStart=\(session.canStart))")
             if !session.start() {
+                print("[AuthSession] session.start() returned false")
                 guard !didResume else { return }
                 didResume = true
                 self.activeWebAuthSession = nil
-                continuation.resume(throwing: DietTrackerError.signInFailed(reason: "invalid_callback"))
+                continuation.resume(throwing: DietTrackerError.signInFailed(reason: "session_start_returned_false"))
             }
         }
     }

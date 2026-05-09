@@ -49,7 +49,7 @@ enum DietTrackerError: Error, Equatable {
             case "invalid_state":         return "Sign-in expired, please try again."
             case "invalid_callback":      return "Sign-in failed. Please try again."
             case "keychain_write_failed": return "Couldn't save sign-in. Check device storage."
-            default:                      return "Something went wrong. Please try again."
+            default:                      return "Sign-in failed (\(reason))."
             }
         }
     }
