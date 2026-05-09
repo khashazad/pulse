@@ -9,6 +9,7 @@ from diet_tracker_server import auth, db
 from diet_tracker_server.config import get_settings
 from diet_tracker_server.mcp import build_mcp
 from diet_tracker_server.routers import (
+    containers as containers_router,
     custom_foods as custom_foods_router,
     entries,
     food_memory as food_memory_router,
@@ -85,6 +86,7 @@ app.include_router(summary.router)
 app.include_router(targets.router)
 app.include_router(usda_router.router)
 app.include_router(logs.router)
+app.include_router(containers_router.router)
 app.include_router(custom_foods_router.router)
 app.include_router(food_memory_router.router)
 app.include_router(meals_router.router)
