@@ -34,25 +34,26 @@ MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB
 _UPLOAD_CHUNK_BYTES = 64 * 1024
 
 
-async def _read_capped(file: UploadFile, max_bytes: int) -> bytes:
+async def _read_capped(file: UploadFile, max_bytes: int) -> bytearray:
     """Read an UploadFile in chunks, aborting once cumulative bytes exceed max_bytes.
 
-    Avoids allocating an oversized payload before the size cap is enforced.
+    Returns a bytearray (not bytes) so the payload is held in a single contiguous
+    buffer — no second copy at the join step. Downstream (Pillow via BytesIO,
+    repo BYTEA insert) accepts bytes-like.
+
     Raises PhotoTooLargeError when the upload exceeds the cap.
     """
-    chunks: list[bytes] = []
-    total = 0
+    buffer = bytearray()
     while True:
         chunk = await file.read(_UPLOAD_CHUNK_BYTES)
         if not chunk:
             break
-        total += len(chunk)
-        if total > max_bytes:
+        if len(buffer) + len(chunk) > max_bytes:
             raise PhotoTooLargeError(
-                f"Upload exceeds {max_bytes}-byte cap (read at least {total})"
+                f"Upload exceeds {max_bytes}-byte cap (read at least {len(buffer) + len(chunk)})"
             )
-        chunks.append(chunk)
-    return b"".join(chunks)
+        buffer.extend(chunk)
+    return buffer
 
 
 def _to_response(row: dict) -> ContainerResponse:
