@@ -42,6 +42,20 @@ final class AuthSession {
         }
     }
 
+    func handleSignInCallback(url: URL) {
+        switch AuthCallbackParser.parse(url) {
+        case .success(let creds):
+            let stored = StoredSession(token: creds.token, email: creds.email)
+            if writeStored(stored) {
+                state = .signedIn(email: creds.email)
+            } else {
+                state = .error(.signInFailed(reason: "keychain_write_failed"))
+            }
+        case .failure(let err):
+            state = .error(err)
+        }
+    }
+
     // MARK: - storage
 
     private struct StoredSession: Codable {

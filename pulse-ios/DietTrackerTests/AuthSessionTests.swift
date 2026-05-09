@@ -51,3 +51,41 @@ final class AuthSessionTests: XCTestCase {
         XCTAssertFalse(auth.isSignedIn)
     }
 }
+
+extension AuthSessionTests {
+    func testHandleCallbackSuccessSignsInAndPersists() {
+        clearStoredSession()
+        let auth = AuthSession(
+            baseURL: URL(string: "https://example.test")!,
+            keychainService: testService,
+            keychainAccount: testAccount
+        )
+        auth.handleSignInCallback(url: URL(string: "diettracker://auth?token=t1&email=khashzd%40gmail.com")!)
+        XCTAssertTrue(auth.isSignedIn)
+        XCTAssertEqual(auth.email, "khashzd@gmail.com")
+        // Persisted across a fresh AuthSession?
+        let fresh = AuthSession(
+            baseURL: URL(string: "https://example.test")!,
+            keychainService: testService,
+            keychainAccount: testAccount
+        )
+        XCTAssertTrue(fresh.isSignedIn)
+        XCTAssertEqual(fresh.email, "khashzd@gmail.com")
+    }
+
+    func testHandleCallbackErrorTransitionsToError() {
+        clearStoredSession()
+        let auth = AuthSession(
+            baseURL: URL(string: "https://example.test")!,
+            keychainService: testService,
+            keychainAccount: testAccount
+        )
+        auth.handleSignInCallback(url: URL(string: "diettracker://auth?error=not_allowed")!)
+        if case .error(let e) = auth.state {
+            XCTAssertEqual(e, .signInFailed(reason: "not_allowed"))
+        } else {
+            XCTFail("Expected .error state, got \(auth.state)")
+        }
+        XCTAssertFalse(auth.isSignedIn)
+    }
+}
