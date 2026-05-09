@@ -223,8 +223,13 @@ def build_mcp(usda_getter) -> FastMCP:
         if settings.allowed_github_users_set:
             mcp.add_middleware(GitHubAllowlistMiddleware(settings.allowed_github_users_set))
     else:
-        # Local dev: MCP runs unauthenticated. Production must set GITHUB_CLIENT_ID/SECRET +
-        # PUBLIC_BASE_URL so the GitHub OAuth path activates.
+        # Settings.model_validator already rejects this combo outside local; this is a
+        # belt-and-suspenders guard for callers that bypass Settings (e.g. tests).
+        if not settings.is_local_env and not settings.mcp_allow_unauth:
+            raise RuntimeError(
+                "Refusing to build unauthenticated MCP outside local env. "
+                "Set GITHUB_CLIENT_ID/SECRET + PUBLIC_BASE_URL or MCP_ALLOW_UNAUTH=true."
+            )
         mcp = FastMCP(name="diet", instructions=WORKFLOW_INSTRUCTIONS)
 
     # Match REST surface so data created via either path lives in the same tenant.

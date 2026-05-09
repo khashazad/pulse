@@ -16,6 +16,10 @@ def _isolate_env(monkeypatch):
         "SESSION_TOKEN_BYTES",
         "LEGACY_USER_KEY",
         "APP_ENV",
+        "GITHUB_CLIENT_ID",
+        "GITHUB_CLIENT_SECRET",
+        "PUBLIC_BASE_URL",
+        "MCP_ALLOW_UNAUTH",
     ):
         monkeypatch.delenv(k, raising=False)
     monkeypatch.setenv("DATABASE_URL", "postgresql://localhost/test")
@@ -77,3 +81,46 @@ def test_redirect_uri_http_allowed_for_local(monkeypatch):
     cfg.get_settings.cache_clear()
     s = cfg.get_settings()
     assert s.oauth_redirect_uri.startswith("http://localhost")
+
+
+def test_mcp_unauth_rejected_outside_local(monkeypatch):
+    # Non-local env, no GitHub OAuth, no opt-in → must raise.
+    monkeypatch.setenv("APP_ENV", "prod")
+    from diet_tracker_server import config as cfg
+
+    cfg.get_settings.cache_clear()
+    with pytest.raises(ValueError, match="MCP layer is unauthenticated"):
+        cfg.get_settings()
+
+
+def test_mcp_unauth_allowed_outside_local_with_explicit_optin(monkeypatch):
+    monkeypatch.setenv("APP_ENV", "prod")
+    monkeypatch.setenv("MCP_ALLOW_UNAUTH", "true")
+    from diet_tracker_server import config as cfg
+
+    cfg.get_settings.cache_clear()
+    s = cfg.get_settings()
+    assert s.mcp_allow_unauth is True
+    assert s.mcp_oauth_enabled is False
+
+
+def test_mcp_unauth_allowed_outside_local_with_github_oauth(monkeypatch):
+    monkeypatch.setenv("APP_ENV", "prod")
+    monkeypatch.setenv("GITHUB_CLIENT_ID", "ghcid")
+    monkeypatch.setenv("GITHUB_CLIENT_SECRET", "ghsecret")
+    monkeypatch.setenv("PUBLIC_BASE_URL", "https://api.example.com")
+    from diet_tracker_server import config as cfg
+
+    cfg.get_settings.cache_clear()
+    s = cfg.get_settings()
+    assert s.mcp_oauth_enabled is True
+
+
+def test_mcp_unauth_allowed_in_local_without_github(monkeypatch):
+    monkeypatch.setenv("APP_ENV", "local")
+    from diet_tracker_server import config as cfg
+
+    cfg.get_settings.cache_clear()
+    s = cfg.get_settings()
+    assert s.is_local_env is True
+    assert s.mcp_oauth_enabled is False
