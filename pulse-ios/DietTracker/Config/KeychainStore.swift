@@ -2,11 +2,11 @@ import Foundation
 import Security
 
 enum KeychainStore {
-    static func read() -> String? {
+    static func read(service: String, account: String) -> String? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: Constants.Keychain.service,
-            kSecAttrAccount as String: Constants.Keychain.account,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
             kSecReturnData as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne,
         ]
@@ -19,36 +19,52 @@ enum KeychainStore {
         return string
     }
 
-    /// Returns true on successful persist, false if both update and add failed.
     @discardableResult
-    static func write(_ value: String) -> Bool {
+    static func write(_ value: String, service: String, account: String) -> Bool {
         let data = Data(value.utf8)
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: Constants.Keychain.service,
-            kSecAttrAccount as String: Constants.Keychain.account,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
         ]
-        let attrs: [String: Any] = [kSecValueData as String: data]
-
+        let attrs: [String: Any] = [
+            kSecValueData as String: data,
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock,
+        ]
         let updateStatus = SecItemUpdate(query as CFDictionary, attrs as CFDictionary)
         if updateStatus == errSecSuccess { return true }
         if updateStatus == errSecItemNotFound {
             var insert = query
             insert[kSecValueData as String] = data
+            insert[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
             return SecItemAdd(insert as CFDictionary, nil) == errSecSuccess
         }
         return false
     }
 
-    /// Returns true if the item was deleted or didn't exist; false on real failure.
     @discardableResult
-    static func delete() -> Bool {
+    static func delete(service: String, account: String) -> Bool {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: Constants.Keychain.service,
-            kSecAttrAccount as String: Constants.Keychain.account,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
         ]
         let status = SecItemDelete(query as CFDictionary)
         return status == errSecSuccess || status == errSecItemNotFound
+    }
+
+    // Legacy convenience used by AppSettings until the cutover task removes it.
+    static func read() -> String? {
+        read(service: Constants.Keychain.service, account: Constants.Keychain.account)
+    }
+
+    @discardableResult
+    static func write(_ value: String) -> Bool {
+        write(value, service: Constants.Keychain.service, account: Constants.Keychain.account)
+    }
+
+    @discardableResult
+    static func delete() -> Bool {
+        delete(service: Constants.Keychain.service, account: Constants.Keychain.account)
     }
 }
