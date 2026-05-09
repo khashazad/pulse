@@ -31,6 +31,29 @@ router = APIRouter(dependencies=[Depends(require_api_key)])
 TZ = ZoneInfo(settings.timezone)
 
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB
+_UPLOAD_CHUNK_BYTES = 64 * 1024
+
+
+async def _read_capped(file: UploadFile, max_bytes: int) -> bytearray:
+    """Read an UploadFile in chunks, aborting once cumulative bytes exceed max_bytes.
+
+    Returns a bytearray (not bytes) so the payload is held in a single contiguous
+    buffer — no second copy at the join step. Downstream (Pillow via BytesIO,
+    repo BYTEA insert) accepts bytes-like.
+
+    Raises PhotoTooLargeError when the upload exceeds the cap.
+    """
+    buffer = bytearray()
+    while True:
+        chunk = await file.read(_UPLOAD_CHUNK_BYTES)
+        if not chunk:
+            break
+        if len(buffer) + len(chunk) > max_bytes:
+            raise PhotoTooLargeError(
+                f"Upload exceeds {max_bytes}-byte cap (read at least {len(buffer) + len(chunk)})"
+            )
+        buffer.extend(chunk)
+    return buffer
 
 
 def _to_response(row: dict) -> ContainerResponse:
@@ -139,7 +162,12 @@ async def upload_container_photo(
     session: AsyncSession = Depends(get_session_dependency),
 ) -> ContainerPhotoStatus:
     effective = user_key or settings.default_user_key
-    raw = await file.read()
+
+    try:
+        raw = await _read_capped(file, MAX_UPLOAD_BYTES)
+    except PhotoTooLargeError as exc:
+        raise HTTPException(status_code=413, detail=str(exc)) from exc
+
     try:
         full, thumb, mime = process_container_photo(raw, max_bytes=MAX_UPLOAD_BYTES)
     except PhotoTooLargeError as exc:

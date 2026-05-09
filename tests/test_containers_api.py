@@ -183,6 +183,36 @@ def test_upload_photo_resizes_and_returns_status(client: TestClient) -> None:
     assert resp.json() == {"has_photo": True}
 
 
+def test_upload_photo_rejects_oversize_via_streaming_cap(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Streaming size cap: posting more than MAX_UPLOAD_BYTES must 413 without
+    the full payload being handed to the image processor."""
+    from diet_tracker_server.routers import containers as containers_module
+
+    monkeypatch.setattr(containers_module, "MAX_UPLOAD_BYTES", 1024)
+
+    container_id = uuid.uuid4()
+    big = b"\x00" * 4096  # 4 KB > 1 KB cap
+    process_spy = MagicMock()
+    with patch(
+        "diet_tracker_server.routers.containers.ContainersRepository"
+    ) as MockRepo, patch(
+        "diet_tracker_server.routers.containers.process_container_photo",
+        side_effect=process_spy,
+    ):
+        instance = MockRepo.return_value
+        instance.set_photo = AsyncMock(return_value=True)
+        resp = client.put(
+            f"/containers/{container_id}/photo",
+            headers=HEADERS,
+            files={"file": ("big.bin", big, "application/octet-stream")},
+        )
+    assert resp.status_code == 413
+    process_spy.assert_not_called()
+
+
 def test_upload_photo_rejects_non_image(client: TestClient) -> None:
     container_id = uuid.uuid4()
     with patch(
