@@ -35,12 +35,20 @@ final class DietTrackerClientTests: XCTestCase {
         return try Data(contentsOf: url)
     }
 
+    private func makeClient() -> DietTrackerClient {
+        DietTrackerClient(
+            baseURL: URL(string: "https://example.test")!,
+            sessionToken: "session-abc",
+            session: makeSession()
+        )
+    }
+
     override func tearDown() {
         StubURLProtocol.responder = nil
         super.tearDown()
     }
 
-    func testSummaryRequestSendsApiKeyAndUserKey() async throws {
+    func testSummaryRequestSendsBearerAndNoUserKey() async throws {
         let summaryJSON = try loadFixture("summary")
         var capturedRequest: URLRequest?
         StubURLProtocol.responder = { req in
@@ -49,22 +57,17 @@ final class DietTrackerClientTests: XCTestCase {
             return (resp, summaryJSON)
         }
 
-        let client = DietTrackerClient(
-            baseURL: URL(string: "https://example.test")!,
-            apiKey: "secret-key",
-            session: makeSession()
-        )
-
         let date = DateOnly.formatter.date(from: "2026-05-06")!
-        let summary = try await client.summary(date: date)
+        let summary = try await makeClient().summary(date: date)
 
         XCTAssertEqual(summary.target.calories, 2200)
-        XCTAssertEqual(capturedRequest?.value(forHTTPHeaderField: "X-API-Key"), "secret-key")
+        XCTAssertEqual(capturedRequest?.value(forHTTPHeaderField: "Authorization"), "Bearer session-abc")
+        XCTAssertNil(capturedRequest?.value(forHTTPHeaderField: "X-API-Key"))
         XCTAssertEqual(capturedRequest?.url?.path, "/summary/2026-05-06")
-        XCTAssertEqual(capturedRequest?.url?.query, "user_key=khash")
+        XCTAssertNil(capturedRequest?.url?.query)
     }
 
-    func testLogsRequestUsesFromAndToParams() async throws {
+    func testLogsRequestUsesFromAndToParamsWithoutUserKey() async throws {
         let logsJSON = try loadFixture("logs")
         var capturedURL: URL?
         StubURLProtocol.responder = { req in
@@ -72,22 +75,16 @@ final class DietTrackerClientTests: XCTestCase {
             let resp = HTTPURLResponse(url: req.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
             return (resp, logsJSON)
         }
-
-        let client = DietTrackerClient(
-            baseURL: URL(string: "https://example.test")!,
-            apiKey: "k",
-            session: makeSession()
-        )
         let from = DateOnly.formatter.date(from: "2026-04-30")!
         let to = DateOnly.formatter.date(from: "2026-05-06")!
-        let list = try await client.logs(from: from, to: to)
+        let list = try await makeClient().logs(from: from, to: to)
 
         XCTAssertEqual(list.logs.count, 7)
         XCTAssertEqual(capturedURL?.path, "/logs")
         let q = capturedURL?.query ?? ""
         XCTAssertTrue(q.contains("from=2026-04-30"))
         XCTAssertTrue(q.contains("to=2026-05-06"))
-        XCTAssertTrue(q.contains("user_key=khash"))
+        XCTAssertFalse(q.contains("user_key"))
     }
 
     func test401MapsToUnauthorized() async throws {
@@ -95,14 +92,9 @@ final class DietTrackerClientTests: XCTestCase {
             let resp = HTTPURLResponse(url: req.url!, statusCode: 401, httpVersion: nil, headerFields: nil)!
             return (resp, Data())
         }
-        let client = DietTrackerClient(
-            baseURL: URL(string: "https://example.test")!,
-            apiKey: "k",
-            session: makeSession()
-        )
         let date = DateOnly.formatter.date(from: "2026-05-06")!
         do {
-            _ = try await client.summary(date: date)
+            _ = try await makeClient().summary(date: date)
             XCTFail("Expected unauthorized error")
         } catch let error as DietTrackerError {
             XCTAssertEqual(error, .unauthorized)
@@ -114,17 +106,41 @@ final class DietTrackerClientTests: XCTestCase {
             let resp = HTTPURLResponse(url: req.url!, statusCode: 404, httpVersion: nil, headerFields: nil)!
             return (resp, Data())
         }
-        let client = DietTrackerClient(
-            baseURL: URL(string: "https://example.test")!,
-            apiKey: "k",
-            session: makeSession()
-        )
         let date = DateOnly.formatter.date(from: "2026-05-06")!
         do {
-            _ = try await client.summary(date: date)
+            _ = try await makeClient().summary(date: date)
             XCTFail("Expected notFound error")
         } catch let error as DietTrackerError {
             XCTAssertEqual(error, .notFound)
         }
+    }
+
+    func testWhoAmIDecodes() async throws {
+        let whoami = try loadFixture("whoami")
+        var capturedURL: URL?
+        var capturedAuth: String?
+        StubURLProtocol.responder = { req in
+            capturedURL = req.url
+            capturedAuth = req.value(forHTTPHeaderField: "Authorization")
+            let resp = HTTPURLResponse(url: req.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            return (resp, whoami)
+        }
+        let result = try await makeClient().whoami()
+        XCTAssertEqual(result.email, "khashzd@gmail.com")
+        XCTAssertEqual(capturedURL?.path, "/auth/whoami")
+        XCTAssertEqual(capturedAuth, "Bearer session-abc")
+    }
+
+    func testLogoutSendsPostWithBearer() async throws {
+        var captured: URLRequest?
+        StubURLProtocol.responder = { req in
+            captured = req
+            let resp = HTTPURLResponse(url: req.url!, statusCode: 204, httpVersion: nil, headerFields: nil)!
+            return (resp, Data())
+        }
+        try await makeClient().logout()
+        XCTAssertEqual(captured?.httpMethod, "POST")
+        XCTAssertEqual(captured?.url?.path, "/auth/logout")
+        XCTAssertEqual(captured?.value(forHTTPHeaderField: "Authorization"), "Bearer session-abc")
     }
 }

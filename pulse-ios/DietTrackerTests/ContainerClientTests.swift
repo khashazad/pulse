@@ -18,7 +18,7 @@ final class ContainerClientTests: XCTestCase {
     private func makeClient() -> DietTrackerClient {
         DietTrackerClient(
             baseURL: URL(string: "https://example.test")!,
-            apiKey: "k",
+            sessionToken: "session-k",
             session: makeSession()
         )
     }
@@ -39,8 +39,8 @@ final class ContainerClientTests: XCTestCase {
         let summaries = try await makeClient().listContainers()
         XCTAssertEqual(summaries.count, 2)
         XCTAssertEqual(captured?.url?.path, "/containers")
-        XCTAssertEqual(captured?.url?.query, "user_key=khash")
-        XCTAssertEqual(captured?.value(forHTTPHeaderField: "X-API-Key"), "k")
+        XCTAssertNil(captured?.url?.query)
+        XCTAssertEqual(captured?.value(forHTTPHeaderField: "Authorization"), "Bearer session-k")
     }
 
     func testCreateContainerPostsJSON() async throws {
@@ -133,10 +133,10 @@ final class ContainerClientTests: XCTestCase {
     func testContainerPhotoRequestIncludesApiKey() {
         let id = UUID()
         let req = makeClient().containerPhotoRequest(id: id, size: .thumb)
-        XCTAssertEqual(req.value(forHTTPHeaderField: "X-API-Key"), "k")
+        XCTAssertEqual(req.value(forHTTPHeaderField: "Authorization"), "Bearer session-k")
         XCTAssertTrue(req.url?.path.hasSuffix("/photo") ?? false)
-        XCTAssertTrue(req.url?.query?.contains("size=thumb") ?? false)
-        XCTAssertTrue(req.url?.query?.contains("user_key=khash") ?? false)
+        XCTAssertTrue(req.url?.query?.contains("size=") ?? false)
+        XCTAssertFalse(req.url?.query?.contains("user_key") ?? true)
     }
 }
 

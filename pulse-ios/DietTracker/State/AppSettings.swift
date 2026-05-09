@@ -37,6 +37,6 @@ final class AppSettings {
         guard let url = normalizedBaseURL else { return nil }
         let trimmedKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedKey.isEmpty else { return nil }
-        return DietTrackerClient(baseURL: url, apiKey: trimmedKey)
+        return DietTrackerClient(baseURL: url, sessionToken: trimmedKey)
     }
 }

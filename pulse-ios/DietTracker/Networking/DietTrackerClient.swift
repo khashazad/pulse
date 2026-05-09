@@ -2,13 +2,13 @@ import Foundation
 
 actor DietTrackerClient {
     private let baseURL: URL
-    private let apiKey: String
+    private let sessionToken: String
     private let session: URLSession
     private let decoder: JSONDecoder
 
-    init(baseURL: URL, apiKey: String, session: URLSession = .shared) {
+    init(baseURL: URL, sessionToken: String, session: URLSession = .shared) {
         self.baseURL = baseURL
-        self.apiKey = apiKey
+        self.sessionToken = sessionToken
         self.session = session
         self.decoder = JSONDecoder.dietTrackerDefault()
     }
@@ -16,8 +16,7 @@ actor DietTrackerClient {
     // MARK: - read endpoints
 
     func summary(date: Date) async throws -> DailySummary {
-        let path = "/summary/\(DateOnly.string(from: date))"
-        let url = try makeURL(path: path, query: [URLQueryItem(name: "user_key", value: Constants.userKey)])
+        let url = try makeURL(path: "/summary/\(DateOnly.string(from: date))", query: [])
         return try await fetch(url: url)
     }
 
@@ -27,53 +26,37 @@ actor DietTrackerClient {
             query: [
                 URLQueryItem(name: "from", value: DateOnly.string(from: from)),
                 URLQueryItem(name: "to", value: DateOnly.string(from: to)),
-                URLQueryItem(name: "user_key", value: Constants.userKey),
             ]
         )
         return try await fetch(url: url)
     }
 
     func meals() async throws -> [MealSummary] {
-        let url = try makeURL(
-            path: "/meals",
-            query: [URLQueryItem(name: "user_key", value: Constants.userKey)]
-        )
+        let url = try makeURL(path: "/meals", query: [])
         let envelope: MealsListResponse = try await fetch(url: url)
         return envelope.meals
     }
 
     func meal(id: UUID) async throws -> Meal {
-        let url = try makeURL(
-            path: "/meals/\(id.uuidString.lowercased())",
-            query: [URLQueryItem(name: "user_key", value: Constants.userKey)]
-        )
+        let url = try makeURL(path: "/meals/\(id.uuidString.lowercased())", query: [])
         return try await fetch(url: url)
     }
 
     // MARK: - containers
 
     func listContainers() async throws -> [Container] {
-        let url = try makeURL(
-            path: "/containers",
-            query: [URLQueryItem(name: "user_key", value: Constants.userKey)]
-        )
+        let url = try makeURL(path: "/containers", query: [])
         let list: ContainersList = try await fetch(url: url)
         return list.containers
     }
 
     func getContainer(id: UUID) async throws -> Container {
-        let url = try makeURL(
-            path: "/containers/\(id.uuidString.lowercased())",
-            query: [URLQueryItem(name: "user_key", value: Constants.userKey)]
-        )
+        let url = try makeURL(path: "/containers/\(id.uuidString.lowercased())", query: [])
         return try await fetch(url: url)
     }
 
     func createContainer(name: String, tareWeightG: Double) async throws -> Container {
-        let url = try makeURL(
-            path: "/containers",
-            query: [URLQueryItem(name: "user_key", value: Constants.userKey)]
-        )
+        let url = try makeURL(path: "/containers", query: [])
         let body: [String: Any] = ["name": name, "tare_weight_g": tareWeightG]
         let data = try JSONSerialization.data(withJSONObject: body, options: [])
         return try await sendJSON(url: url, method: "POST", body: data)
@@ -83,34 +66,25 @@ actor DietTrackerClient {
         var fields: [String: Any] = [:]
         if let name { fields["name"] = name }
         if let tareWeightG { fields["tare_weight_g"] = tareWeightG }
-        let url = try makeURL(
-            path: "/containers/\(id.uuidString.lowercased())",
-            query: [URLQueryItem(name: "user_key", value: Constants.userKey)]
-        )
+        let url = try makeURL(path: "/containers/\(id.uuidString.lowercased())", query: [])
         let data = try JSONSerialization.data(withJSONObject: fields, options: [])
         return try await sendJSON(url: url, method: "PATCH", body: data)
     }
 
     func deleteContainer(id: UUID) async throws {
-        let url = try makeURL(
-            path: "/containers/\(id.uuidString.lowercased())",
-            query: [URLQueryItem(name: "user_key", value: Constants.userKey)]
-        )
+        let url = try makeURL(path: "/containers/\(id.uuidString.lowercased())", query: [])
         var req = URLRequest(url: url)
         req.httpMethod = "DELETE"
-        req.setValue(apiKey, forHTTPHeaderField: "X-API-Key")
+        applyAuth(&req)
         try await sendNoBody(request: req)
     }
 
     func uploadContainerPhoto(id: UUID, jpegData: Data) async throws {
-        let url = try makeURL(
-            path: "/containers/\(id.uuidString.lowercased())/photo",
-            query: [URLQueryItem(name: "user_key", value: Constants.userKey)]
-        )
+        let url = try makeURL(path: "/containers/\(id.uuidString.lowercased())/photo", query: [])
         let boundary = "----DietTrackerBoundary\(UUID().uuidString)"
         var req = URLRequest(url: url)
         req.httpMethod = "PUT"
-        req.setValue(apiKey, forHTTPHeaderField: "X-API-Key")
+        applyAuth(&req)
         req.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
         req.httpBody = Self.multipartBody(
             boundary: boundary,
@@ -123,30 +97,37 @@ actor DietTrackerClient {
     }
 
     func deleteContainerPhoto(id: UUID) async throws {
-        let url = try makeURL(
-            path: "/containers/\(id.uuidString.lowercased())/photo",
-            query: [URLQueryItem(name: "user_key", value: Constants.userKey)]
-        )
+        let url = try makeURL(path: "/containers/\(id.uuidString.lowercased())/photo", query: [])
         var req = URLRequest(url: url)
         req.httpMethod = "DELETE"
-        req.setValue(apiKey, forHTTPHeaderField: "X-API-Key")
+        applyAuth(&req)
         try await sendNoBody(request: req)
     }
 
-    /// Builds an authorized `URLRequest` for the photo endpoint. Used by views
-    /// that fetch image bytes directly through `URLSession`.
     nonisolated func containerPhotoRequest(id: UUID, size: ContainerPhotoSize) -> URLRequest {
         var comps = URLComponents(
             url: baseURL.appendingPathComponent("/containers/\(id.uuidString.lowercased())/photo"),
             resolvingAgainstBaseURL: false
         )!
-        comps.queryItems = [
-            URLQueryItem(name: "size", value: size.rawValue),
-            URLQueryItem(name: "user_key", value: Constants.userKey),
-        ]
+        comps.queryItems = [URLQueryItem(name: "size", value: size.rawValue)]
         var req = URLRequest(url: comps.url!)
-        req.setValue(apiKey, forHTTPHeaderField: "X-API-Key")
+        req.setValue("Bearer \(sessionToken)", forHTTPHeaderField: "Authorization")
         return req
+    }
+
+    // MARK: - auth endpoints
+
+    func whoami() async throws -> WhoAmI {
+        let url = try makeURL(path: "/auth/whoami", query: [])
+        return try await fetch(url: url)
+    }
+
+    func logout() async throws {
+        let url = try makeURL(path: "/auth/logout", query: [])
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        applyAuth(&req)
+        try await sendNoBody(request: req)
     }
 
     // MARK: - private helpers
@@ -155,14 +136,18 @@ actor DietTrackerClient {
         guard var comps = URLComponents(url: baseURL.appendingPathComponent(path), resolvingAgainstBaseURL: false) else {
             throw DietTrackerError.notConfigured
         }
-        comps.queryItems = query
+        comps.queryItems = query.isEmpty ? nil : query
         guard let url = comps.url else { throw DietTrackerError.notConfigured }
         return url
     }
 
+    private func applyAuth(_ req: inout URLRequest) {
+        req.setValue("Bearer \(sessionToken)", forHTTPHeaderField: "Authorization")
+    }
+
     private func fetch<T: Decodable>(url: URL) async throws -> T {
         var req = URLRequest(url: url)
-        req.setValue(apiKey, forHTTPHeaderField: "X-API-Key")
+        applyAuth(&req)
         req.setValue("application/json", forHTTPHeaderField: "Accept")
         return try await sendDecoded(request: req)
     }
@@ -170,7 +155,7 @@ actor DietTrackerClient {
     private func sendJSON<T: Decodable>(url: URL, method: String, body: Data) async throws -> T {
         var req = URLRequest(url: url)
         req.httpMethod = method
-        req.setValue(apiKey, forHTTPHeaderField: "X-API-Key")
+        applyAuth(&req)
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.setValue("application/json", forHTTPHeaderField: "Accept")
         req.httpBody = body
