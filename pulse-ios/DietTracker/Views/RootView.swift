@@ -48,6 +48,7 @@ struct RootView: View {
         switch tab {
         case .today: DayMacroView(date: Date())
         case .week:  WeekView()
+        case .prep:  PrepView()
         }
     }
 }

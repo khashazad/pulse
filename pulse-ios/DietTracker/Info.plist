@@ -33,5 +33,9 @@
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
 	</array>
+	<key>NSCameraUsageDescription</key>
+	<string>To take photos of meal-prep containers.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>To pick photos of meal-prep containers from your library.</string>
 </dict>
 </plist>
