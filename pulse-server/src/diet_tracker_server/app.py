@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from diet_tracker_server import db
+from diet_tracker_server.auth import SessionAuthMiddleware, UserKeyGuardrailMiddleware
 from diet_tracker_server.config import get_settings
 
 # TODO(Task 12): re-enable after require_session migration
@@ -56,8 +57,6 @@ async def lifespan(app: FastAPI):
     del app
     global usda_client
     settings = get_settings()
-    # TODO(Task 11): drop this comment — auth.configure removed; session middleware wired here
-    # auth.configure(settings.api_key)
     await db.init_pool(settings.database_url)
     await db.bootstrap_schema()
     usda_client = USDAClient(settings.usda_api_key)
@@ -76,7 +75,6 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-from diet_tracker_server.auth import SessionAuthMiddleware, UserKeyGuardrailMiddleware
 app.add_middleware(SessionAuthMiddleware)
 app.add_middleware(UserKeyGuardrailMiddleware)
 
