@@ -40,7 +40,7 @@ def _to_jpeg_bytes(img: Image.Image) -> bytes:
 
 
 def process_container_photo(
-    raw: bytes,
+    raw: bytes | bytearray | memoryview,
     *,
     max_bytes: int,
 ) -> tuple[bytes, bytes, str]:
