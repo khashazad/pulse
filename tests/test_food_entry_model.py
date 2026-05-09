@@ -1,11 +1,6 @@
-import os
 from uuid import uuid4
 
 import pytest
-
-os.environ.setdefault("DATABASE_URL", "postgresql://localhost/test")
-os.environ.setdefault("USDA_API_KEY", "test")
-os.environ.setdefault("API_KEY", "test")
 
 
 def test_food_entry_create_accepts_usda_only() -> None:

@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query
 
-from diet_tracker_server.auth import require_api_key
+from diet_tracker_server.auth import require_session
 from diet_tracker_server.models import USDAFoodResult, USDASearchResponse
 
-router = APIRouter(dependencies=[Depends(require_api_key)])
+router = APIRouter(dependencies=[Depends(require_session)])
 
 
 # Summary: Proxies USDA food search and returns normalized diet records.

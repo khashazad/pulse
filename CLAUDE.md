@@ -30,13 +30,13 @@ FastAPI app using SQLAlchemy Core (not ORM) with async psycopg3. No ORM models �
 
 **Request flow:** router → service → repository. Routers own HTTP concerns, services handle business logic and transactions, repositories execute SQL.
 
-**Auth:** flat shared API key via `X-API-Key` header, configured at startup in `auth.py`. All routers depend on `require_api_key`.
+**Auth:** Google OAuth → opaque Bearer session tokens. The server runs the full OAuth handshake on `/auth/google/start` + `/auth/google/callback`, issues a 32-byte URL-safe token, and stores `sha256(token)` in the `sessions` table. `SessionAuthMiddleware` validates `Authorization: Bearer <token>` on every non-`/auth/*`/`/health` request and slides the TTL. Allowlist is `ALLOWED_EMAILS` (case-insensitive). `UserKeyGuardrailMiddleware` rejects any `?user_key=` query on protected routes (cutover guardrail; remove next release). Single-user today: `email_to_user_key` returns `LEGACY_USER_KEY`. MCP layer uses its own GitHub OAuth path (`GITHUB_CLIENT_ID/SECRET` + `PUBLIC_BASE_URL`); `/mcp` is exempt from `SessionAuthMiddleware`, so non-local startup refuses to boot when GitHub OAuth is unconfigured unless `MCP_ALLOW_UNAUTH=true` is set explicitly.
 
-**Config:** `config.py` loads from env vars (`DATABASE_URL`, `USDA_API_KEY`, `API_KEY`).
+**Config:** `config.py` loads from env vars (`DATABASE_URL`, `USDA_API_KEY`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `OAUTH_REDIRECT_URI`, `APP_REDIRECT_SCHEME`, `ALLOWED_EMAILS`, `SESSION_TTL_DAYS`, `LEGACY_USER_KEY`, `APP_ENV`).
 
 **DB lifecycle:** `db.py` manages a module-level SQLAlchemy async engine. `bootstrap_schema()` runs `schema.sql` idempotently on every startup (uses `IF NOT EXISTS`). Alembic is available for migrations but schema bootstrap handles the base schema.
 
-**Multi-user:** all data is scoped by `user_key` (default: `"default"`). Daily logs use deterministic UUID5 from `(user_key, date)` via `services/log_ids.py` to allow idempotent upserts.
+**Multi-user:** all data is scoped by `user_key` (today: `LEGACY_USER_KEY`, e.g. `"khash"`). Daily logs use deterministic UUID5 from `(user_key, date)` via `services/log_ids.py` to allow idempotent upserts.
 
 **USDA integration:** `usda.py` wraps FoodData Central API. `normalize_food_nutrients()` maps USDA nutrient IDs to the internal macro schema (calories=1008, protein=1003, carbs=1005, fat=1004).
 

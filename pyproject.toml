@@ -13,6 +13,8 @@ dependencies = [
     "pydantic-settings>=2.7",
     "httpx>=0.28",
     "fastmcp>=2.7",
+    "google-auth>=2.30",
+    "requests>=2.32",
     "Pillow>=10.4",
 ]
 

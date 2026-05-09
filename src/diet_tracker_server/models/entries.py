@@ -37,7 +37,6 @@ class FoodEntryCreate(BaseModel):
 
 class EntriesCreateRequest(BaseModel):
     items: list[FoodEntryCreate]
-    user_key: str | None = None
 
 
 class FoodEntryResponse(BaseModel):

@@ -4,11 +4,11 @@ from datetime import datetime as DateTimeValue
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from diet_tracker_server.auth import require_api_key
+from diet_tracker_server.auth import require_session
 from diet_tracker_server.config import get_settings
 from diet_tracker_server.db import get_session_dependency, transaction
 from diet_tracker_server.models import (
@@ -22,7 +22,7 @@ from diet_tracker_server.services.custom_foods_service import upsert_custom_food
 from diet_tracker_server.services.normalize import normalize_name
 
 settings = get_settings()
-router = APIRouter(dependencies=[Depends(require_api_key)])
+router = APIRouter(dependencies=[Depends(require_session)])
 TZ = ZoneInfo(settings.timezone)
 
 
@@ -49,27 +49,27 @@ def _to_response(row: dict) -> CustomFoodResponse:
 # Summary: Lists all custom foods owned by the user.
 @router.get("/custom-foods", response_model=CustomFoodListResponse)
 async def list_custom_foods(
-    user_key: str | None = Query(default=None),
+    request: Request,
     session: AsyncSession = Depends(get_session_dependency),
 ) -> CustomFoodListResponse:
-    effective_user_key = user_key or settings.default_user_key
+    user_key = request.state.user_key
     repo = CustomFoodsRepository(session)
-    rows = await repo.list_for_user(effective_user_key)
+    rows = await repo.list_for_user(user_key)
     return CustomFoodListResponse(custom_foods=[_to_response(r) for r in rows])
 
 
 # Summary: Creates or updates a custom food and writes a memory pointer atomically.
 @router.post("/custom-foods", status_code=201, response_model=CustomFoodResponse)
 async def create_custom_food(
+    request: Request,
     body: CustomFoodCreate,
-    user_key: str | None = Query(default=None),
     session: AsyncSession = Depends(get_session_dependency),
 ) -> CustomFoodResponse:
-    effective_user_key = user_key or settings.default_user_key
+    user_key = request.state.user_key
     now = DateTimeValue.now(tz=TZ)
     async with transaction(session):
         row = await upsert_custom_food_and_remember(
-            session=session, user_key=effective_user_key, payload=body, now=now
+            session=session, user_key=user_key, payload=body, now=now
         )
     return _to_response(row)
 
@@ -77,19 +77,19 @@ async def create_custom_food(
 # Summary: Updates a subset of fields on a custom food.
 @router.patch("/custom-foods/{custom_food_id}", response_model=CustomFoodResponse)
 async def update_custom_food(
+    request: Request,
     custom_food_id: UUID,
     body: CustomFoodUpdate,
-    user_key: str | None = Query(default=None),
     session: AsyncSession = Depends(get_session_dependency),
 ) -> CustomFoodResponse:
-    effective_user_key = user_key or settings.default_user_key
+    user_key = request.state.user_key
     fields = body.model_dump(exclude_unset=True)
     if "name" in fields and fields["name"] is not None:
         fields["normalized_name"] = normalize_name(fields["name"])
     now = DateTimeValue.now(tz=TZ)
     repo = CustomFoodsRepository(session)
     async with transaction(session):
-        row = await repo.update_fields(custom_food_id, effective_user_key, fields, now)
+        row = await repo.update_fields(custom_food_id, user_key, fields, now)
     if row is None:
         raise HTTPException(status_code=404, detail="Custom food not found")
     return _to_response(row)
@@ -98,15 +98,15 @@ async def update_custom_food(
 # Summary: Deletes a custom food. Fails 409 when referenced by past entries or meal items.
 @router.delete("/custom-foods/{custom_food_id}", status_code=204)
 async def delete_custom_food(
+    request: Request,
     custom_food_id: UUID,
-    user_key: str | None = Query(default=None),
     session: AsyncSession = Depends(get_session_dependency),
 ) -> None:
-    effective_user_key = user_key or settings.default_user_key
+    user_key = request.state.user_key
     repo = CustomFoodsRepository(session)
     try:
         async with transaction(session):
-            deleted = await repo.delete(custom_food_id, effective_user_key)
+            deleted = await repo.delete(custom_food_id, user_key)
     except IntegrityError as exc:
         raise HTTPException(
             status_code=409,

@@ -4,6 +4,7 @@ import io
 import os
 import uuid
 from datetime import datetime as DateTimeValue
+from datetime import timedelta as TimeDeltaValue
 from datetime import timezone as TimezoneValue
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -13,7 +14,6 @@ from PIL import Image
 
 os.environ.setdefault("DATABASE_URL", "postgresql://localhost/test")
 os.environ.setdefault("USDA_API_KEY", "test")
-os.environ.setdefault("API_KEY", "test-key")
 
 
 def _png_bytes(w: int, h: int) -> bytes:
@@ -42,11 +42,30 @@ def _row(name: str = "A", weight: float = 100.0) -> dict:
 
 @pytest.fixture
 def client() -> TestClient:
+    """Builds a TestClient with the DB pool, USDA client, and session middleware mocked.
+
+    Any request bearing `Authorization: Bearer <anything>` is treated as authenticated;
+    requests without the header still hit the real middleware and get 401.
+    """
+    fut = _now() + TimeDeltaValue(days=7)
+    session_repo = AsyncMock()
+    session_repo.get.return_value = {"email": "khashzd@gmail.com", "expires_at": fut}
+    session_repo.slide.return_value = 1
+    session_repo.delete.return_value = 1
+    fake_db_session = AsyncMock()
+    db_ctx = AsyncMock()
+    db_ctx.__aenter__.return_value = fake_db_session
+    db_ctx.__aexit__.return_value = None
+
     with patch("diet_tracker_server.db.init_pool", new_callable=AsyncMock), patch(
         "diet_tracker_server.db.bootstrap_schema", new_callable=AsyncMock
     ), patch("diet_tracker_server.db.close_pool", new_callable=AsyncMock), patch(
         "diet_tracker_server.usda.USDAClient"
-    ) as mock_usda_client:
+    ) as mock_usda_client, patch(
+        "diet_tracker_server.auth.middleware.get_session", return_value=db_ctx
+    ), patch(
+        "diet_tracker_server.auth.middleware.SessionsRepository", return_value=session_repo
+    ):
         mock_usda_client.return_value.close = AsyncMock()
         from diet_tracker_server.app import app
         from diet_tracker_server.db import get_session_dependency
@@ -66,7 +85,7 @@ def client() -> TestClient:
             app.dependency_overrides.pop(get_session_dependency, None)
 
 
-HEADERS = {"X-API-Key": "test-key"}
+HEADERS = {"Authorization": "Bearer tok"}
 
 
 def test_unauthenticated_rejected(client: TestClient) -> None:
