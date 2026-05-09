@@ -6,8 +6,8 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
-from nutrition_server.db import to_sqlalchemy_url
-from nutrition_server.repositories.tables import metadata
+from diet_tracker_server.db import to_sqlalchemy_url
+from diet_tracker_server.repositories.tables import metadata
 
 config = context.config
 

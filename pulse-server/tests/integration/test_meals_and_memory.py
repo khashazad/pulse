@@ -10,19 +10,19 @@ import pytest_asyncio
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from nutrition_server.db import to_sqlalchemy_url, transaction
-from nutrition_server.models import (
+from diet_tracker_server.db import to_sqlalchemy_url, transaction
+from diet_tracker_server.models import (
     CustomFoodCreate,
     MealCreate,
     MealItemCreate,
 )
-from nutrition_server.repositories.custom_foods import CustomFoodsRepository
-from nutrition_server.repositories.entries import EntriesRepository
-from nutrition_server.repositories.food_memory import FoodMemoryRepository
-from nutrition_server.repositories.meals import MealsRepository
-from nutrition_server.services.custom_foods_service import upsert_custom_food_and_remember
-from nutrition_server.services.food_memory_service import resolve_food_by_name
-from nutrition_server.services.meals_service import create_meal_with_items, log_meal
+from diet_tracker_server.repositories.custom_foods import CustomFoodsRepository
+from diet_tracker_server.repositories.entries import EntriesRepository
+from diet_tracker_server.repositories.food_memory import FoodMemoryRepository
+from diet_tracker_server.repositories.meals import MealsRepository
+from diet_tracker_server.services.custom_foods_service import upsert_custom_food_and_remember
+from diet_tracker_server.services.food_memory_service import resolve_food_by_name
+from diet_tracker_server.services.meals_service import create_meal_with_items, log_meal
 
 pytestmark = pytest.mark.integration
 
@@ -330,8 +330,34 @@ async def test_list_meals_includes_item_counts(session: AsyncSession) -> None:
             )
         ],
     )
+    combo = MealCreate(
+        name="Combo",
+        items=[
+            MealItemCreate(
+                display_name="a",
+                quantity_text="1",
+                usda_fdc_id=1,
+                usda_description="x",
+                calories=200,
+                protein_g=10,
+                carbs_g=20,
+                fat_g=4,
+            ),
+            MealItemCreate(
+                display_name="b",
+                quantity_text="1",
+                usda_fdc_id=2,
+                usda_description="y",
+                calories=50,
+                protein_g=2.5,
+                carbs_g=5,
+                fat_g=1.5,
+            ),
+        ],
+    )
     async with transaction(session):
         await create_meal_with_items(session=session, user_key=user_key, payload=payload, now=now)
+        await create_meal_with_items(session=session, user_key=user_key, payload=combo, now=now)
         await repo.create_meal(
             user_key=user_key, name="Empty", normalized_name="empty", notes=None, now=now
         )
@@ -340,3 +366,19 @@ async def test_list_meals_includes_item_counts(session: AsyncSession) -> None:
     by_name = {row["normalized_name"]: row for row in rows}
     assert int(by_name["snack"]["item_count"]) == 1
     assert int(by_name["empty"]["item_count"]) == 0
+    assert int(by_name["combo"]["item_count"]) == 2
+
+    assert int(by_name["snack"]["total_calories"]) == 100
+    assert float(by_name["snack"]["total_protein_g"]) == pytest.approx(5.0)
+    assert float(by_name["snack"]["total_carbs_g"]) == pytest.approx(10.0)
+    assert float(by_name["snack"]["total_fat_g"]) == pytest.approx(3.0)
+
+    assert int(by_name["combo"]["total_calories"]) == 250
+    assert float(by_name["combo"]["total_protein_g"]) == pytest.approx(12.5)
+    assert float(by_name["combo"]["total_carbs_g"]) == pytest.approx(25.0)
+    assert float(by_name["combo"]["total_fat_g"]) == pytest.approx(5.5)
+
+    assert int(by_name["empty"]["total_calories"]) == 0
+    assert float(by_name["empty"]["total_protein_g"]) == pytest.approx(0.0)
+    assert float(by_name["empty"]["total_carbs_g"]) == pytest.approx(0.0)
+    assert float(by_name["empty"]["total_fat_g"]) == pytest.approx(0.0)

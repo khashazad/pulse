@@ -9,7 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 uv sync --extra dev
 
 # Run server
-uv run uvicorn nutrition_server.app:app --port 8787 --reload
+uv run uvicorn diet_tracker_server.app:app --port 8787 --reload
 
 # Run all unit tests
 uv run pytest tests/ -v
@@ -32,7 +32,7 @@ FastAPI app using SQLAlchemy Core (not ORM) with async psycopg3. No ORM models â
 
 **Auth:** flat shared API key via `X-API-Key` header, configured at startup in `auth.py`. All routers depend on `require_api_key`.
 
-**Config:** `config.py` loads from env vars (`DATABASE_URL`, `USDA_API_KEY`, `API_KEY`). Falls back to `~/.clawdbot/credentials/nutrition-tracker/config.json` for legacy dev credentials.
+**Config:** `config.py` loads from env vars (`DATABASE_URL`, `USDA_API_KEY`, `API_KEY`).
 
 **DB lifecycle:** `db.py` manages a module-level SQLAlchemy async engine. `bootstrap_schema()` runs `schema.sql` idempotently on every startup (uses `IF NOT EXISTS`). Alembic is available for migrations but schema bootstrap handles the base schema.
 

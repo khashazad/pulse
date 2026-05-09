@@ -5,7 +5,7 @@ import io
 import pytest
 from PIL import Image
 
-from nutrition_server.services.container_photos import (
+from diet_tracker_server.services.container_photos import (
     PhotoTooLargeError,
     UnsupportedImageError,
     process_container_photo,

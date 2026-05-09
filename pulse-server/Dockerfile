@@ -18,4 +18,4 @@ COPY alembic/ ./alembic/
 
 RUN uv sync --frozen --no-dev
 
-CMD ["sh", "-c", "uvicorn nutrition_server.app:app --host 0.0.0.0 --port ${PORT:-8787} --proxy-headers --forwarded-allow-ips '*'"]
+CMD ["sh", "-c", "uvicorn diet_tracker_server.app:app --host 0.0.0.0 --port ${PORT:-8787} --proxy-headers --forwarded-allow-ips '*'"]

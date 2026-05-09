@@ -1,4 +1,4 @@
-"""Create initial nutrition tracking schema.
+"""Create initial diet tracking schema.
 
 Revision ID: 20260406_000001
 Revises: 
@@ -18,7 +18,7 @@ branch_labels = None
 depends_on = None
 
 
-# Summary: Applies initial PostgreSQL tables and indexes required by the nutrition server.
+# Summary: Applies initial PostgreSQL tables and indexes required by the diet server.
 # Parameters:
 # - None: Uses Alembic operations context bound to active migration transaction.
 # Returns:
@@ -102,7 +102,7 @@ def upgrade() -> None:
     )
 
 
-# Summary: Reverts the initial nutrition schema migration and drops all managed tables/indexes.
+# Summary: Reverts the initial diet schema migration and drops all managed tables/indexes.
 # Parameters:
 # - None: Uses Alembic operations context bound to active migration transaction.
 # Returns:
