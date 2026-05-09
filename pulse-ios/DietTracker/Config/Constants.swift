@@ -3,10 +3,16 @@ import Foundation
 enum Constants {
     static let userKey = "khash"   // removed in cleanup task
 
-    /// Stop-gap until BuildConfig.xcconfig wiring lands in Task 15.
-    static var baseURL: URL {
-        URL(string: ProcessInfo.processInfo.environment["DIET_TRACKER_BASE_URL"] ?? "https://example.test")!
-    }
+    static let baseURL: URL = {
+        guard
+            let raw = Bundle.main.object(forInfoDictionaryKey: "BaseURL") as? String,
+            !raw.isEmpty,
+            let url = URL(string: raw)
+        else {
+            fatalError("BaseURL missing from Info.plist — set DIET_TRACKER_BASE_URL before xcodegen")
+        }
+        return url
+    }()
 
     enum Defaults {
         static let baseURL = "diettracker.baseURL"   // removed in cleanup task

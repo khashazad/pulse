@@ -35,6 +35,18 @@ targets:
         ITSAppUsesNonExemptEncryption: false
         NSCameraUsageDescription: To take photos of meal-prep containers.
         NSPhotoLibraryUsageDescription: To pick photos of meal-prep containers from your library.
+        BaseURL: $(DIET_TRACKER_BASE_URL)
+    configFiles:
+      Debug: DietTracker/Config/BuildConfig.xcconfig
+      Release: DietTracker/Config/BuildConfig.xcconfig
+    preBuildScripts:
+      - name: Verify BaseURL
+        script: |
+          if [ -z "${DIET_TRACKER_BASE_URL}" ]; then
+            echo "error: DIET_TRACKER_BASE_URL not set in environment at build time. Export it before xcodebuild."
+            exit 1
+          fi
+        basedOnDependencyAnalysis: false
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.khxsh.diettracker
@@ -52,6 +64,7 @@ targets:
       path: DietTrackerTests/Info.plist
       properties:
         CFBundleIdentifier: com.khxsh.diettracker.tests
+        BaseURL: https://example.test
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.khxsh.diettracker.tests
