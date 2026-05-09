@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct YearView: View {
-    @Environment(AppSettings.self) private var settings
+    @Environment(AuthSession.self) private var auth
     @State private var model: YearModel?
 
     var body: some View {
@@ -31,7 +31,7 @@ struct YearView: View {
         .toolbarBackground(Theme.BG.primary, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
         .task {
-            if model == nil { model = YearModel(settings: settings) }
+            if model == nil { model = YearModel(auth: auth) }
             await model?.loadCurrentYear()
         }
         .refreshable { await model?.loadCurrentYear() }

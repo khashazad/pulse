@@ -4,14 +4,14 @@ import Observation
 @Observable
 final class ContainersListModel {
     private(set) var state: LoadState<[Container]> = .idle
-    private weak var settings: AppSettings?
+    private weak var auth: AuthSession?
 
-    init(settings: AppSettings) {
-        self.settings = settings
+    init(auth: AuthSession) {
+        self.auth = auth
     }
 
     func load() async {
-        guard let client = settings?.makeClient() else {
+        guard let client = auth?.makeClient() else {
             state = .failed(.notConfigured)
             return
         }
@@ -27,7 +27,7 @@ final class ContainersListModel {
     }
 
     func delete(id: UUID) async {
-        guard let client = settings?.makeClient() else { return }
+        guard let client = auth?.makeClient() else { return }
         do {
             try await client.deleteContainer(id: id)
         } catch {

@@ -7,14 +7,14 @@ final class WeekModel {
     /// User's daily macro targets, fetched alongside logs. Nil if the server
     /// has no targets for the user (404) or the request failed.
     private(set) var targets: MacroTargets?
-    private weak var settings: AppSettings?
+    private weak var auth: AuthSession?
 
-    init(settings: AppSettings) {
-        self.settings = settings
+    init(auth: AuthSession) {
+        self.auth = auth
     }
 
     func loadLast7Days(today: Date = Date()) async {
-        guard let client = settings?.makeClient() else {
+        guard let client = auth?.makeClient() else {
             state = .failed(.notConfigured)
             return
         }

@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct ContainersListView: View {
-    @Environment(AppSettings.self) private var settings
+    @Environment(AuthSession.self) private var auth
     @Environment(\.dismiss) private var dismiss
     @State private var model: ContainersListModel?
     @State private var showAdd = false
@@ -33,13 +33,13 @@ struct ContainersListView: View {
                 ContainerEditView(existing: nil) { _ in
                     Task { await model?.load() }
                 }
-                .environment(settings)
+                .environment(auth)
             }
             .sheet(item: $editing) { container in
                 ContainerEditView(existing: container) { _ in
                     Task { await model?.load() }
                 }
-                .environment(settings)
+                .environment(auth)
             }
         }
         .preferredColorScheme(.dark)
@@ -95,12 +95,12 @@ struct ContainersListView: View {
     }
 
     private func ensureModel() async {
-        if model == nil { model = ContainersListModel(settings: settings) }
+        if model == nil { model = ContainersListModel(auth: auth) }
     }
 }
 
 struct ContainerRow: View {
-    @Environment(AppSettings.self) private var settings
+    @Environment(AuthSession.self) private var auth
     let container: Container
 
     var body: some View {
@@ -125,7 +125,7 @@ struct ContainerRow: View {
 
     @ViewBuilder
     private var thumbnail: some View {
-        if container.hasPhoto, let client = settings.makeClient() {
+        if container.hasPhoto, let client = auth.makeClient() {
             AuthorizedAsyncImage(
                 request: client.containerPhotoRequest(id: container.id, size: .thumb),
                 content: { $0.resizable().scaledToFill() },

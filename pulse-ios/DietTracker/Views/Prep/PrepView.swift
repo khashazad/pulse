@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct PrepView: View {
-    @Environment(AppSettings.self) private var settings
+    @Environment(AuthSession.self) private var auth
     @State private var model = PrepModel()
     @State private var listModel: ContainersListModel?
     @State private var showPicker = false
@@ -98,11 +98,11 @@ struct PrepView: View {
         }
         .sheet(isPresented: $showPicker) {
             ContainerPickerSheet { picked in applyPick(picked) }
-                .environment(settings)
+                .environment(auth)
         }
         .sheet(isPresented: $showManager) {
             ContainersListView()
-                .environment(settings)
+                .environment(auth)
                 .onDisappear {
                     Task {
                         await listModel?.load()
@@ -111,7 +111,7 @@ struct PrepView: View {
                 }
         }
         .task {
-            if listModel == nil { listModel = ContainersListModel(settings: settings) }
+            if listModel == nil { listModel = ContainersListModel(auth: auth) }
             await listModel?.load()
             applyLastUsedIfNeeded()
             reconcileSelection()

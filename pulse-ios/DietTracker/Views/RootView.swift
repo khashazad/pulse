@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct RootView: View {
-    @Environment(AppSettings.self) private var settings
+    @Environment(AuthSession.self) private var auth
 
     @State private var tab: DockTab = .log
     @State private var logPath = NavigationPath()
@@ -52,10 +52,14 @@ struct RootView: View {
             }
         }
         .sheet(isPresented: $showSettings) {
-            SettingsView(requireConfig: false)
+            SettingsView()
         }
-        .sheet(isPresented: .constant(!settings.isConfigured && !showSettings)) {
-            SettingsView(requireConfig: true)
+        .sheet(isPresented: .constant(!auth.isSignedIn && !showSettings)) {
+            LoginView()
+                .interactiveDismissDisabled()
+        }
+        .task {
+            await auth.bootstrap()
         }
     }
 

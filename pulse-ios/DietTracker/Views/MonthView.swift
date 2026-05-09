@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct MonthView: View {
-    @Environment(AppSettings.self) private var settings
+    @Environment(AuthSession.self) private var auth
     @State private var model: MonthModel?
 
     var body: some View {
@@ -31,7 +31,7 @@ struct MonthView: View {
         .toolbarBackground(Theme.BG.primary, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
         .task {
-            if model == nil { model = MonthModel(settings: settings) }
+            if model == nil { model = MonthModel(auth: auth) }
             await model?.loadCurrentMonth()
         }
         .refreshable { await model?.loadCurrentMonth() }

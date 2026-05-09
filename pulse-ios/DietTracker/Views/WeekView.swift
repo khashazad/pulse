@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct WeekView: View {
-    @Environment(AppSettings.self) private var settings
+    @Environment(AuthSession.self) private var auth
     @State private var model: WeekModel?
 
     var body: some View {
@@ -31,7 +31,7 @@ struct WeekView: View {
         .toolbarBackground(Theme.BG.primary, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
         .task {
-            if model == nil { model = WeekModel(settings: settings) }
+            if model == nil { model = WeekModel(auth: auth) }
             await model?.loadLast7Days()
         }
         .refreshable { await model?.loadLast7Days() }

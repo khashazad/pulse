@@ -4,14 +4,14 @@ import Observation
 @Observable
 final class MealsModel {
     private(set) var state: LoadState<[MealSummary]> = .idle
-    private weak var settings: AppSettings?
+    private weak var auth: AuthSession?
 
-    init(settings: AppSettings) {
-        self.settings = settings
+    init(auth: AuthSession) {
+        self.auth = auth
     }
 
     func load() async {
-        guard let client = settings?.makeClient() else {
+        guard let client = auth?.makeClient() else {
             state = .failed(.notConfigured)
             return
         }
@@ -31,15 +31,15 @@ final class MealsModel {
 final class MealDetailModel {
     let mealId: UUID
     private(set) var state: LoadState<Meal> = .idle
-    private weak var settings: AppSettings?
+    private weak var auth: AuthSession?
 
-    init(mealId: UUID, settings: AppSettings) {
+    init(mealId: UUID, auth: AuthSession) {
         self.mealId = mealId
-        self.settings = settings
+        self.auth = auth
     }
 
     func load() async {
-        guard let client = settings?.makeClient() else {
+        guard let client = auth?.makeClient() else {
             state = .failed(.notConfigured)
             return
         }

@@ -2,7 +2,7 @@ import SwiftUI
 
 struct DayMacroView: View {
     let date: Date
-    @Environment(AppSettings.self) private var settings
+    @Environment(AuthSession.self) private var auth
     @State private var model: DayMacroModel?
 
     var body: some View {
@@ -26,7 +26,7 @@ struct DayMacroView: View {
         .toolbarBackground(Theme.BG.primary, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
         .task(id: date) {
-            if model == nil { model = DayMacroModel(date: date, settings: settings) }
+            if model == nil { model = DayMacroModel(date: date, auth: auth) }
             await model?.load()
         }
         .refreshable { await model?.load() }

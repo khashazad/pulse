@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct MealsView: View {
-    @Environment(AppSettings.self) private var settings
+    @Environment(AuthSession.self) private var auth
     @State private var model: MealsModel?
     let onOpen: (MealSummary) -> Void
 
@@ -40,7 +40,7 @@ struct MealsView: View {
         .toolbarBackground(Theme.BG.primary, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
         .task {
-            if model == nil { model = MealsModel(settings: settings) }
+            if model == nil { model = MealsModel(auth: auth) }
             await model?.load()
         }
         .refreshable { await model?.load() }

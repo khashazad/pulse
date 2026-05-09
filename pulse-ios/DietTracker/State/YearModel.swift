@@ -5,14 +5,14 @@ import Observation
 final class YearModel {
     private(set) var state: LoadState<LogsList> = .idle
     private(set) var targets: MacroTargets?
-    private weak var settings: AppSettings?
+    private weak var auth: AuthSession?
 
-    init(settings: AppSettings) {
-        self.settings = settings
+    init(auth: AuthSession) {
+        self.auth = auth
     }
 
     func loadCurrentYear(today: Date = Date()) async {
-        guard let client = settings?.makeClient() else {
+        guard let client = auth?.makeClient() else {
             state = .failed(.notConfigured)
             return
         }
