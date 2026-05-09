@@ -1,7 +1,7 @@
 """Add sessions table for Google OAuth bearer auth.
 
 Revision ID: 20260509_000001
-Revises: 20260506_000001
+Revises: 20260508_000001
 Create Date: 2026-05-09T00:00:00Z
 """
 
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 revision = "20260509_000001"
-down_revision = "20260506_000001"
+down_revision = "20260508_000001"
 branch_labels = None
 depends_on = None
 
