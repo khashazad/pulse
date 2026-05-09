@@ -3,7 +3,7 @@ import SwiftUI
 import UIKit
 
 struct ContainerEditView: View {
-    @Environment(AppSettings.self) private var settings
+    @Environment(AuthSession.self) private var auth
     @Environment(\.dismiss) private var dismiss
     let existing: Container?
     let onSaved: (UUID) -> Void
@@ -109,7 +109,7 @@ struct ContainerEditView: View {
         }
         .preferredColorScheme(.dark)
         .task {
-            if model == nil { model = ContainerEditModel(existing: existing, settings: settings) }
+            if model == nil { model = ContainerEditModel(existing: existing, auth: auth) }
         }
     }
 
@@ -119,7 +119,7 @@ struct ContainerEditView: View {
             ZStack {
                 if let img = previewImage {
                     Image(uiImage: img).resizable().scaledToFill()
-                } else if let id = model?.existingPhotoId, let client = settings.makeClient() {
+                } else if let id = model?.existingPhotoId, let client = auth.makeClient() {
                     AuthorizedAsyncImage(
                         request: client.containerPhotoRequest(id: id, size: .full),
                         content: { $0.resizable().scaledToFill() },

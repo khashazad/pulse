@@ -7,15 +7,15 @@ final class WeekModel {
     /// User's daily macro targets, fetched alongside logs. Nil if the server
     /// has no targets for the user (404) or the request failed.
     private(set) var targets: MacroTargets?
-    private weak var settings: AppSettings?
+    private weak var auth: AuthSession?
 
-    init(settings: AppSettings) {
-        self.settings = settings
+    init(auth: AuthSession) {
+        self.auth = auth
     }
 
     func loadLast7Days(today: Date = Date()) async {
-        guard let client = settings?.makeClient() else {
-            state = .failed(.notConfigured)
+        guard let client = auth?.makeClient() else {
+            state = .failed(.notSignedIn)
             return
         }
         let cal = Calendar.current
@@ -29,6 +29,7 @@ final class WeekModel {
             self.targets = (try? await summaryTask)?.target
             state = .loaded(logs)
         } catch let error as DietTrackerError {
+            if error == .unauthorized { auth?.handleUnauthorized() }
             state = .failed(error)
         } catch {
             state = .failed(.server(status: -1))

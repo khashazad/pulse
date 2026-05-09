@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct ContainerPickerSheet: View {
-    @Environment(AppSettings.self) private var settings
+    @Environment(AuthSession.self) private var auth
     @Environment(\.dismiss) private var dismiss
     @State private var model: ContainersListModel?
     let onPick: (Container) -> Void
@@ -25,7 +25,7 @@ struct ContainerPickerSheet: View {
         }
         .preferredColorScheme(.dark)
         .task {
-            if model == nil { model = ContainersListModel(settings: settings) }
+            if model == nil { model = ContainersListModel(auth: auth) }
             await model?.load()
         }
     }

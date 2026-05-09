@@ -14,11 +14,11 @@ final class ContainerEditModel {
     private(set) var savedContainerId: UUID?
 
     private let existing: Container?
-    private weak var settings: AppSettings?
+    private weak var auth: AuthSession?
 
-    init(existing: Container? = nil, settings: AppSettings) {
+    init(existing: Container? = nil, auth: AuthSession) {
         self.existing = existing
-        self.settings = settings
+        self.auth = auth
         self.name = existing?.name ?? ""
         if let g = existing?.tareWeightG {
             self.tareWeightText = String(format: "%g", g)
@@ -40,8 +40,8 @@ final class ContainerEditModel {
     }
 
     func save() async {
-        guard let client = settings?.makeClient(), let weight = Double(tareWeightText) else {
-            error = .notConfigured
+        guard let client = auth?.makeClient(), let weight = Double(tareWeightText) else {
+            error = .notSignedIn
             return
         }
         saving = true; defer { saving = false }
@@ -60,6 +60,7 @@ final class ContainerEditModel {
             savedContainerId = saved.id
             error = nil
         } catch let e as DietTrackerError {
+            if e == .unauthorized { auth?.handleUnauthorized() }
             error = e
         } catch {
             self.error = .server(status: -1)

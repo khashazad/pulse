@@ -1,6 +1,9 @@
 # Brainstorming session artifacts
 .superpowers/
 
+# Claude Code per-session state
+.claude/
+
 # Xcode
 xcuserdata/
 *.xcuserstate
