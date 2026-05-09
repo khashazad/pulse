@@ -1,3 +1,0 @@
-// Pulled from the shell via xcodegen; baked into Info.plist as BaseURL.
-DIET_TRACKER_BASE_URL = ${DIET_TRACKER_BASE_URL}
-INFOPLIST_KEY_BaseURL = $(DIET_TRACKER_BASE_URL)

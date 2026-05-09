@@ -36,9 +36,6 @@ targets:
         NSCameraUsageDescription: To take photos of meal-prep containers.
         NSPhotoLibraryUsageDescription: To pick photos of meal-prep containers from your library.
         BaseURL: $(DIET_TRACKER_BASE_URL)
-    configFiles:
-      Debug: DietTracker/Config/BuildConfig.xcconfig
-      Release: DietTracker/Config/BuildConfig.xcconfig
     preBuildScripts:
       - name: Verify BaseURL
         script: |
@@ -58,6 +55,10 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.khxsh.diettracker
         TARGETED_DEVICE_FAMILY: "1"  # iPhone only
+        # xcodegen interpolates ${DIET_TRACKER_BASE_URL} from the shell at
+        # generation time, baking a literal build setting into the pbxproj.
+        # Info.plist's $(DIET_TRACKER_BASE_URL) substitution then resolves to it.
+        DIET_TRACKER_BASE_URL: ${DIET_TRACKER_BASE_URL}
 
   DietTrackerTests:
     type: bundle.unit-test
