@@ -31,6 +31,10 @@ class Settings(BaseSettings):
     allowed_github_users: str = ""
     public_base_url: str = ""
 
+    # Explicit opt-in to run the MCP layer without auth. Only honored when APP_ENV is
+    # local/dev/test; non-local envs always require GitHub OAuth.
+    mcp_allow_unauth: bool = False
+
     model_config = {
         "env_prefix": "",
         "case_sensitive": False,
@@ -51,13 +55,30 @@ class Settings(BaseSettings):
     def mcp_oauth_enabled(self) -> bool:
         return bool(self.github_client_id and self.github_client_secret and self.public_base_url)
 
+    @property
+    def is_local_env(self) -> bool:
+        return (self.app_env or "").lower() in {"local", "dev", "test"}
+
     @model_validator(mode="after")
     def _enforce_https_redirect_outside_local(self) -> "Settings":
-        env = (self.app_env or "").lower()
-        if env in {"local", "dev", "test"}:
+        if self.is_local_env:
             return self
         if self.oauth_redirect_uri and not self.oauth_redirect_uri.startswith("https://"):
             raise ValueError("OAUTH_REDIRECT_URI must use https in non-local environments")
+        return self
+
+    @model_validator(mode="after")
+    def _require_mcp_auth_outside_local(self) -> "Settings":
+        # /mcp is exempt from SessionAuthMiddleware so the MCP layer must own its own auth.
+        # Non-local envs must configure GitHub OAuth (mcp_oauth_enabled) or explicitly
+        # opt in to unauthenticated MCP via MCP_ALLOW_UNAUTH=true (intended for local dev).
+        if self.is_local_env:
+            return self
+        if not self.mcp_oauth_enabled and not self.mcp_allow_unauth:
+            raise ValueError(
+                "MCP layer is unauthenticated: set GITHUB_CLIENT_ID/SECRET + PUBLIC_BASE_URL "
+                "to enable GitHub OAuth, or MCP_ALLOW_UNAUTH=true to opt in explicitly"
+            )
         return self
 
 
