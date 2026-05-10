@@ -16,6 +16,8 @@ struct FoodEntry: Codable, Identifiable, Equatable {
     let proteinG: Double
     let carbsG: Double
     let fatG: Double
+    let mealId: UUID?
+    let mealName: String?
     let consumedAt: Date
     let createdAt: Date
 
@@ -35,6 +37,8 @@ struct FoodEntry: Codable, Identifiable, Equatable {
         case proteinG = "protein_g"
         case carbsG = "carbs_g"
         case fatG = "fat_g"
+        case mealId = "meal_id"
+        case mealName = "meal_name"
         case consumedAt = "consumed_at"
         case createdAt = "created_at"
     }

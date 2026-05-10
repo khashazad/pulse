@@ -58,6 +58,7 @@ struct EntryRow: View {
             normalizedQuantityValue: 80, normalizedQuantityUnit: "g",
             usdaFdcId: nil, usdaDescription: nil, customFoodId: nil,
             calories: 320, proteinG: 10, carbsG: 54, fatG: 6,
+            mealId: nil, mealName: nil,
             consumedAt: .now, createdAt: .now
         ))
         Rectangle().fill(Theme.separator).frame(height: 0.5)
@@ -67,6 +68,7 @@ struct EntryRow: View {
             normalizedQuantityValue: 200, normalizedQuantityUnit: "g",
             usdaFdcId: nil, usdaDescription: nil, customFoodId: nil,
             calories: 130, proteinG: 18, carbsG: 9, fatG: 4,
+            mealId: nil, mealName: nil,
             consumedAt: .now, createdAt: .now
         ))
     }

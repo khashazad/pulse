@@ -17,9 +17,9 @@ final class DecodingTests: XCTestCase {
         let summary = try JSONDecoder.dietTrackerDefault().decode(DailySummary.self, from: data)
 
         XCTAssertEqual(summary.target.calories, 2200)
-        XCTAssertEqual(summary.consumed.calories, 740)
-        XCTAssertEqual(summary.remaining.calories, 1460)
-        XCTAssertEqual(summary.entries.count, 3)
+        XCTAssertEqual(summary.consumed.calories, 1280)
+        XCTAssertEqual(summary.remaining.calories, 920)
+        XCTAssertEqual(summary.entries.count, 6)
 
         let oats = summary.entries[0]
         XCTAssertEqual(oats.displayName, "Oats, raw")
@@ -27,10 +27,19 @@ final class DecodingTests: XCTestCase {
         XCTAssertEqual(oats.proteinG, 10.0)
         XCTAssertEqual(oats.usdaFdcId, 173904)
         XCTAssertNil(oats.customFoodId)
+        XCTAssertEqual(oats.mealId?.uuidString.lowercased(), "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
+        XCTAssertEqual(oats.mealName, "Breakfast Bowl")
 
-        let chicken = summary.entries[2]
+        let chicken = summary.entries[4]
         XCTAssertNil(chicken.usdaFdcId)
-        XCTAssertEqual(chicken.customFoodId?.uuidString, "88888888-8888-8888-8888-888888888888")
+        XCTAssertEqual(chicken.customFoodId?.uuidString.lowercased(), "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
+        XCTAssertNil(chicken.mealId)
+        XCTAssertNil(chicken.mealName)
+
+        // Trailing entry omits meal_* keys entirely; they decode as nil.
+        let almond = summary.entries[5]
+        XCTAssertNil(almond.mealId)
+        XCTAssertNil(almond.mealName)
     }
 
     func testDecodeLogsList() throws {
