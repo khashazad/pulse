@@ -160,6 +160,23 @@ begin
 end
 $body$;
 
+alter table food_entries add column if not exists meal_id uuid;
+alter table food_entries add column if not exists meal_name text;
+
+do $body$
+begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'fk_food_entries_meal_id'
+  ) then
+    alter table food_entries
+      add constraint fk_food_entries_meal_id
+      foreign key (meal_id) references meals(id) on delete set null;
+  end if;
+end
+$body$;
+
+create index if not exists idx_food_entries_meal_id on food_entries(meal_id);
+
 create table if not exists sessions (
   token_hash    bytea primary key,
   email         text not null,
