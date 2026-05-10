@@ -136,8 +136,6 @@ async def log_meal(
                 carbs_g=float(item["carbs_g"]),
                 fat_g=float(item["fat_g"]),
                 consumed_at=effective_consumed_at,
-                meal_id=meal_id,
-                meal_name=meal_name,
             )
             for item in items
         ]
@@ -147,6 +145,8 @@ async def log_meal(
             items=entry_items,
             now=now,
             manage_transaction=False,
+            meal_id=meal_id,
+            meal_name=meal_name,
         )
 
 

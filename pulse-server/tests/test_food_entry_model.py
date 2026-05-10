@@ -86,37 +86,30 @@ def test_food_entry_create_rejects_missing_usda_description() -> None:
         )
 
 
-def test_food_entry_create_defaults_meal_link_to_none() -> None:
-    entry = FoodEntryCreate(
-        display_name="oats",
-        quantity_text="80 g",
-        usda_fdc_id=173904,
-        usda_description="Oats, raw",
-        calories=320,
-        protein_g=10,
-        carbs_g=54,
-        fat_g=6,
-    )
-    assert entry.meal_id is None
-    assert entry.meal_name is None
+def test_food_entry_create_does_not_expose_meal_link_fields() -> None:
+    fields = FoodEntryCreate.model_fields
+    assert "meal_id" not in fields
+    assert "meal_name" not in fields
 
 
-def test_food_entry_create_accepts_meal_link() -> None:
-    meal_id = UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
-    entry = FoodEntryCreate(
-        display_name="oats",
-        quantity_text="80 g",
-        usda_fdc_id=173904,
-        usda_description="Oats, raw",
-        calories=320,
-        protein_g=10,
-        carbs_g=54,
-        fat_g=6,
-        meal_id=meal_id,
-        meal_name="Breakfast",
-    )
-    assert entry.meal_id == meal_id
-    assert entry.meal_name == "Breakfast"
+def test_food_entry_create_ignores_client_supplied_meal_link() -> None:
+    # meal_id / meal_name are server-controlled (only set by log_meal). When clients
+    # try to forge them in the public payload, FoodEntryCreate must not surface them
+    # as attributes that downstream code could trust.
+    entry = FoodEntryCreate.model_validate({
+        "display_name": "oats",
+        "quantity_text": "80 g",
+        "usda_fdc_id": 173904,
+        "usda_description": "Oats, raw",
+        "calories": 320,
+        "protein_g": 10,
+        "carbs_g": 54,
+        "fat_g": 6,
+        "meal_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        "meal_name": "Forged Meal",
+    })
+    assert not hasattr(entry, "meal_id")
+    assert not hasattr(entry, "meal_name")
 
 
 def test_food_entry_response_serializes_meal_link() -> None:
