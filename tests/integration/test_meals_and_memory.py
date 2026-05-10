@@ -419,3 +419,96 @@ async def test_manual_entry_has_null_meal_link(session: AsyncSession) -> None:
 
     assert row["meal_id"] is None
     assert row["meal_name"] is None
+
+
+@pytest.mark.asyncio
+async def test_meal_rename_does_not_mutate_historical_entries(session: AsyncSession) -> None:
+    user_key = f"user-{uuid.uuid4()}"
+    now = DateTimeValue.now(tz=TimezoneValue.utc)
+
+    payload = MealCreate(
+        name="Original Name",
+        notes=None,
+        items=[
+            MealItemCreate(
+                display_name="oats",
+                quantity_text="1 bowl",
+                usda_fdc_id=200001,
+                usda_description="Oats",
+                calories=300,
+                protein_g=10,
+                carbs_g=50,
+                fat_g=5,
+            ),
+        ],
+    )
+    async with transaction(session):
+        meal_row, _ = await create_meal_with_items(
+            session=session, user_key=user_key, payload=payload, now=now
+        )
+
+    created_rows, _ = await log_meal(
+        session=session, user_key=user_key, meal_id=meal_row["id"], now=now
+    )
+    assert created_rows[0]["meal_name"] == "Original Name"
+
+    # Rename the meal (direct UPDATE — covers the "what if a write happens later" case).
+    from sqlalchemy import update as sa_update
+    from diet_tracker_server.repositories.tables import meals as meals_table
+
+    async with transaction(session):
+        await session.execute(
+            sa_update(meals_table)
+            .where(meals_table.c.id == meal_row["id"])
+            .values(name="Renamed", normalized_name="renamed")
+        )
+
+    # Re-read the entry; its meal_name must still read "Original Name".
+    entries_repo = EntriesRepository(session)
+    log_id = entries_repo.daily_log_id(user_key=user_key, log_date=now.date())
+    rows = await entries_repo.list_entries_by_daily_log_id(log_id)
+    assert rows[0]["meal_id"] == meal_row["id"]
+    assert rows[0]["meal_name"] == "Original Name"
+
+
+@pytest.mark.asyncio
+async def test_meal_delete_sets_meal_id_null_keeps_meal_name(session: AsyncSession) -> None:
+    user_key = f"user-{uuid.uuid4()}"
+    now = DateTimeValue.now(tz=TimezoneValue.utc)
+
+    payload = MealCreate(
+        name="Doomed Meal",
+        notes=None,
+        items=[
+            MealItemCreate(
+                display_name="oats",
+                quantity_text="1 bowl",
+                usda_fdc_id=200001,
+                usda_description="Oats",
+                calories=300,
+                protein_g=10,
+                carbs_g=50,
+                fat_g=5,
+            ),
+        ],
+    )
+    async with transaction(session):
+        meal_row, _ = await create_meal_with_items(
+            session=session, user_key=user_key, payload=payload, now=now
+        )
+
+    await log_meal(
+        session=session, user_key=user_key, meal_id=meal_row["id"], now=now
+    )
+
+    # Delete the meal directly through the repo.
+    repo = MealsRepository(session)
+    async with transaction(session):
+        deleted = await repo.delete_meal(meal_row["id"], user_key)
+    assert deleted is True
+
+    entries_repo = EntriesRepository(session)
+    log_id = entries_repo.daily_log_id(user_key=user_key, log_date=now.date())
+    rows = await entries_repo.list_entries_by_daily_log_id(log_id)
+    assert rows[0]["meal_id"] is None
+    assert rows[0]["meal_name"] == "Doomed Meal"
