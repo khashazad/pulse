@@ -512,3 +512,36 @@ async def test_meal_delete_sets_meal_id_null_keeps_meal_name(session: AsyncSessi
     rows = await entries_repo.list_entries_by_daily_log_id(log_id)
     assert rows[0]["meal_id"] is None
     assert rows[0]["meal_name"] == "Doomed Meal"
+
+
+@pytest.mark.asyncio
+async def test_public_entries_path_ignores_client_supplied_meal_link(session: AsyncSession) -> None:
+    """A client posting forged meal_id/meal_name via /entries must not stamp the row."""
+    from diet_tracker_server.models import FoodEntryCreate
+    from diet_tracker_server.services.entries_service import create_entries_with_side_effects
+
+    user_key = f"user-{uuid.uuid4()}"
+    now = DateTimeValue.now(tz=TimezoneValue.utc)
+
+    # Simulate the request payload — extra meal_id / meal_name keys included by a malicious
+    # or buggy client. model_validate accepts and silently drops unknown fields.
+    item = FoodEntryCreate.model_validate({
+        "display_name": "ad-hoc",
+        "quantity_text": "1",
+        "usda_fdc_id": 200099,
+        "usda_description": "ad-hoc",
+        "calories": 50,
+        "protein_g": 1,
+        "carbs_g": 10,
+        "fat_g": 2,
+        "consumed_at": now,
+        "meal_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        "meal_name": "Forged Meal",
+    })
+
+    created_rows, _ = await create_entries_with_side_effects(
+        session=session, user_key=user_key, items=[item], now=now
+    )
+    assert len(created_rows) == 1
+    assert created_rows[0]["meal_id"] is None
+    assert created_rows[0]["meal_name"] is None

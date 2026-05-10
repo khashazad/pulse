@@ -3,6 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime as DateTimeValue
 from typing import Any, Sequence
+from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,6 +21,10 @@ from diet_tracker_server.services.log_ids import daily_log_id
 # - now (DateTimeValue): Request-scoped timestamp used for default date/time fields.
 # - manage_transaction (bool): When True (default), opens a new transaction on the session. Set to False
 #   when the caller already holds an active transaction on this session.
+# - meal_id (UUID | None): Server-controlled meal id stamped on every row in the batch. Only set by
+#   `log_meal`; public callers leave this None.
+# - meal_name (str | None): Server-controlled meal name snapshot stamped on every row in the batch.
+#   Mirrors `meal_id`'s contract.
 # Returns:
 # - tuple[list[dict[str, Any]], list[dict[str, Any]]]: Newly created rows and rows used for `daily_totals`
 #   (full daily log when the batch targets exactly one calendar date; otherwise the created rows only).
@@ -31,11 +36,13 @@ async def create_entries_with_side_effects(
     items: Sequence[FoodEntryCreate],
     now: DateTimeValue,
     manage_transaction: bool = True,
+    meal_id: UUID | None = None,
+    meal_name: str | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     if manage_transaction:
         async with transaction(session):
-            return await _create_entries(session, user_key, items, now)
-    return await _create_entries(session, user_key, items, now)
+            return await _create_entries(session, user_key, items, now, meal_id, meal_name)
+    return await _create_entries(session, user_key, items, now, meal_id, meal_name)
 
 
 async def _create_entries(
@@ -43,6 +50,8 @@ async def _create_entries(
     user_key: str,
     items: Sequence[FoodEntryCreate],
     now: DateTimeValue,
+    meal_id: UUID | None,
+    meal_name: str | None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     entries_repo = EntriesRepository(session)
     created_rows: list[dict[str, Any]] = []
@@ -71,8 +80,8 @@ async def _create_entries(
                 carbs_g=item.carbs_g,
                 fat_g=item.fat_g,
                 consumed_at=consumed_at,
-                meal_id=item.meal_id,
-                meal_name=item.meal_name,
+                meal_id=meal_id,
+                meal_name=meal_name,
             )
         )
 
