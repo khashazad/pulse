@@ -50,7 +50,7 @@ struct DayMacroView: View {
                 MacroTotalsRow(totals: summary.consumed, targets: summary.target)
                     .padding(.horizontal, 16)
 
-                entriesHeader(count: summary.entries.count, kcal: summary.consumed.calories)
+                entriesHeader(count: groupDayEntries(summary.entries).count, kcal: summary.consumed.calories)
                     .padding(.horizontal, 20)
                     .padding(.top, 4)
 
@@ -104,10 +104,18 @@ struct DayMacroView: View {
     }
 
     private func entriesCard(_ entries: [FoodEntry]) -> some View {
-        VStack(spacing: 0) {
-            ForEach(Array(entries.enumerated()), id: \.element.id) { idx, entry in
-                EntryRow(entry: entry)
-                if idx < entries.count - 1 {
+        let rows = groupDayEntries(entries)
+        return VStack(spacing: 0) {
+            ForEach(Array(rows.enumerated()), id: \.element.id) { idx, row in
+                Group {
+                    switch row {
+                    case .single(let entry):
+                        EntryRow(entry: entry)
+                    case .meal(let group):
+                        MealGroupRow(group: group)
+                    }
+                }
+                if idx < rows.count - 1 {
                     Rectangle().fill(Theme.separator).frame(height: 0.5)
                 }
             }
