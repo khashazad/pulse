@@ -1,6 +1,9 @@
-from uuid import uuid4
+from datetime import datetime, timezone
+from uuid import UUID, uuid4
 
 import pytest
+
+from diet_tracker_server.models.entries import FoodEntryCreate, FoodEntryResponse
 
 
 def test_food_entry_create_accepts_usda_only() -> None:
@@ -81,3 +84,81 @@ def test_food_entry_create_rejects_missing_usda_description() -> None:
             carbs_g=0,
             fat_g=0,
         )
+
+
+def test_food_entry_create_does_not_expose_meal_link_fields() -> None:
+    fields = FoodEntryCreate.model_fields
+    assert "meal_id" not in fields
+    assert "meal_name" not in fields
+
+
+def test_food_entry_create_ignores_client_supplied_meal_link() -> None:
+    # meal_id / meal_name are server-controlled (only set by log_meal). When clients
+    # try to forge them in the public payload, FoodEntryCreate must not surface them
+    # as attributes that downstream code could trust.
+    entry = FoodEntryCreate.model_validate({
+        "display_name": "oats",
+        "quantity_text": "80 g",
+        "usda_fdc_id": 173904,
+        "usda_description": "Oats, raw",
+        "calories": 320,
+        "protein_g": 10,
+        "carbs_g": 54,
+        "fat_g": 6,
+        "meal_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        "meal_name": "Forged Meal",
+    })
+    assert not hasattr(entry, "meal_id")
+    assert not hasattr(entry, "meal_name")
+
+
+def test_food_entry_response_serializes_meal_link() -> None:
+    meal_id = UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
+    response = FoodEntryResponse(
+        id=UUID("11111111-1111-1111-1111-111111111111"),
+        daily_log_id=UUID("22222222-2222-2222-2222-222222222222"),
+        user_key="khash",
+        entry_group_id=UUID("33333333-3333-3333-3333-333333333333"),
+        display_name="oats",
+        quantity_text="80 g",
+        normalized_quantity_value=80.0,
+        normalized_quantity_unit="g",
+        usda_fdc_id=173904,
+        usda_description="Oats, raw",
+        calories=320,
+        protein_g=10,
+        carbs_g=54,
+        fat_g=6,
+        meal_id=meal_id,
+        meal_name="Breakfast",
+        consumed_at=datetime(2026, 5, 6, 8, 30, tzinfo=timezone.utc),
+        created_at=datetime(2026, 5, 6, 8, 31, tzinfo=timezone.utc),
+    )
+    assert response.meal_id == meal_id
+    assert response.meal_name == "Breakfast"
+    dumped = response.model_dump()
+    assert dumped["meal_id"] == meal_id
+    assert dumped["meal_name"] == "Breakfast"
+
+
+def test_food_entry_response_meal_link_defaults_to_none() -> None:
+    response = FoodEntryResponse(
+        id=UUID("11111111-1111-1111-1111-111111111111"),
+        daily_log_id=UUID("22222222-2222-2222-2222-222222222222"),
+        user_key="khash",
+        entry_group_id=UUID("33333333-3333-3333-3333-333333333333"),
+        display_name="oats",
+        quantity_text="80 g",
+        normalized_quantity_value=None,
+        normalized_quantity_unit=None,
+        usda_fdc_id=173904,
+        usda_description="Oats, raw",
+        calories=320,
+        protein_g=10,
+        carbs_g=54,
+        fat_g=6,
+        consumed_at=datetime(2026, 5, 6, 8, 30, tzinfo=timezone.utc),
+        created_at=datetime(2026, 5, 6, 8, 31, tzinfo=timezone.utc),
+    )
+    assert response.meal_id is None
+    assert response.meal_name is None

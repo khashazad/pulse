@@ -24,6 +24,10 @@ class FoodEntryCreate(BaseModel):
     date: DateValue | None = None
     consumed_at: DateTimeValue | None = None
 
+    # Note: meal_id / meal_name are intentionally NOT public input fields. They are
+    # server-controlled metadata stamped only by `log_meal`; clients cannot supply them
+    # via POST /entries. The corresponding fields exist on `FoodEntryResponse` for read.
+
     @model_validator(mode="after")
     def _exactly_one_source(self) -> "FoodEntryCreate":
         has_usda = self.usda_fdc_id is not None
@@ -55,6 +59,8 @@ class FoodEntryResponse(BaseModel):
     protein_g: float
     carbs_g: float
     fat_g: float
+    meal_id: UUID | None = None
+    meal_name: str | None = None
     consumed_at: DateTimeValue
     created_at: DateTimeValue
 

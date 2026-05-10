@@ -121,6 +121,7 @@ async def log_meal(
             raise HTTPException(status_code=400, detail="Meal has no items to log")
 
         effective_consumed_at = consumed_at or now
+        meal_name = meal["name"]
         entry_items = [
             FoodEntryCreate(
                 display_name=item["display_name"],
@@ -144,6 +145,8 @@ async def log_meal(
             items=entry_items,
             now=now,
             manage_transaction=False,
+            meal_id=meal_id,
+            meal_name=meal_name,
         )
 
 

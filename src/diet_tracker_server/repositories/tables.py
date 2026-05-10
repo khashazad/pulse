@@ -175,6 +175,13 @@ food_entries = Table(
     Column("fat_g", Numeric, nullable=False),
     Column("consumed_at", DateTime(timezone=True), nullable=False),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column(
+        "meal_id",
+        UUID(as_uuid=True),
+        ForeignKey("meals.id", ondelete="SET NULL"),
+        nullable=True,
+    ),
+    Column("meal_name", Text, nullable=True),
     CheckConstraint(
         "(usda_fdc_id is not null and custom_food_id is null) or "
         "(usda_fdc_id is null and custom_food_id is not null)",
@@ -183,6 +190,7 @@ food_entries = Table(
     Index("idx_food_entries_user_key", "user_key"),
     Index("idx_food_entries_daily_log_id_consumed_at", "daily_log_id", "consumed_at"),
     Index("idx_food_entries_custom_food_id", "custom_food_id"),
+    Index("idx_food_entries_meal_id", "meal_id"),
 )
 
 sessions = Table(
