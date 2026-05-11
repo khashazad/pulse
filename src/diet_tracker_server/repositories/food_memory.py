@@ -4,7 +4,7 @@ from datetime import datetime as DateTimeValue
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import delete, or_, select
+from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -233,3 +233,58 @@ class FoodMemoryRepository:
         )
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none() is not None
+
+    # Summary: Appends `alias` to the row's aliases array if not already present.
+    # Parameters:
+    # - user_key (str): Owner.
+    # - normalized_name (str): Canonical row identifier.
+    # - alias (str): Already-normalized alias to add.
+    # - now (DateTimeValue): Timestamp for updated_at.
+    # Returns:
+    # - dict[str, Any] | None: Updated row, or None if no such food_memory row exists.
+    async def add_alias(
+        self,
+        user_key: str,
+        normalized_name: str,
+        alias: str,
+        now: DateTimeValue,
+    ) -> dict[str, Any] | None:
+        stmt = (
+            update(food_memory)
+            .where(food_memory.c.user_key == user_key)
+            .where(food_memory.c.normalized_name == normalized_name)
+            .values(
+                aliases=func.array(
+                    select(func.unnest(func.array_append(food_memory.c.aliases, alias)))
+                    .distinct()
+                    .scalar_subquery()
+                ),
+                updated_at=now,
+            )
+            .returning(*_row_columns())
+        )
+        result = await self._session.execute(stmt)
+        row = result.mappings().first()
+        return dict(row) if row else None
+
+    # Summary: Removes `alias` from the row's aliases array. No-op if absent.
+    async def remove_alias(
+        self,
+        user_key: str,
+        normalized_name: str,
+        alias: str,
+        now: DateTimeValue,
+    ) -> dict[str, Any] | None:
+        stmt = (
+            update(food_memory)
+            .where(food_memory.c.user_key == user_key)
+            .where(food_memory.c.normalized_name == normalized_name)
+            .values(
+                aliases=func.array_remove(food_memory.c.aliases, alias),
+                updated_at=now,
+            )
+            .returning(*_row_columns())
+        )
+        result = await self._session.execute(stmt)
+        row = result.mappings().first()
+        return dict(row) if row else None
