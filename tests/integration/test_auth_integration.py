@@ -1,0 +1,88 @@
+from __future__ import annotations
+
+import asyncio
+import os
+from unittest.mock import AsyncMock, patch
+
+import pytest
+import sqlalchemy as sa
+from fastapi.testclient import TestClient
+
+pytestmark = pytest.mark.integration
+
+
+@pytest.fixture(autouse=True)
+def _env(monkeypatch):
+    if not os.environ.get("TEST_DATABASE_URL"):
+        pytest.skip("TEST_DATABASE_URL not set")
+    monkeypatch.setenv("DATABASE_URL", os.environ["TEST_DATABASE_URL"])
+    monkeypatch.setenv("USDA_API_KEY", "x")
+    monkeypatch.setenv("GOOGLE_CLIENT_ID", "cid.apps.googleusercontent.com")
+    monkeypatch.setenv("GOOGLE_CLIENT_SECRET", "secret")
+    monkeypatch.setenv("OAUTH_REDIRECT_URI", "https://api.example.com/auth/google/callback")
+    monkeypatch.setenv("APP_REDIRECT_SCHEME", "diettracker")
+    monkeypatch.setenv("ALLOWED_EMAILS", "khashzd@gmail.com")
+    monkeypatch.setenv("LEGACY_USER_KEY", "khash")
+    monkeypatch.setenv("APP_ENV", "local")
+    monkeypatch.setenv("SESSION_TTL_DAYS", "7")
+    from diet_tracker_server.config import get_settings
+    get_settings.cache_clear()
+
+
+@pytest.fixture
+def client():
+    with patch("diet_tracker_server.usda.USDAClient") as mock_usda:
+        mock_usda.return_value.close = AsyncMock()
+        from diet_tracker_server.app import app
+
+        with TestClient(app) as c:
+            from diet_tracker_server import db
+
+            async def _truncate():
+                async with db.get_session() as s:
+                    await s.execute(sa.text("truncate sessions"))
+                    await s.commit()
+
+            asyncio.get_event_loop().run_until_complete(_truncate())
+            yield c
+
+
+def test_full_signin_flow(client):
+    # /start
+    r = client.get("/auth/google/start", follow_redirects=False)
+    assert r.status_code == 302
+    state_cookie = r.cookies.get("oauth_state")
+    assert state_cookie
+
+    # /callback (mock Google)
+    with patch(
+        "diet_tracker_server.routers.auth.exchange_code_for_id_token",
+        new_callable=AsyncMock, return_value="jwt",
+    ), patch(
+        "diet_tracker_server.routers.auth.verify_id_token",
+        return_value=("khashzd@gmail.com", "sub"),
+    ):
+        client.cookies.set("oauth_state", state_cookie, path="/auth/google")
+        r = client.get(
+            "/auth/google/callback",
+            params={"code": "x", "state": state_cookie},
+            follow_redirects=False,
+        )
+    assert r.status_code == 302
+    loc = r.headers["location"]
+    assert loc.startswith("diettracker://auth?token=")
+    token = loc.split("token=")[1].split("&")[0]
+    assert token
+
+    # whoami
+    r = client.get("/auth/whoami", headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 200
+    assert r.json()["email"] == "khashzd@gmail.com"
+
+    # logout
+    r = client.post("/auth/logout", headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 204
+
+    # whoami again -> 401
+    r = client.get("/auth/whoami", headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 401

@@ -1,8 +1,8 @@
 """Add aliases columns to food_memory and meals.
 
-Revision ID: 20260510_000001
-Revises: 20260506_000001
-Create Date: 2026-05-10T00:00:00Z
+Revision ID: 20260511_000001
+Revises: 20260510_000001
+Create Date: 2026-05-11T00:00:00Z
 """
 
 from __future__ import annotations
@@ -12,8 +12,8 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 
-revision = "20260510_000001"
-down_revision = "20260506_000001"
+revision = "20260511_000001"
+down_revision = "20260510_000001"
 branch_labels = None
 depends_on = None
 

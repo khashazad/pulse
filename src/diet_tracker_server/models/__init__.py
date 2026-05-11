@@ -1,4 +1,11 @@
 from diet_tracker_server.models.common import MacroTargets, MacroTotals
+from diet_tracker_server.models.containers import (
+    ContainerCreate,
+    ContainerPhotoStatus,
+    ContainerResponse,
+    ContainerUpdate,
+    ContainersListResponse,
+)
 from diet_tracker_server.models.custom_foods import (
     CustomFoodBasis,
     CustomFoodCreate,
@@ -65,4 +72,9 @@ __all__ = [
     "MealResponse",
     "MealSummary",
     "MealsListResponse",
+    "ContainerCreate",
+    "ContainerUpdate",
+    "ContainerResponse",
+    "ContainersListResponse",
+    "ContainerPhotoStatus",
 ]

@@ -229,6 +229,10 @@ async def test_log_meal_expands_into_food_entries(session: AsyncSession) -> None
     total_calories = sum(int(r["calories"]) for r in day_rows)
     assert total_calories == 400
 
+    # New: meal link is stamped on every created row.
+    assert all(r["meal_id"] == meal_row["id"] for r in created_rows)
+    assert all(r["meal_name"] == "My Breakfast" for r in created_rows)
+
 
 @pytest.mark.asyncio
 async def test_delete_custom_food_blocked_when_referenced(session: AsyncSession) -> None:
@@ -382,3 +386,162 @@ async def test_list_meals_includes_item_counts(session: AsyncSession) -> None:
     assert float(by_name["empty"]["total_protein_g"]) == pytest.approx(0.0)
     assert float(by_name["empty"]["total_carbs_g"]) == pytest.approx(0.0)
     assert float(by_name["empty"]["total_fat_g"]) == pytest.approx(0.0)
+
+
+@pytest.mark.asyncio
+async def test_manual_entry_has_null_meal_link(session: AsyncSession) -> None:
+    user_key = f"user-{uuid.uuid4()}"
+    now = DateTimeValue.now(tz=TimezoneValue.utc)
+    log_date = now.date()
+    entries_repo = EntriesRepository(session)
+
+    async with transaction(session):
+        log_id = entries_repo.daily_log_id(user_key=user_key, log_date=log_date)
+        await entries_repo.ensure_daily_log(log_id, user_key, log_date)
+        row = await entries_repo.create_food_entry(
+            entry_id=uuid.uuid4(),
+            daily_log_id=log_id,
+            user_key=user_key,
+            entry_group_id=uuid.uuid4(),
+            display_name="ad-hoc",
+            quantity_text="1",
+            normalized_quantity_value=None,
+            normalized_quantity_unit=None,
+            usda_fdc_id=200003,
+            usda_description="ad-hoc usda",
+            custom_food_id=None,
+            calories=50,
+            protein_g=1,
+            carbs_g=10,
+            fat_g=2,
+            consumed_at=now,
+        )
+
+    assert row["meal_id"] is None
+    assert row["meal_name"] is None
+
+
+@pytest.mark.asyncio
+async def test_meal_rename_does_not_mutate_historical_entries(session: AsyncSession) -> None:
+    user_key = f"user-{uuid.uuid4()}"
+    now = DateTimeValue.now(tz=TimezoneValue.utc)
+
+    payload = MealCreate(
+        name="Original Name",
+        notes=None,
+        items=[
+            MealItemCreate(
+                display_name="oats",
+                quantity_text="1 bowl",
+                usda_fdc_id=200001,
+                usda_description="Oats",
+                calories=300,
+                protein_g=10,
+                carbs_g=50,
+                fat_g=5,
+            ),
+        ],
+    )
+    async with transaction(session):
+        meal_row, _ = await create_meal_with_items(
+            session=session, user_key=user_key, payload=payload, now=now
+        )
+
+    created_rows, _ = await log_meal(
+        session=session, user_key=user_key, meal_id=meal_row["id"], now=now
+    )
+    assert created_rows[0]["meal_name"] == "Original Name"
+
+    # Rename the meal (direct UPDATE — covers the "what if a write happens later" case).
+    from sqlalchemy import update as sa_update
+    from diet_tracker_server.repositories.tables import meals as meals_table
+
+    async with transaction(session):
+        await session.execute(
+            sa_update(meals_table)
+            .where(meals_table.c.id == meal_row["id"])
+            .values(name="Renamed", normalized_name="renamed")
+        )
+
+    # Re-read the entry; its meal_name must still read "Original Name".
+    entries_repo = EntriesRepository(session)
+    log_id = entries_repo.daily_log_id(user_key=user_key, log_date=now.date())
+    rows = await entries_repo.list_entries_by_daily_log_id(log_id)
+    assert rows[0]["meal_id"] == meal_row["id"]
+    assert rows[0]["meal_name"] == "Original Name"
+
+
+@pytest.mark.asyncio
+async def test_meal_delete_sets_meal_id_null_keeps_meal_name(session: AsyncSession) -> None:
+    user_key = f"user-{uuid.uuid4()}"
+    now = DateTimeValue.now(tz=TimezoneValue.utc)
+
+    payload = MealCreate(
+        name="Doomed Meal",
+        notes=None,
+        items=[
+            MealItemCreate(
+                display_name="oats",
+                quantity_text="1 bowl",
+                usda_fdc_id=200001,
+                usda_description="Oats",
+                calories=300,
+                protein_g=10,
+                carbs_g=50,
+                fat_g=5,
+            ),
+        ],
+    )
+    async with transaction(session):
+        meal_row, _ = await create_meal_with_items(
+            session=session, user_key=user_key, payload=payload, now=now
+        )
+
+    await log_meal(
+        session=session, user_key=user_key, meal_id=meal_row["id"], now=now
+    )
+
+    # Delete the meal directly through the repo.
+    repo = MealsRepository(session)
+    async with transaction(session):
+        deleted = await repo.delete_meal(meal_row["id"], user_key)
+    assert deleted is True
+
+    entries_repo = EntriesRepository(session)
+    log_id = entries_repo.daily_log_id(user_key=user_key, log_date=now.date())
+    rows = await entries_repo.list_entries_by_daily_log_id(log_id)
+    assert rows[0]["meal_id"] is None
+    assert rows[0]["meal_name"] == "Doomed Meal"
+
+
+@pytest.mark.asyncio
+async def test_public_entries_path_ignores_client_supplied_meal_link(session: AsyncSession) -> None:
+    """A client posting forged meal_id/meal_name via /entries must not stamp the row."""
+    from diet_tracker_server.models import FoodEntryCreate
+    from diet_tracker_server.services.entries_service import create_entries_with_side_effects
+
+    user_key = f"user-{uuid.uuid4()}"
+    now = DateTimeValue.now(tz=TimezoneValue.utc)
+
+    # Simulate the request payload — extra meal_id / meal_name keys included by a malicious
+    # or buggy client. model_validate accepts and silently drops unknown fields.
+    item = FoodEntryCreate.model_validate({
+        "display_name": "ad-hoc",
+        "quantity_text": "1",
+        "usda_fdc_id": 200099,
+        "usda_description": "ad-hoc",
+        "calories": 50,
+        "protein_g": 1,
+        "carbs_g": 10,
+        "fat_g": 2,
+        "consumed_at": now,
+        "meal_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        "meal_name": "Forged Meal",
+    })
+
+    created_rows, _ = await create_entries_with_side_effects(
+        session=session, user_key=user_key, items=[item], now=now
+    )
+    assert len(created_rows) == 1
+    assert created_rows[0]["meal_id"] is None
+    assert created_rows[0]["meal_name"] is None

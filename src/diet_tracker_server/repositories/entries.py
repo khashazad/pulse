@@ -38,6 +38,8 @@ def _food_entry_response_columns() -> tuple[Any, ...]:
         food_entries.c.protein_g,
         food_entries.c.carbs_g,
         food_entries.c.fat_g,
+        food_entries.c.meal_id,
+        food_entries.c.meal_name,
         food_entries.c.consumed_at,
         food_entries.c.created_at,
     )
@@ -101,6 +103,8 @@ class EntriesRepository:
     # - carbs_g (float): Carbohydrate grams for this entry.
     # - fat_g (float): Fat grams for this entry.
     # - consumed_at (DateTimeValue): Timestamp when food was consumed.
+    # - meal_id (UUID | None): Optional meal UUID to associate the entry with a meal.
+    # - meal_name (str | None): Optional meal name snapshot at time of entry creation.
     # Returns:
     # - dict[str, Any]: Inserted food-entry row as a mapping.
     # Raises/Throws:
@@ -124,6 +128,8 @@ class EntriesRepository:
         carbs_g: float,
         fat_g: float,
         consumed_at: DateTimeValue,
+        meal_id: UUID | None = None,
+        meal_name: str | None = None,
     ) -> dict[str, Any]:
         stmt = (
             pg_insert(food_entries)
@@ -144,6 +150,8 @@ class EntriesRepository:
                 carbs_g=carbs_g,
                 fat_g=fat_g,
                 consumed_at=consumed_at,
+                meal_id=meal_id,
+                meal_name=meal_name,
             )
             .returning(*_food_entry_response_columns())
         )

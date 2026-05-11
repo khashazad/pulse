@@ -5,10 +5,10 @@ from datetime import datetime as DateTimeValue
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from diet_tracker_server.auth import require_api_key
+from diet_tracker_server.auth import require_session
 from diet_tracker_server.config import get_settings
 from diet_tracker_server.db import get_session_dependency, transaction
 from diet_tracker_server.macro_aggregates import sum_food_entry_macros
@@ -23,13 +23,13 @@ from diet_tracker_server.services.entries_service import create_entries_with_sid
 from diet_tracker_server.services.log_ids import daily_log_id
 
 settings = get_settings()
-router = APIRouter(dependencies=[Depends(require_api_key)])
+router = APIRouter(dependencies=[Depends(require_session)])
 TZ = ZoneInfo(settings.timezone)
 
 
 # Summary: Creates one or more food entries atomically.
 # Parameters:
-# - body (EntriesCreateRequest): Requested entries plus optional user key override.
+# - body (EntriesCreateRequest): Requested entries.
 # Returns:
 # - EntriesCreateResponse: Persisted entries and macro totals (full day when the batch uses one
 #   calendar date; sums of the created rows only when dates are mixed).
@@ -38,10 +38,11 @@ TZ = ZoneInfo(settings.timezone)
 # - sqlalchemy.exc.SQLAlchemyError: Raised when SQL execution fails.
 @router.post("/entries", status_code=201, response_model=EntriesCreateResponse)
 async def create_entries(
+    request: Request,
     body: EntriesCreateRequest,
     session: AsyncSession = Depends(get_session_dependency),
 ) -> EntriesCreateResponse:
-    user_key = body.user_key or settings.default_user_key
+    user_key = request.state.user_key
     now = DateTimeValue.now(tz=TZ)
 
     created_rows, all_rows = await create_entries_with_side_effects(
@@ -59,7 +60,6 @@ async def create_entries(
 # Summary: Lists all entries for a user's requested log date.
 # Parameters:
 # - log_date (datetime.date): Date filter for selecting entries.
-# - user_key (str | None): Optional user identifier override.
 # Returns:
 # - EntriesListResponse: Date-scoped entries with aggregate macros.
 # Raises/Throws:
@@ -67,13 +67,13 @@ async def create_entries(
 # - sqlalchemy.exc.SQLAlchemyError: Raised when SQL execution fails.
 @router.get("/entries", response_model=EntriesListResponse)
 async def list_entries(
+    request: Request,
     log_date: DateValue = Query(..., alias="date"),
-    user_key: str | None = Query(default=None),
     session: AsyncSession = Depends(get_session_dependency),
 ) -> EntriesListResponse:
-    effective_user_key = user_key or settings.default_user_key
+    user_key = request.state.user_key
     repository = EntriesRepository(session)
-    daily_log = daily_log_id(effective_user_key, log_date)
+    daily_log = daily_log_id(user_key, log_date)
     rows = await repository.list_entries_by_daily_log_id(daily_log)
 
     entries = [FoodEntryResponse(**row) for row in rows]

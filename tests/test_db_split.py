@@ -39,3 +39,14 @@ def test_handles_unnamed_dollar_quotes() -> None:
 
 def test_skips_empty_statements() -> None:
     assert _split_sql_statements(";;select 1;;") == ["select 1"]
+
+
+def test_schema_sql_contains_sessions_table():
+    from pathlib import Path
+    sql = Path("schema.sql").read_text()
+    lower = sql.lower()
+    assert "create table if not exists sessions" in lower
+    assert "token_hash" in lower
+    assert "expires_at" in lower
+    assert "create index if not exists idx_sessions_email" in lower
+    assert "create index if not exists idx_sessions_expires_at" in lower
