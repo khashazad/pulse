@@ -32,6 +32,8 @@ async def test_build_mcp_registers_expected_tools() -> None:
         "remember_food",
         "forget_food",
         "list_remembered_foods",
+        "add_food_alias",
+        "remove_food_alias",
         "create_meal",
         "list_meals",
         "get_meal",

@@ -40,7 +40,11 @@ from diet_tracker_server.repositories.meals import MealsRepository
 from diet_tracker_server.repositories.targets import TargetsRepository
 from diet_tracker_server.services.custom_foods_service import upsert_custom_food_and_remember
 from diet_tracker_server.services.entries_service import create_entries_with_side_effects
-from diet_tracker_server.services.food_memory_service import resolve_food_by_name
+from diet_tracker_server.services.food_memory_service import (
+    assert_food_alias_available,
+    normalize_alias_list,
+    resolve_food_by_name,
+)
 from diet_tracker_server.services.meals_service import create_meal_with_items, log_meal as log_meal_service
 from diet_tracker_server.services.normalize import normalize_name
 from diet_tracker_server.services.summary_service import build_daily_summary
@@ -160,6 +164,7 @@ def _food_memory_entry(row: dict[str, Any]) -> FoodMemoryEntry:
         protein_g=None if row["protein_g"] is None else float(row["protein_g"]),
         carbs_g=None if row["carbs_g"] is None else float(row["carbs_g"]),
         fat_g=None if row["fat_g"] is None else float(row["fat_g"]),
+        aliases=list(row.get("aliases") or []),
         created_at=row["created_at"],
         updated_at=row["updated_at"],
     )
@@ -610,6 +615,65 @@ def build_mcp(usda_getter) -> FastMCP:
             repo = FoodMemoryRepository(session)
             rows = await repo.list_for_user(user_key)
         return [_food_memory_entry(r) for r in rows]
+
+    @mcp.tool
+    async def add_food_alias(name: str, alias: str) -> FoodMemoryEntry:
+        """Add an alternate phrasing for an existing food memory entry. Looks up the entry
+        by canonical `name` (normalized) and appends a normalized `alias` to its aliases.
+        Fails when the alias is already used as a canonical name or alias by another entry.
+        """
+        normalized_name = normalize_name(name)
+        normalized_alias = normalize_name(alias)
+        if not normalized_alias:
+            raise ToolError("Alias must be non-empty after normalization")
+        if normalized_alias == normalized_name:
+            async with get_session() as session:
+                repo = FoodMemoryRepository(session)
+                row = await repo.get_by_name(user_key=user_key, normalized_name=normalized_name)
+            if row is None:
+                raise ToolError("Food memory not found")
+            return _food_memory_entry(row)
+        now = DateTimeValue.now(tz=tz)
+        async with get_session() as session:
+            async with transaction(session):
+                try:
+                    await assert_food_alias_available(
+                        session=session,
+                        user_key=user_key,
+                        alias=normalized_alias,
+                        exclude_normalized_name=normalized_name,
+                    )
+                except ValueError as exc:
+                    raise ToolError(str(exc)) from exc
+                repo = FoodMemoryRepository(session)
+                row = await repo.add_alias(
+                    user_key=user_key,
+                    normalized_name=normalized_name,
+                    alias=normalized_alias,
+                    now=now,
+                )
+            if row is None:
+                raise ToolError("Food memory not found")
+        return _food_memory_entry(row)
+
+    @mcp.tool
+    async def remove_food_alias(name: str, alias: str) -> FoodMemoryEntry:
+        """Remove an alternate phrasing from an existing food memory entry. No-op if absent."""
+        normalized_name = normalize_name(name)
+        normalized_alias = normalize_name(alias)
+        now = DateTimeValue.now(tz=tz)
+        async with get_session() as session:
+            repo = FoodMemoryRepository(session)
+            async with transaction(session):
+                row = await repo.remove_alias(
+                    user_key=user_key,
+                    normalized_name=normalized_name,
+                    alias=normalized_alias,
+                    now=now,
+                )
+            if row is None:
+                raise ToolError("Food memory not found")
+        return _food_memory_entry(row)
 
     # ---------------- meals ----------------
 
