@@ -43,6 +43,8 @@ async def test_build_mcp_registers_expected_tools() -> None:
         "update_meal_item",
         "delete_meal_item",
         "log_meal",
+        "add_meal_alias",
+        "remove_meal_alias",
     }
     assert expected.issubset(names)
 

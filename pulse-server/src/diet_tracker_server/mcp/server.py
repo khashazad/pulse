@@ -45,7 +45,12 @@ from diet_tracker_server.services.food_memory_service import (
     normalize_alias_list,
     resolve_food_by_name,
 )
-from diet_tracker_server.services.meals_service import create_meal_with_items, log_meal as log_meal_service
+from diet_tracker_server.services.meals_service import (
+    assert_meal_alias_available,
+    create_meal_with_items,
+    log_meal as log_meal_service,
+    normalize_alias_list as normalize_meal_alias_list,
+)
 from diet_tracker_server.services.normalize import normalize_name
 from diet_tracker_server.services.summary_service import build_daily_summary
 
@@ -199,6 +204,7 @@ def _meal_response(meal_row: dict[str, Any], item_rows: list[dict[str, Any]]) ->
         name=meal_row["name"],
         normalized_name=meal_row["normalized_name"],
         notes=meal_row["notes"],
+        aliases=list(meal_row.get("aliases") or []),
         created_at=meal_row["created_at"],
         updated_at=meal_row["updated_at"],
         items=[_meal_item_response(r) for r in item_rows],
@@ -712,6 +718,7 @@ def build_mcp(usda_getter) -> FastMCP:
                 name=row["name"],
                 normalized_name=row["normalized_name"],
                 notes=row["notes"],
+                aliases=list(row.get("aliases") or []),
                 item_count=int(row["item_count"]),
                 total_calories=int(row["total_calories"]),
                 total_protein_g=float(row["total_protein_g"]),
@@ -888,6 +895,72 @@ def build_mcp(usda_getter) -> FastMCP:
                     raise ToolError("Meal not found")
                 deleted = await repo.delete_meal_item(item_uuid, meal_uuid)
         return {"deleted": deleted}
+
+    @mcp.tool
+    async def add_meal_alias(meal_id: str, alias: str) -> MealResponse:
+        """Add an alternate phrasing for an existing meal. Looks up by `meal_id` and
+        appends a normalized `alias`. Fails when the alias is already used as a canonical
+        name or alias by another meal.
+        """
+        try:
+            meal_uuid = UUID(meal_id)
+        except ValueError as exc:
+            raise ToolError(f"Invalid meal_id '{meal_id}'") from exc
+        normalized_alias = normalize_name(alias)
+        if not normalized_alias:
+            raise ToolError("Alias must be non-empty after normalization")
+        now = DateTimeValue.now(tz=tz)
+        async with get_session() as session:
+            repo = MealsRepository(session)
+            meal_row = await repo.get_meal(meal_uuid, user_key)
+            if meal_row is None:
+                raise ToolError("Meal not found")
+            if normalized_alias == meal_row["normalized_name"]:
+                item_rows = await repo.list_items(meal_uuid)
+                return _meal_response(meal_row, item_rows)
+            async with transaction(session):
+                try:
+                    await assert_meal_alias_available(
+                        session=session,
+                        user_key=user_key,
+                        alias=normalized_alias,
+                        exclude_meal_id=meal_uuid,
+                    )
+                except ValueError as exc:
+                    raise ToolError(str(exc)) from exc
+                updated = await repo.add_alias(
+                    meal_id=meal_uuid,
+                    user_key=user_key,
+                    alias=normalized_alias,
+                    now=now,
+                )
+            if updated is None:
+                raise ToolError("Meal not found")
+            item_rows = await repo.list_items(meal_uuid)
+        return _meal_response(updated, item_rows)
+
+    @mcp.tool
+    async def remove_meal_alias(meal_id: str, alias: str) -> MealResponse:
+        """Remove an alternate phrasing from an existing meal. No-op if absent."""
+        try:
+            meal_uuid = UUID(meal_id)
+        except ValueError as exc:
+            raise ToolError(f"Invalid meal_id '{meal_id}'") from exc
+        normalized_alias = normalize_name(alias)
+        now = DateTimeValue.now(tz=tz)
+        async with get_session() as session:
+            repo = MealsRepository(session)
+            async with transaction(session):
+                updated = await repo.remove_alias(
+                    meal_id=meal_uuid,
+                    user_key=user_key,
+                    alias=normalized_alias,
+                    now=now,
+                )
+            if updated is None:
+                raise ToolError("Meal not found")
+            item_rows = await repo.list_items(meal_uuid)
+        return _meal_response(updated, item_rows)
 
     @mcp.tool
     async def log_meal(
