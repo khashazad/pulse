@@ -17,7 +17,7 @@ from sqlalchemy import (
     func,
     text,
 )
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import ARRAY, UUID
 
 metadata = MetaData()
 
@@ -95,6 +95,7 @@ food_memory = Table(
     Column("fat_g", Numeric, nullable=True),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("aliases", ARRAY(Text), nullable=False, server_default=text("'{}'::text[]")),
     CheckConstraint(
         "(usda_fdc_id is not null and custom_food_id is null) or "
         "(usda_fdc_id is null and custom_food_id is not null)",
@@ -114,6 +115,7 @@ meals = Table(
     Column("notes", Text, nullable=True),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("aliases", ARRAY(Text), nullable=False, server_default=text("'{}'::text[]")),
     Index("idx_meals_user_key_name", "user_key", "normalized_name", unique=True),
     Index("idx_meals_user_key", "user_key"),
 )

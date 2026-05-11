@@ -164,3 +164,9 @@ def test_macro_targets_validation() -> None:
 
     targets = MacroTargets(calories=2000, protein_g=150.0, carbs_g=200.0, fat_g=80.0)
     assert targets.calories == 2000
+
+
+def test_food_memory_table_has_aliases_column() -> None:
+    from diet_tracker_server.repositories.tables import food_memory, meals
+    assert "aliases" in food_memory.c
+    assert "aliases" in meals.c
