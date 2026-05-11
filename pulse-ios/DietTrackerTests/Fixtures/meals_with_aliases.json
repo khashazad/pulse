@@ -1,0 +1,16 @@
+{
+  "meals": [
+    {
+      "id": "11111111-1111-1111-1111-111111111111",
+      "name": "Wrap",
+      "normalized_name": "wrap",
+      "notes": null,
+      "aliases": ["the wrap", "lunch wrap"],
+      "item_count": 2,
+      "total_calories": 500,
+      "total_protein_g": 30.0,
+      "total_carbs_g": 50.0,
+      "total_fat_g": 15.0
+    }
+  ]
+}
