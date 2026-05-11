@@ -57,17 +57,21 @@ class MealsRepository:
         normalized_name: str,
         notes: str | None,
         now: DateTimeValue,
+        aliases: list[str] | None = None,
     ) -> dict[str, Any]:
+        values: dict[str, Any] = dict(
+            user_key=user_key,
+            name=name,
+            normalized_name=normalized_name,
+            notes=notes,
+            created_at=now,
+            updated_at=now,
+        )
+        if aliases is not None:
+            values["aliases"] = aliases
         stmt = (
             pg_insert(meals)
-            .values(
-                user_key=user_key,
-                name=name,
-                normalized_name=normalized_name,
-                notes=notes,
-                created_at=now,
-                updated_at=now,
-            )
+            .values(**values)
             .returning(*_meal_columns())
         )
         result = await self._session.execute(stmt)

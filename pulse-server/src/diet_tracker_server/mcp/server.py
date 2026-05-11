@@ -576,22 +576,35 @@ def build_mcp(usda_getter) -> FastMCP:
         fat_g: float = Field(ge=0),
         serving_size: float | None = None,
         serving_size_unit: str | None = None,
+        aliases: list[str] | None = None,
     ) -> FoodMemoryEntry:
-        """Save a USDA pointer keyed by `name`. Call this AFTER the user corrects your USDA
-        choice so future mentions of `name` resolve directly. Macros must be at the indicated
+        """Save a USDA pointer keyed by `name`. Optionally provide `aliases` (additional
+        phrasings that should resolve to the same entry). Macros must be at the indicated
         `basis` (NOT scaled to a previous quantity).
-
-        For custom foods (photo / manual macros), use `save_custom_food` instead — that path
-        writes memory automatically.
         """
         now = DateTimeValue.now(tz=tz)
+        normalized = normalize_name(name)
+        cleaned_aliases: list[str] | None = None
+        if aliases is not None:
+            cleaned_aliases = normalize_alias_list(aliases, canonical_normalized_name=normalized)
         async with get_session() as session:
-            repo = FoodMemoryRepository(session)
             async with transaction(session):
+                if cleaned_aliases:
+                    for a in cleaned_aliases:
+                        try:
+                            await assert_food_alias_available(
+                                session=session,
+                                user_key=user_key,
+                                alias=a,
+                                exclude_normalized_name=normalized,
+                            )
+                        except ValueError as exc:
+                            raise ToolError(str(exc)) from exc
+                repo = FoodMemoryRepository(session)
                 row = await repo.upsert_usda(
                     user_key=user_key,
                     name=name,
-                    normalized_name=normalize_name(name),
+                    normalized_name=normalized,
                     usda_fdc_id=fdc_id,
                     usda_description=usda_description,
                     basis=basis,
@@ -602,6 +615,7 @@ def build_mcp(usda_getter) -> FastMCP:
                     carbs_g=carbs_g,
                     fat_g=fat_g,
                     now=now,
+                    aliases=cleaned_aliases,
                 )
         return _food_memory_entry(row)
 
@@ -688,11 +702,13 @@ def build_mcp(usda_getter) -> FastMCP:
         name: str,
         items: list[MealItemCreate],
         notes: str | None = None,
+        aliases: list[str] | None = None,
     ) -> MealResponse:
         """Create a reusable meal with pre-scaled item macros. Each item must specify exactly
-        one of `usda_fdc_id` (+ `usda_description`) or `custom_food_id`.
+        one of `usda_fdc_id` (+ `usda_description`) or `custom_food_id`. Optionally provide
+        `aliases` to register alternate phrasings that resolve to this meal.
         """
-        payload = MealCreate(name=name, notes=notes, items=items)
+        payload = MealCreate(name=name, notes=notes, items=items, aliases=list(aliases or []))
         now = DateTimeValue.now(tz=tz)
         async with get_session() as session:
             try:

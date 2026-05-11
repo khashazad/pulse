@@ -72,8 +72,9 @@ class FoodMemoryRepository:
         carbs_g: float,
         fat_g: float,
         now: DateTimeValue,
+        aliases: list[str] | None = None,
     ) -> dict[str, Any]:
-        insert_stmt = pg_insert(food_memory).values(
+        values: dict[str, Any] = dict(
             user_key=user_key,
             name=name,
             normalized_name=normalized_name,
@@ -90,22 +91,28 @@ class FoodMemoryRepository:
             created_at=now,
             updated_at=now,
         )
+        if aliases is not None:
+            values["aliases"] = aliases
+        insert_stmt = pg_insert(food_memory).values(**values)
+        set_: dict[str, Any] = {
+            "name": insert_stmt.excluded.name,
+            "usda_fdc_id": insert_stmt.excluded.usda_fdc_id,
+            "usda_description": insert_stmt.excluded.usda_description,
+            "custom_food_id": None,
+            "basis": insert_stmt.excluded.basis,
+            "serving_size": insert_stmt.excluded.serving_size,
+            "serving_size_unit": insert_stmt.excluded.serving_size_unit,
+            "calories": insert_stmt.excluded.calories,
+            "protein_g": insert_stmt.excluded.protein_g,
+            "carbs_g": insert_stmt.excluded.carbs_g,
+            "fat_g": insert_stmt.excluded.fat_g,
+            "updated_at": now,
+        }
+        if aliases is not None:
+            set_["aliases"] = insert_stmt.excluded.aliases
         stmt = insert_stmt.on_conflict_do_update(
             index_elements=[food_memory.c.user_key, food_memory.c.normalized_name],
-            set_={
-                "name": insert_stmt.excluded.name,
-                "usda_fdc_id": insert_stmt.excluded.usda_fdc_id,
-                "usda_description": insert_stmt.excluded.usda_description,
-                "custom_food_id": None,
-                "basis": insert_stmt.excluded.basis,
-                "serving_size": insert_stmt.excluded.serving_size,
-                "serving_size_unit": insert_stmt.excluded.serving_size_unit,
-                "calories": insert_stmt.excluded.calories,
-                "protein_g": insert_stmt.excluded.protein_g,
-                "carbs_g": insert_stmt.excluded.carbs_g,
-                "fat_g": insert_stmt.excluded.fat_g,
-                "updated_at": now,
-            },
+            set_=set_,
         ).returning(*_row_columns())
         result = await self._session.execute(stmt)
         return dict(result.mappings().one())

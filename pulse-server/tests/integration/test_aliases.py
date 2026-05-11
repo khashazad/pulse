@@ -368,3 +368,57 @@ async def test_food_memory_alias_collision_excludes_own_row(session: AsyncSessio
         alias="pb",
         exclude_normalized_name="peanut butter",
     )
+
+
+@pytest.mark.asyncio
+async def test_remember_food_persists_aliases(session: AsyncSession) -> None:
+    user_key = f"user-{uuid.uuid4()}"
+    now = DateTimeValue.now(tz=TimezoneValue.utc)
+    repo = FoodMemoryRepository(session)
+    await repo.upsert_usda(
+        user_key=user_key,
+        name="Peanut Butter",
+        normalized_name="peanut butter",
+        usda_fdc_id=1,
+        usda_description="PB",
+        basis="per_100g",
+        serving_size=None,
+        serving_size_unit=None,
+        calories=100,
+        protein_g=1.0,
+        carbs_g=1.0,
+        fat_g=1.0,
+        now=now,
+        aliases=["pb", "pbs"],
+    )
+    await session.commit()
+
+    row = await repo.get_by_name(user_key=user_key, normalized_name="pb")
+    assert row is not None
+    assert sorted(row["aliases"]) == ["pb", "pbs"]
+
+
+@pytest.mark.asyncio
+async def test_remember_food_upsert_preserves_existing_aliases_when_not_provided(session: AsyncSession) -> None:
+    user_key = f"user-{uuid.uuid4()}"
+    now = DateTimeValue.now(tz=TimezoneValue.utc)
+    repo = FoodMemoryRepository(session)
+    await repo.upsert_usda(
+        user_key=user_key, name="PB", normalized_name="peanut butter",
+        usda_fdc_id=1, usda_description="PB", basis="per_100g",
+        serving_size=None, serving_size_unit=None,
+        calories=100, protein_g=1.0, carbs_g=1.0, fat_g=1.0,
+        now=now, aliases=["pb"],
+    )
+    await session.commit()
+    # Second upsert without aliases — should NOT clobber existing aliases.
+    await repo.upsert_usda(
+        user_key=user_key, name="PB", normalized_name="peanut butter",
+        usda_fdc_id=1, usda_description="PB", basis="per_100g",
+        serving_size=None, serving_size_unit=None,
+        calories=200, protein_g=2.0, carbs_g=2.0, fat_g=2.0,
+        now=now, aliases=None,
+    )
+    await session.commit()
+    row = await repo.get_by_name(user_key=user_key, normalized_name="peanut butter")
+    assert list(row["aliases"]) == ["pb"]

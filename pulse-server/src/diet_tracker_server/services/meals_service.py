@@ -62,12 +62,26 @@ async def create_meal_with_items(
     for item in payload.items:
         _validate_item_source(item)
 
+    normalized_aliases = normalize_alias_list(
+        list(payload.aliases),
+        canonical_normalized_name=normalize_name(payload.name),
+    )
+    # Validate each alias against existing meals (collision pre-check)
+    for a in normalized_aliases:
+        try:
+            await assert_meal_alias_available(
+                session=session, user_key=user_key, alias=a, exclude_meal_id=None,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
     meal_row = await repo.create_meal(
         user_key=user_key,
         name=payload.name,
         normalized_name=normalize_name(payload.name),
         notes=payload.notes,
         now=now,
+        aliases=normalized_aliases if normalized_aliases else None,
     )
     item_rows: list[dict[str, Any]] = []
     for index, item in enumerate(payload.items):
