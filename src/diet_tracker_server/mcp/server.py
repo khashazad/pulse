@@ -726,6 +726,8 @@ def build_mcp(usda_getter) -> FastMCP:
                     )
             except IntegrityError as exc:
                 raise ToolError("Meal name already exists for this user") from exc
+            except HTTPException as exc:
+                raise ToolError(str(exc.detail)) from exc
         return _meal_response(meal_row, item_rows)
 
     @mcp.tool
