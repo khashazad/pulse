@@ -4,7 +4,7 @@ from datetime import datetime as DateTimeValue
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import Integer, cast, delete, func, select, update
+from sqlalchemy import Integer, cast, delete, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,6 +18,7 @@ def _meal_columns() -> tuple[Any, ...]:
         meals.c.name,
         meals.c.normalized_name,
         meals.c.notes,
+        meals.c.aliases,
         meals.c.created_at,
         meals.c.updated_at,
     )
@@ -130,12 +131,17 @@ class MealsRepository:
         row = result.mappings().first()
         return dict(row) if row else None
 
-    # Summary: Fetches a meal by normalized name for a user.
+    # Summary: Fetches a meal by normalized name or alias for a user.
     async def get_meal_by_name(self, user_key: str, normalized_name: str) -> dict[str, Any] | None:
         stmt = (
             select(*_meal_columns())
             .where(meals.c.user_key == user_key)
-            .where(meals.c.normalized_name == normalized_name)
+            .where(
+                or_(
+                    meals.c.normalized_name == normalized_name,
+                    meals.c.aliases.any(normalized_name),
+                )
+            )
         )
         result = await self._session.execute(stmt)
         row = result.mappings().first()
@@ -149,6 +155,7 @@ class MealsRepository:
                 meals.c.name,
                 meals.c.normalized_name,
                 meals.c.notes,
+                meals.c.aliases,
                 func.count(meal_items.c.id).label("item_count"),
                 cast(func.coalesce(func.sum(meal_items.c.calories), 0), Integer).label("total_calories"),
                 func.coalesce(func.sum(meal_items.c.protein_g), 0).label("total_protein_g"),
@@ -157,7 +164,7 @@ class MealsRepository:
             )
             .select_from(meals.outerjoin(meal_items, meal_items.c.meal_id == meals.c.id))
             .where(meals.c.user_key == user_key)
-            .group_by(meals.c.id, meals.c.name, meals.c.normalized_name, meals.c.notes)
+            .group_by(meals.c.id, meals.c.name, meals.c.normalized_name, meals.c.notes, meals.c.aliases)
             .order_by(meals.c.normalized_name)
         )
         result = await self._session.execute(stmt)

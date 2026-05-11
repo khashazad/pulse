@@ -151,6 +151,7 @@ async def test_meals_trigger_rejects_alias_overlap(session: AsyncSession) -> Non
 
 
 from diet_tracker_server.repositories.food_memory import FoodMemoryRepository
+from diet_tracker_server.repositories.meals import MealsRepository
 
 
 @pytest.mark.asyncio
@@ -171,3 +172,42 @@ async def test_food_memory_get_by_name_matches_alias(session: AsyncSession) -> N
     assert row is not None
     assert row["normalized_name"] == "peanut butter"
     assert list(row["aliases"]) == ["pb", "pbs"]
+
+
+@pytest.mark.asyncio
+async def test_meals_get_by_name_matches_alias(session: AsyncSession) -> None:
+    user_key = f"user-{uuid.uuid4()}"
+    now = DateTimeValue.now(tz=TimezoneValue.utc)
+    await session.execute(
+        text(
+            "insert into meals (user_key, name, normalized_name, aliases, created_at, updated_at) "
+            "values (:uk, 'Buffalo Chicken Wrap', 'buffalo chicken wrap', ARRAY['the wrap']::text[], :now, :now)"
+        ),
+        {"uk": user_key, "now": now},
+    )
+    await session.commit()
+
+    repo = MealsRepository(session)
+    row = await repo.get_meal_by_name(user_key=user_key, normalized_name="the wrap")
+    assert row is not None
+    assert row["normalized_name"] == "buffalo chicken wrap"
+    assert list(row["aliases"]) == ["the wrap"]
+
+
+@pytest.mark.asyncio
+async def test_meals_list_includes_aliases(session: AsyncSession) -> None:
+    user_key = f"user-{uuid.uuid4()}"
+    now = DateTimeValue.now(tz=TimezoneValue.utc)
+    await session.execute(
+        text(
+            "insert into meals (user_key, name, normalized_name, aliases, created_at, updated_at) "
+            "values (:uk, 'Wrap', 'wrap', ARRAY['the wrap', 'lunch wrap']::text[], :now, :now)"
+        ),
+        {"uk": user_key, "now": now},
+    )
+    await session.commit()
+
+    repo = MealsRepository(session)
+    rows = await repo.list_meals(user_key=user_key)
+    assert len(rows) == 1
+    assert list(rows[0]["aliases"]) == ["the wrap", "lunch wrap"]
