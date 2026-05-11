@@ -211,3 +211,67 @@ async def test_meals_list_includes_aliases(session: AsyncSession) -> None:
     rows = await repo.list_meals(user_key=user_key)
     assert len(rows) == 1
     assert list(rows[0]["aliases"]) == ["the wrap", "lunch wrap"]
+
+
+@pytest.mark.asyncio
+async def test_food_memory_add_alias_appends(session: AsyncSession) -> None:
+    user_key = f"user-{uuid.uuid4()}"
+    now = DateTimeValue.now(tz=TimezoneValue.utc)
+    await session.execute(
+        text(
+            "insert into food_memory (user_key, name, normalized_name, usda_fdc_id, usda_description, basis, calories, protein_g, carbs_g, fat_g, created_at, updated_at) "
+            "values (:uk, 'Peanut Butter', 'peanut butter', 1, 'PB', 'per_100g', 100, 1, 1, 1, :now, :now)"
+        ),
+        {"uk": user_key, "now": now},
+    )
+    await session.commit()
+
+    repo = FoodMemoryRepository(session)
+    updated = await repo.add_alias(
+        user_key=user_key, normalized_name="peanut butter", alias="pb", now=now,
+    )
+    await session.commit()
+    assert updated is not None
+    assert list(updated["aliases"]) == ["pb"]
+
+
+@pytest.mark.asyncio
+async def test_food_memory_add_alias_idempotent(session: AsyncSession) -> None:
+    user_key = f"user-{uuid.uuid4()}"
+    now = DateTimeValue.now(tz=TimezoneValue.utc)
+    await session.execute(
+        text(
+            "insert into food_memory (user_key, name, normalized_name, usda_fdc_id, usda_description, basis, calories, protein_g, carbs_g, fat_g, aliases, created_at, updated_at) "
+            "values (:uk, 'PB', 'peanut butter', 1, 'PB', 'per_100g', 100, 1, 1, 1, ARRAY['pb']::text[], :now, :now)"
+        ),
+        {"uk": user_key, "now": now},
+    )
+    await session.commit()
+
+    repo = FoodMemoryRepository(session)
+    updated = await repo.add_alias(
+        user_key=user_key, normalized_name="peanut butter", alias="pb", now=now,
+    )
+    await session.commit()
+    assert list(updated["aliases"]) == ["pb"]
+
+
+@pytest.mark.asyncio
+async def test_food_memory_remove_alias(session: AsyncSession) -> None:
+    user_key = f"user-{uuid.uuid4()}"
+    now = DateTimeValue.now(tz=TimezoneValue.utc)
+    await session.execute(
+        text(
+            "insert into food_memory (user_key, name, normalized_name, usda_fdc_id, usda_description, basis, calories, protein_g, carbs_g, fat_g, aliases, created_at, updated_at) "
+            "values (:uk, 'PB', 'peanut butter', 1, 'PB', 'per_100g', 100, 1, 1, 1, ARRAY['pb', 'pbs']::text[], :now, :now)"
+        ),
+        {"uk": user_key, "now": now},
+    )
+    await session.commit()
+
+    repo = FoodMemoryRepository(session)
+    updated = await repo.remove_alias(
+        user_key=user_key, normalized_name="peanut butter", alias="pb", now=now,
+    )
+    await session.commit()
+    assert list(updated["aliases"]) == ["pbs"]
