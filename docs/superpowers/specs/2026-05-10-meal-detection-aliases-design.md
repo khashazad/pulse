@@ -31,16 +31,15 @@ alter table meals add column aliases text[] not null default '{}';
 create index idx_food_memory_aliases on food_memory using gin (aliases);
 create index idx_meals_aliases on meals using gin (aliases);
 
-alter table food_memory add constraint food_memory_aliases_distinct
-  check (
-    array_length(aliases, 1) is null
-    or (
-      cardinality(aliases) = cardinality(array(select distinct unnest(aliases)))
-      and not (normalized_name = any(aliases))
-    )
-  );
+alter table food_memory add constraint food_memory_alias_not_self
+  check (not (normalized_name = any(aliases)));
 -- same for meals
 ```
+
+Row-local invariants enforced by the constraint above plus the service layer:
+
+- An alias may not equal the row's own `normalized_name` (CHECK constraint).
+- Aliases on a single row are distinct (service layer de-dups before write).
 
 Cross-row uniqueness via `BEFORE INSERT OR UPDATE` trigger per table. Trigger checks, for each element of `NEW.aliases`:
 
@@ -72,9 +71,9 @@ Rationale for trigger vs unique index: Postgres unique indexes can't natively co
 
 **Service-layer pre-check** (cheap, single-user; trigger remains as correctness backstop): before the write, query for collision and raise `ToolError("alias 'X' is already used by '<existing name>'")` so the LLM gets an informative message rather than a generic trigger error.
 
-**No-op cases (silent, not errors):**
+**No-op cases (filtered at the service layer before SQL write; silent, not errors):**
 
-- Adding an alias equal to the row's own `normalized_name`.
+- Adding an alias equal to the row's own `normalized_name` (would also violate the CHECK constraint if not filtered).
 - Adding an alias already present on the row.
 - Removing an alias not present on the row.
 
