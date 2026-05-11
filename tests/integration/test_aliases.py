@@ -320,3 +320,51 @@ async def test_meals_remove_alias(session: AsyncSession) -> None:
     )
     await session.commit()
     assert list(updated["aliases"]) == ["lunch"]
+
+
+@pytest.mark.asyncio
+async def test_food_memory_alias_collision_pre_check(session: AsyncSession) -> None:
+    from diet_tracker_server.services.food_memory_service import assert_food_alias_available
+
+    user_key = f"user-{uuid.uuid4()}"
+    now = DateTimeValue.now(tz=TimezoneValue.utc)
+    await session.execute(
+        text(
+            "insert into food_memory (user_key, name, normalized_name, usda_fdc_id, usda_description, basis, calories, protein_g, carbs_g, fat_g, created_at, updated_at) "
+            "values (:uk, 'Almond Butter', 'almond butter', 2, 'AB', 'per_100g', 100, 1, 1, 1, :now, :now)"
+        ),
+        {"uk": user_key, "now": now},
+    )
+    await session.commit()
+
+    with pytest.raises(ValueError) as excinfo:
+        await assert_food_alias_available(
+            session=session,
+            user_key=user_key,
+            alias="almond butter",
+            exclude_normalized_name=None,
+        )
+    assert "almond butter" in str(excinfo.value)
+
+
+@pytest.mark.asyncio
+async def test_food_memory_alias_collision_excludes_own_row(session: AsyncSession) -> None:
+    from diet_tracker_server.services.food_memory_service import assert_food_alias_available
+
+    user_key = f"user-{uuid.uuid4()}"
+    now = DateTimeValue.now(tz=TimezoneValue.utc)
+    await session.execute(
+        text(
+            "insert into food_memory (user_key, name, normalized_name, usda_fdc_id, usda_description, basis, calories, protein_g, carbs_g, fat_g, aliases, created_at, updated_at) "
+            "values (:uk, 'PB', 'peanut butter', 1, 'PB', 'per_100g', 100, 1, 1, 1, ARRAY['pb']::text[], :now, :now)"
+        ),
+        {"uk": user_key, "now": now},
+    )
+    await session.commit()
+
+    await assert_food_alias_available(
+        session=session,
+        user_key=user_key,
+        alias="pb",
+        exclude_normalized_name="peanut butter",
+    )
