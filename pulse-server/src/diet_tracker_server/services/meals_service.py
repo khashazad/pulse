@@ -8,6 +8,7 @@ from fastapi import HTTPException
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from diet_tracker_server.db import transaction
 from diet_tracker_server.models import (
     FoodEntryCreate,
     MealCreate,
@@ -125,39 +126,44 @@ async def log_meal(
     now: DateTimeValue,
     consumed_at: DateTimeValue | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    repo = MealsRepository(session)
-    meal = await repo.get_meal(meal_id, user_key)
-    if meal is None:
-        raise HTTPException(status_code=404, detail="Meal not found")
+    async with transaction(session):
+        repo = MealsRepository(session)
+        meal = await repo.get_meal(meal_id, user_key)
+        if meal is None:
+            raise HTTPException(status_code=404, detail="Meal not found")
 
-    items = await repo.list_items(meal_id)
-    if not items:
-        raise HTTPException(status_code=400, detail="Meal has no items to log")
+        items = await repo.list_items(meal_id)
+        if not items:
+            raise HTTPException(status_code=400, detail="Meal has no items to log")
 
-    effective_consumed_at = consumed_at or now
-    entry_items = [
-        FoodEntryCreate(
-            display_name=item["display_name"],
-            quantity_text=item["quantity_text"],
-            normalized_quantity_value=_optional_float(item["normalized_quantity_value"]),
-            normalized_quantity_unit=item["normalized_quantity_unit"],
-            usda_fdc_id=item["usda_fdc_id"],
-            usda_description=item["usda_description"],
-            custom_food_id=item["custom_food_id"],
-            calories=int(item["calories"]),
-            protein_g=float(item["protein_g"]),
-            carbs_g=float(item["carbs_g"]),
-            fat_g=float(item["fat_g"]),
-            consumed_at=effective_consumed_at,
+        effective_consumed_at = consumed_at or now
+        meal_name = meal["name"]
+        entry_items = [
+            FoodEntryCreate(
+                display_name=item["display_name"],
+                quantity_text=item["quantity_text"],
+                normalized_quantity_value=_optional_float(item["normalized_quantity_value"]),
+                normalized_quantity_unit=item["normalized_quantity_unit"],
+                usda_fdc_id=item["usda_fdc_id"],
+                usda_description=item["usda_description"],
+                custom_food_id=item["custom_food_id"],
+                calories=int(item["calories"]),
+                protein_g=float(item["protein_g"]),
+                carbs_g=float(item["carbs_g"]),
+                fat_g=float(item["fat_g"]),
+                consumed_at=effective_consumed_at,
+            )
+            for item in items
+        ]
+        return await create_entries_with_side_effects(
+            session=session,
+            user_key=user_key,
+            items=entry_items,
+            now=now,
+            manage_transaction=False,
+            meal_id=meal_id,
+            meal_name=meal_name,
         )
-        for item in items
-    ]
-    return await create_entries_with_side_effects(
-        session=session,
-        user_key=user_key,
-        items=entry_items,
-        now=now,
-    )
 
 
 def _optional_float(value: Any) -> float | None:

@@ -1,0 +1,225 @@
+from __future__ import annotations
+
+from datetime import datetime as DateTimeValue
+from uuid import UUID
+from zoneinfo import ZoneInfo
+
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Response, UploadFile
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from diet_tracker_server.auth import require_session
+from diet_tracker_server.config import get_settings
+from diet_tracker_server.db import get_session_dependency, transaction
+from diet_tracker_server.models import (
+    ContainerCreate,
+    ContainerPhotoStatus,
+    ContainerResponse,
+    ContainerUpdate,
+    ContainersListResponse,
+)
+from diet_tracker_server.repositories.containers import ContainersRepository
+from diet_tracker_server.services.container_photos import (
+    PhotoTooLargeError,
+    UnsupportedImageError,
+    process_container_photo,
+)
+from diet_tracker_server.services.normalize import normalize_name
+
+settings = get_settings()
+router = APIRouter(dependencies=[Depends(require_session)])
+TZ = ZoneInfo(settings.timezone)
+
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB
+_UPLOAD_CHUNK_BYTES = 64 * 1024
+
+
+async def _read_capped(file: UploadFile, max_bytes: int) -> bytearray:
+    """Read an UploadFile in chunks, aborting once cumulative bytes exceed max_bytes.
+
+    Returns a bytearray (not bytes) so the payload is held in a single contiguous
+    buffer — no second copy at the join step. Downstream (Pillow via BytesIO,
+    repo BYTEA insert) accepts bytes-like.
+
+    Raises PhotoTooLargeError when the upload exceeds the cap.
+    """
+    buffer = bytearray()
+    while True:
+        chunk = await file.read(_UPLOAD_CHUNK_BYTES)
+        if not chunk:
+            break
+        if len(buffer) + len(chunk) > max_bytes:
+            raise PhotoTooLargeError(
+                f"Upload exceeds {max_bytes}-byte cap (read at least {len(buffer) + len(chunk)})"
+            )
+        buffer.extend(chunk)
+    return buffer
+
+
+def _to_response(row: dict) -> ContainerResponse:
+    return ContainerResponse(
+        id=row["id"],
+        user_key=row["user_key"],
+        name=row["name"],
+        normalized_name=row["normalized_name"],
+        tare_weight_g=float(row["tare_weight_g"]),
+        has_photo=bool(row["has_photo"]),
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+    )
+
+
+@router.get("/containers", response_model=ContainersListResponse)
+async def list_containers(
+    request: Request,
+    session: AsyncSession = Depends(get_session_dependency),
+) -> ContainersListResponse:
+    user_key = request.state.user_key
+    repo = ContainersRepository(session)
+    rows = await repo.list_for_user(user_key)
+    return ContainersListResponse(containers=[_to_response(r) for r in rows])
+
+
+@router.post("/containers", status_code=201, response_model=ContainerResponse)
+async def create_container(
+    request: Request,
+    body: ContainerCreate,
+    session: AsyncSession = Depends(get_session_dependency),
+) -> ContainerResponse:
+    user_key = request.state.user_key
+    repo = ContainersRepository(session)
+    now = DateTimeValue.now(tz=TZ)
+    try:
+        async with transaction(session):
+            row = await repo.create(
+                user_key=user_key,
+                name=body.name,
+                normalized_name=normalize_name(body.name),
+                tare_weight_g=body.tare_weight_g,
+                now=now,
+            )
+    except IntegrityError as exc:
+        raise HTTPException(status_code=409, detail="A container with that name already exists") from exc
+    return _to_response(row)
+
+
+@router.get("/containers/{container_id}", response_model=ContainerResponse)
+async def get_container(
+    request: Request,
+    container_id: UUID,
+    session: AsyncSession = Depends(get_session_dependency),
+) -> ContainerResponse:
+    user_key = request.state.user_key
+    repo = ContainersRepository(session)
+    row = await repo.get_by_id(container_id, user_key)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Container not found")
+    return _to_response(row)
+
+
+@router.patch("/containers/{container_id}", response_model=ContainerResponse)
+async def update_container(
+    request: Request,
+    container_id: UUID,
+    body: ContainerUpdate,
+    session: AsyncSession = Depends(get_session_dependency),
+) -> ContainerResponse:
+    user_key = request.state.user_key
+    fields = body.model_dump(exclude_unset=True)
+    if "name" in fields and fields["name"] is not None:
+        fields["normalized_name"] = normalize_name(fields["name"])
+    repo = ContainersRepository(session)
+    now = DateTimeValue.now(tz=TZ)
+    try:
+        async with transaction(session):
+            row = await repo.update_fields(container_id, user_key, fields, now)
+    except IntegrityError as exc:
+        raise HTTPException(status_code=409, detail="A container with that name already exists") from exc
+    if row is None:
+        raise HTTPException(status_code=404, detail="Container not found")
+    return _to_response(row)
+
+
+@router.delete("/containers/{container_id}", status_code=204)
+async def delete_container(
+    request: Request,
+    container_id: UUID,
+    session: AsyncSession = Depends(get_session_dependency),
+) -> None:
+    user_key = request.state.user_key
+    repo = ContainersRepository(session)
+    async with transaction(session):
+        deleted = await repo.delete(container_id, user_key)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Container not found")
+
+
+@router.put("/containers/{container_id}/photo", response_model=ContainerPhotoStatus)
+async def upload_container_photo(
+    request: Request,
+    container_id: UUID,
+    file: UploadFile = File(...),
+    session: AsyncSession = Depends(get_session_dependency),
+) -> ContainerPhotoStatus:
+    user_key = request.state.user_key
+
+    try:
+        raw = await _read_capped(file, MAX_UPLOAD_BYTES)
+    except PhotoTooLargeError as exc:
+        raise HTTPException(status_code=413, detail=str(exc)) from exc
+
+    try:
+        full, thumb, mime = process_container_photo(raw, max_bytes=MAX_UPLOAD_BYTES)
+    except PhotoTooLargeError as exc:
+        raise HTTPException(status_code=413, detail=str(exc)) from exc
+    except UnsupportedImageError as exc:
+        raise HTTPException(status_code=415, detail="Unsupported or corrupt image") from exc
+
+    repo = ContainersRepository(session)
+    now = DateTimeValue.now(tz=TZ)
+    async with transaction(session):
+        ok = await repo.set_photo(
+            container_id=container_id,
+            user_key=user_key,
+            photo=full,
+            photo_thumb=thumb,
+            mime=mime,
+            now=now,
+        )
+    if not ok:
+        raise HTTPException(status_code=404, detail="Container not found")
+    return ContainerPhotoStatus(has_photo=True)
+
+
+@router.delete("/containers/{container_id}/photo", status_code=204)
+async def delete_container_photo(
+    request: Request,
+    container_id: UUID,
+    session: AsyncSession = Depends(get_session_dependency),
+) -> None:
+    user_key = request.state.user_key
+    repo = ContainersRepository(session)
+    now = DateTimeValue.now(tz=TZ)
+    async with transaction(session):
+        ok = await repo.clear_photo(container_id, user_key, now)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Container not found")
+
+
+@router.get("/containers/{container_id}/photo")
+async def get_container_photo(
+    request: Request,
+    container_id: UUID,
+    size: str = Query(default="thumb", pattern="^(thumb|full)$"),
+    session: AsyncSession = Depends(get_session_dependency),
+) -> Response:
+    user_key = request.state.user_key
+    repo = ContainersRepository(session)
+    result = await repo.get_photo(container_id, user_key, thumb=(size == "thumb"))
+    if result is None:
+        raise HTTPException(status_code=404, detail="No photo")
+    body, mime = result
+    headers = {
+        "Cache-Control": "private, max-age=86400",
+    }
+    return Response(content=body, media_type=mime, headers=headers)

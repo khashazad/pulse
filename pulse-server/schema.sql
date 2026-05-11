@@ -160,6 +160,48 @@ begin
 end
 $body$;
 
+alter table food_entries add column if not exists meal_id uuid;
+alter table food_entries add column if not exists meal_name text;
+
+do $body$
+begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'fk_food_entries_meal_id'
+  ) then
+    alter table food_entries
+      add constraint fk_food_entries_meal_id
+      foreign key (meal_id) references meals(id) on delete set null;
+  end if;
+end
+$body$;
+
+create index if not exists idx_food_entries_meal_id on food_entries(meal_id);
+
+create table if not exists sessions (
+  token_hash    bytea primary key,
+  email         text not null,
+  created_at    timestamptz not null default now(),
+  last_used_at  timestamptz not null default now(),
+  expires_at    timestamptz not null
+);
+create index if not exists idx_sessions_email on sessions (email);
+create index if not exists idx_sessions_expires_at on sessions (expires_at);
+
+create table if not exists containers (
+  id uuid primary key default gen_random_uuid(),
+  user_key text not null,
+  name text not null,
+  normalized_name text not null,
+  tare_weight_g numeric not null check (tare_weight_g > 0),
+  photo bytea,
+  photo_thumb bytea,
+  photo_mime text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create unique index if not exists idx_containers_user_key_name on containers(user_key, normalized_name);
+create index if not exists idx_containers_user_key on containers(user_key);
+
 alter table food_memory add column if not exists aliases text[] not null default '{}'::text[];
 alter table meals add column if not exists aliases text[] not null default '{}'::text[];
 

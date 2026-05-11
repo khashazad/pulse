@@ -1,42 +1,87 @@
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import Any
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
     database_url: str
     usda_api_key: str
-    api_key: str
-    default_user_key: str = "default"
+
+    # Google OAuth (iOS-facing).
+    google_client_id: str = ""
+    google_client_secret: str = ""
+    oauth_redirect_uri: str = ""
+    app_redirect_scheme: str = "diettracker"
+    allowed_emails: str = ""  # comma-separated
+    session_ttl_days: int = 90
+    session_token_bytes: int = 32
+    legacy_user_key: str = "khash"
+
+    # Existing.
     port: int = 8787
     timezone: str = "America/Toronto"
-    # OAuth (claude.ai connector path). Empty values disable OAuth; the MCP layer falls back to X-API-Key.
+    app_env: str = "local"
+
+    # MCP / claude.ai connector OAuth (separate from Google iOS auth).
     github_client_id: str = ""
     github_client_secret: str = ""
-    allowed_github_users: str = ""  # comma-separated GitHub logins
+    allowed_github_users: str = ""
     public_base_url: str = ""
 
-    model_config = {"env_prefix": "", "case_sensitive": False, "env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
+    # Explicit opt-in to run the MCP layer without auth. Only honored when APP_ENV is
+    # local/dev/test; non-local envs always require GitHub OAuth.
+    mcp_allow_unauth: bool = False
+
+    model_config = {
+        "env_prefix": "",
+        "case_sensitive": False,
+        "env_file": ".env",
+        "env_file_encoding": "utf-8",
+        "extra": "ignore",
+    }
+
+    @property
+    def allowed_emails_set(self) -> set[str]:
+        return {e.strip().lower() for e in self.allowed_emails.split(",") if e.strip()}
 
     @property
     def allowed_github_users_set(self) -> set[str]:
         return {u.strip().lower() for u in self.allowed_github_users.split(",") if u.strip()}
 
     @property
-    def oauth_enabled(self) -> bool:
+    def mcp_oauth_enabled(self) -> bool:
         return bool(self.github_client_id and self.github_client_secret and self.public_base_url)
 
+    @property
+    def is_local_env(self) -> bool:
+        return (self.app_env or "").lower() in {"local", "dev", "test"}
 
-# Summary: Returns a cached Settings instance for application-level use.
-# Parameters:
-# - None: Uses process environment for configuration values.
-# Returns:
-# - Settings: Cached validated runtime settings.
-# Raises/Throws:
-# - pydantic_core.ValidationError: Raised if configuration is incomplete or invalid.
+    @model_validator(mode="after")
+    def _enforce_https_redirect_outside_local(self) -> "Settings":
+        if self.is_local_env:
+            return self
+        if self.oauth_redirect_uri and not self.oauth_redirect_uri.startswith("https://"):
+            raise ValueError("OAUTH_REDIRECT_URI must use https in non-local environments")
+        return self
+
+    @model_validator(mode="after")
+    def _require_mcp_auth_outside_local(self) -> "Settings":
+        # /mcp is exempt from SessionAuthMiddleware so the MCP layer must own its own auth.
+        # Non-local envs must configure GitHub OAuth (mcp_oauth_enabled) or explicitly
+        # opt in to unauthenticated MCP via MCP_ALLOW_UNAUTH=true (intended for local dev).
+        if self.is_local_env:
+            return self
+        if not self.mcp_oauth_enabled and not self.mcp_allow_unauth:
+            raise ValueError(
+                "MCP layer is unauthenticated: set GITHUB_CLIENT_ID/SECRET + PUBLIC_BASE_URL "
+                "to enable GitHub OAuth, or MCP_ALLOW_UNAUTH=true to opt in explicitly"
+            )
+        return self
+
+
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     return Settings()

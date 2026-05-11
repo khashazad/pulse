@@ -1,13 +1,8 @@
 from __future__ import annotations
 
-import os
 from unittest.mock import MagicMock
 
 import pytest
-
-os.environ.setdefault("DATABASE_URL", "postgresql://localhost/test")
-os.environ.setdefault("USDA_API_KEY", "test-usda")
-os.environ.setdefault("API_KEY", "test-api-key")
 
 
 @pytest.mark.asyncio
@@ -59,13 +54,6 @@ async def test_build_mcp_emits_workflow_instructions() -> None:
     assert "resolve_food" in mcp.instructions
     assert "list_meals" in mcp.instructions
     assert WORKFLOW_INSTRUCTIONS in mcp.instructions
-
-
-def test_api_key_middleware_imports_cleanly() -> None:
-    from diet_tracker_server.mcp.auth import ApiKeyMiddleware
-
-    mw = ApiKeyMiddleware("secret")
-    assert mw._configured_key == "secret"
 
 
 @pytest.mark.asyncio

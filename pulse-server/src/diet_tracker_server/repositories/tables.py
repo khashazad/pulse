@@ -9,6 +9,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    LargeBinary,
     MetaData,
     Numeric,
     Table,
@@ -176,6 +177,13 @@ food_entries = Table(
     Column("fat_g", Numeric, nullable=False),
     Column("consumed_at", DateTime(timezone=True), nullable=False),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column(
+        "meal_id",
+        UUID(as_uuid=True),
+        ForeignKey("meals.id", ondelete="SET NULL"),
+        nullable=True,
+    ),
+    Column("meal_name", Text, nullable=True),
     CheckConstraint(
         "(usda_fdc_id is not null and custom_food_id is null) or "
         "(usda_fdc_id is null and custom_food_id is not null)",
@@ -184,4 +192,35 @@ food_entries = Table(
     Index("idx_food_entries_user_key", "user_key"),
     Index("idx_food_entries_daily_log_id_consumed_at", "daily_log_id", "consumed_at"),
     Index("idx_food_entries_custom_food_id", "custom_food_id"),
+    Index("idx_food_entries_meal_id", "meal_id"),
+)
+
+sessions = Table(
+    "sessions",
+    metadata,
+    Column("token_hash", LargeBinary, primary_key=True),
+    Column("email", Text, nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("last_used_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("expires_at", DateTime(timezone=True), nullable=False),
+    Index("idx_sessions_email", "email"),
+    Index("idx_sessions_expires_at", "expires_at"),
+)
+
+containers = Table(
+    "containers",
+    metadata,
+    Column("id", UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")),
+    Column("user_key", Text, nullable=False),
+    Column("name", Text, nullable=False),
+    Column("normalized_name", Text, nullable=False),
+    Column("tare_weight_g", Numeric, nullable=False),
+    Column("photo", LargeBinary, nullable=True),
+    Column("photo_thumb", LargeBinary, nullable=True),
+    Column("photo_mime", Text, nullable=True),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    CheckConstraint("tare_weight_g > 0", name="containers_tare_weight_g_check"),
+    Index("idx_containers_user_key_name", "user_key", "normalized_name", unique=True),
+    Index("idx_containers_user_key", "user_key"),
 )

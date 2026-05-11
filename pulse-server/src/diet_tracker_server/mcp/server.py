@@ -15,8 +15,9 @@ from sqlalchemy.exc import IntegrityError
 from diet_tracker_server.config import get_settings
 from diet_tracker_server.db import get_session, transaction
 from diet_tracker_server.macro_aggregates import sum_food_entry_macros
-from diet_tracker_server.mcp.auth import ApiKeyMiddleware, GitHubAllowlistMiddleware
+from diet_tracker_server.mcp.auth import GitHubAllowlistMiddleware
 from diet_tracker_server.models import (
+    ContainerResponse,
     CustomFoodCreate,
     CustomFoodResponse,
     CustomFoodUpdate,
@@ -33,6 +34,7 @@ from diet_tracker_server.models import (
     MealUpdate,
     ResolvedFood,
 )
+from diet_tracker_server.repositories.containers import ContainersRepository
 from diet_tracker_server.repositories.custom_foods import CustomFoodsRepository
 from diet_tracker_server.repositories.entries import EntriesRepository
 from diet_tracker_server.repositories.food_memory import FoodMemoryRepository
@@ -141,6 +143,19 @@ def _basis_for(food: dict[str, Any]) -> str:
     return "per_serving" if food.get("serving_size") else "per_100g"
 
 
+def _container_response(row: dict[str, Any]) -> ContainerResponse:
+    return ContainerResponse(
+        id=row["id"],
+        user_key=row["user_key"],
+        name=row["name"],
+        normalized_name=row["normalized_name"],
+        tare_weight_g=float(row["tare_weight_g"]),
+        has_photo=bool(row["has_photo"]),
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+    )
+
+
 def _custom_food_response(row: dict[str, Any]) -> CustomFoodResponse:
     return CustomFoodResponse(
         id=row["id"],
@@ -225,12 +240,12 @@ def build_mcp(usda_getter) -> FastMCP:
     Indirection lets callers bind to `app.get_usda_client` after lifespan startup without import cycles.
 
     Auth: GitHubProvider when GITHUB_CLIENT_ID/SECRET + PUBLIC_BASE_URL are set (claude.ai connector
-    requires OAuth + DCR). Otherwise falls back to X-API-Key middleware for local dev / curl.
+    requires OAuth + DCR). Otherwise the MCP layer runs unauthenticated (local dev only).
     """
     settings = get_settings()
     tz = ZoneInfo(settings.timezone)
 
-    if settings.oauth_enabled:
+    if settings.mcp_oauth_enabled:
         from fastmcp.server.auth.providers.github import GitHubProvider
 
         auth_provider = GitHubProvider(
@@ -242,10 +257,17 @@ def build_mcp(usda_getter) -> FastMCP:
         if settings.allowed_github_users_set:
             mcp.add_middleware(GitHubAllowlistMiddleware(settings.allowed_github_users_set))
     else:
+        # Settings.model_validator already rejects this combo outside local; this is a
+        # belt-and-suspenders guard for callers that bypass Settings (e.g. tests).
+        if not settings.is_local_env and not settings.mcp_allow_unauth:
+            raise RuntimeError(
+                "Refusing to build unauthenticated MCP outside local env. "
+                "Set GITHUB_CLIENT_ID/SECRET + PUBLIC_BASE_URL or MCP_ALLOW_UNAUTH=true."
+            )
         mcp = FastMCP(name="diet", instructions=WORKFLOW_INSTRUCTIONS)
-        mcp.add_middleware(ApiKeyMiddleware(settings.api_key))
 
-    user_key = settings.default_user_key
+    # Match REST surface so data created via either path lives in the same tenant.
+    user_key = settings.legacy_user_key
 
     # ---------------- core search/log ----------------
 
@@ -569,6 +591,83 @@ def build_mcp(usda_getter) -> FastMCP:
             repo = CustomFoodsRepository(session)
             rows = await repo.list_for_user(user_key)
         return [_custom_food_response(r) for r in rows]
+
+    # ---------------- containers ----------------
+
+    @mcp.tool
+    async def list_containers() -> list[ContainerResponse]:
+        """List all meal-prep containers (pots, boxes) saved for this user. Each row
+        carries `tare_weight_g`, the container's empty weight in grams, used to deduct
+        from a scale reading when meal-prepping."""
+        async with get_session() as session:
+            repo = ContainersRepository(session)
+            rows = await repo.list_for_user(user_key)
+        return [_container_response(r) for r in rows]
+
+    @mcp.tool
+    async def save_container(
+        name: str,
+        tare_weight_g: float = Field(gt=0),
+    ) -> ContainerResponse:
+        """Create a new meal-prep container with its empty (tare) weight in grams.
+        Use this when the user mentions a new pot/box they want to track."""
+        now = DateTimeValue.now(tz=tz)
+        async with get_session() as session:
+            repo = ContainersRepository(session)
+            try:
+                async with transaction(session):
+                    row = await repo.create(
+                        user_key=user_key,
+                        name=name,
+                        normalized_name=normalize_name(name),
+                        tare_weight_g=tare_weight_g,
+                        now=now,
+                    )
+            except IntegrityError as exc:
+                raise ToolError("A container with that name already exists") from exc
+        return _container_response(row)
+
+    @mcp.tool
+    async def update_container(
+        container_id: str,
+        name: str | None = None,
+        tare_weight_g: float | None = Field(default=None, gt=0),
+    ) -> ContainerResponse:
+        """Update name and/or tare weight of an existing container."""
+        try:
+            cid = UUID(container_id)
+        except ValueError as exc:
+            raise ToolError("container_id must be a UUID") from exc
+        fields: dict[str, Any] = {}
+        if name is not None:
+            fields["name"] = name
+            fields["normalized_name"] = normalize_name(name)
+        if tare_weight_g is not None:
+            fields["tare_weight_g"] = tare_weight_g
+        now = DateTimeValue.now(tz=tz)
+        async with get_session() as session:
+            repo = ContainersRepository(session)
+            try:
+                async with transaction(session):
+                    row = await repo.update_fields(cid, user_key, fields, now)
+            except IntegrityError as exc:
+                raise ToolError("A container with that name already exists") from exc
+        if row is None:
+            raise ToolError("Container not found")
+        return _container_response(row)
+
+    @mcp.tool
+    async def delete_container(container_id: str) -> dict[str, bool]:
+        """Delete a container by id."""
+        try:
+            cid = UUID(container_id)
+        except ValueError as exc:
+            raise ToolError("container_id must be a UUID") from exc
+        async with get_session() as session:
+            repo = ContainersRepository(session)
+            async with transaction(session):
+                deleted = await repo.delete(cid, user_key)
+        return {"deleted": deleted}
 
     # ---------------- food memory ----------------
 
