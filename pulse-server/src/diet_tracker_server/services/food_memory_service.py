@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from typing import Any
 
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from diet_tracker_server.models import ResolvedFood
 from diet_tracker_server.repositories.food_memory import FoodMemoryRepository
+from diet_tracker_server.repositories.tables import food_memory
 from diet_tracker_server.services.normalize import normalize_name
 
 
@@ -81,3 +83,43 @@ def _custom_food_from_row(row: dict[str, Any]) -> dict[str, Any]:
         "created_at": row["cf_created_at"],
         "updated_at": row["cf_updated_at"],
     }
+
+
+def normalize_alias_list(aliases: list[str], canonical_normalized_name: str) -> list[str]:
+    """Normalize aliases, drop empties, drop dups, drop alias equal to canonical name."""
+    seen: set[str] = set()
+    out: list[str] = []
+    for raw in aliases:
+        norm = normalize_name(raw)
+        if not norm or norm == canonical_normalized_name or norm in seen:
+            continue
+        seen.add(norm)
+        out.append(norm)
+    return out
+
+
+async def assert_food_alias_available(
+    session: AsyncSession,
+    user_key: str,
+    alias: str,
+    exclude_normalized_name: str | None,
+) -> None:
+    """Raise ValueError if `alias` is already used as a canonical name or alias on another row."""
+    stmt = (
+        select(food_memory.c.normalized_name)
+        .where(food_memory.c.user_key == user_key)
+        .where(
+            or_(
+                food_memory.c.normalized_name == alias,
+                food_memory.c.aliases.any(alias),
+            )
+        )
+    )
+    if exclude_normalized_name is not None:
+        stmt = stmt.where(food_memory.c.normalized_name != exclude_normalized_name)
+    result = await session.execute(stmt)
+    existing = result.scalar_one_or_none()
+    if existing is not None:
+        raise ValueError(
+            f"alias '{alias}' is already used by food memory entry '{existing}'"
+        )
