@@ -162,13 +162,13 @@ Errors normalize through existing `DietTrackerError` cases. `notFound` is propag
 ## View models
 
 `State/WeightLogModel.swift`:
-- `@Observable`, `weak var settings: AppSettings?`.
-- `LoadState<[WeightEntry]> entries`.
+- `@Observable`, `weak var auth: AuthSession?` (matches existing `WeekModel`/`MonthModel`).
+- `LoadState<[WeightEntry]> state`.
 - `init(auth:)`; `load()` fetches last 90 days; `upsert(date:weight:unit:)` PUTs and patches the cached list; `delete(date:)` DELETEs and removes.
-- `todayEntry: WeightEntry?` computed from `entries`.
+- `todayEntry: WeightEntry?` computed from the loaded list.
 
 `State/WeightTrendsModel.swift`:
-- `@Observable`, `weak var settings: AppSettings?`.
+- `@Observable`, `weak var auth: AuthSession?`.
 - `LoadState<WeightAnalyticsResult> analytics`.
 - `entries: [WeightEntry]` cached for chart 1.
 - `targetWeightLb: Double?` from current `MacroTargets`.
