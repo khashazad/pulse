@@ -186,13 +186,13 @@ struct WindowedPoint: Hashable {
     let lbPerDay: Double
 }
 
-struct Regression: Hashable {
+struct WeightRegression: Hashable {
     let slope: Double       // lb/day per kcal
     let intercept: Double   // lb/day
     let rSquared: Double
 }
 
-enum ETA: Hashable {
+enum WeightETA: Hashable {
     case date(Date)
     case stable
     case never  // trending away from target
@@ -200,10 +200,10 @@ enum ETA: Hashable {
 
 struct WeightAnalyticsResult: Hashable {
     let scatter: [WindowedPoint]
-    let regression: Regression?
+    let regression: WeightRegression?
     let maintenanceKcal: Int?
     let trendLbPerWeek: Double?       // last-28-day weight slope × 7
-    let etaToTarget: ETA?             // nil if no target set or no data
+    let etaToTarget: WeightETA?       // nil if no target set or no data
     let validWindowCount: Int
 }
 
