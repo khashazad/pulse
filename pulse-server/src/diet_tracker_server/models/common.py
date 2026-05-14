@@ -15,3 +15,4 @@ class MacroTargets(BaseModel):
     protein_g: float = Field(ge=0)
     carbs_g: float = Field(ge=0)
     fat_g: float = Field(ge=0)
+    target_weight_lb: float | None = Field(default=None, gt=0)
