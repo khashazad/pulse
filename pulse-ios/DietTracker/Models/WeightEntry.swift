@@ -22,3 +22,8 @@ struct WeightEntry: Codable, Identifiable, Hashable {
         case updatedAt = "updated_at"
     }
 }
+
+extension WeightUnit {
+    static let displayPreferenceKey = "weight_display_unit"
+    static var defaultDisplayUnit: WeightUnit { .lb }
+}
