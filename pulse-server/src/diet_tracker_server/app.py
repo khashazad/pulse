@@ -19,6 +19,7 @@ from diet_tracker_server.routers import (
     meals as meals_router,
     summary,
     targets,
+    weight as weight_router,
 )
 from diet_tracker_server.routers import usda as usda_router
 
@@ -116,6 +117,7 @@ app.include_router(containers_router.router)
 app.include_router(custom_foods_router.router)
 app.include_router(food_memory_router.router)
 app.include_router(meals_router.router)
+app.include_router(weight_router.router)
 
 # OAuth metadata routes (.well-known/oauth-authorization-server, /authorize, /token, etc.)
 # must live at the root so claude.ai's connector can discover them. The MCP server itself
