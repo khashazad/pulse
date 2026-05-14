@@ -159,6 +159,11 @@ actor DietTrackerClient {
         return try await fetch(url: url)
     }
 
+    func fetchTargets() async throws -> MacroTargets {
+        let url = try makeURL(path: "/targets", query: [])
+        return try await fetch(url: url)
+    }
+
     // MARK: - auth endpoints
 
     func whoami() async throws -> WhoAmI {
