@@ -31,6 +31,7 @@ daily_target_profile = Table(
     Column("protein_g_target", Numeric, nullable=False),
     Column("carbs_g_target", Numeric, nullable=False),
     Column("fat_g_target", Numeric, nullable=False),
+    Column("target_weight_lb", Numeric, nullable=True),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Index("idx_daily_target_profile_user_key", "user_key", unique=True),
@@ -223,4 +224,20 @@ containers = Table(
     CheckConstraint("tare_weight_g > 0", name="containers_tare_weight_g_check"),
     Index("idx_containers_user_key_name", "user_key", "normalized_name", unique=True),
     Index("idx_containers_user_key", "user_key"),
+)
+
+weight_entries = Table(
+    "weight_entries",
+    metadata,
+    Column("id", UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")),
+    Column("user_key", Text, nullable=False),
+    Column("log_date", Date, nullable=False),
+    Column("weight_lb", Numeric(6, 2), nullable=False),
+    Column("source_unit", Text, nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    CheckConstraint("weight_lb > 0", name="weight_entries_weight_lb_check"),
+    CheckConstraint("source_unit in ('lb','kg')", name="weight_entries_source_unit_check"),
+    UniqueConstraint("user_key", "log_date", name="uq_weight_entries_user_key_log_date"),
+    Index("idx_weight_entries_user_key_log_date", "user_key", "log_date"),
 )
