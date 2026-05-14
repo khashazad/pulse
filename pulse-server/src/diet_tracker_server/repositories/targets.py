@@ -43,6 +43,7 @@ class TargetsRepository:
     # - protein_g (float): Target protein grams.
     # - carbs_g (float): Target carbohydrate grams.
     # - fat_g (float): Target fat grams.
+    # - target_weight_lb (float | None): Optional target body weight in pounds.
     # - updated_at (DateTimeValue): Timestamp for last-update bookkeeping.
     # Returns:
     # - None: Executes insert/upsert side effect only.
@@ -55,6 +56,8 @@ class TargetsRepository:
         protein_g: float,
         carbs_g: float,
         fat_g: float,
+        target_weight_lb: float | None = None,
+        *,
         updated_at: DateTimeValue,
     ) -> None:
         stmt = pg_insert(daily_target_profile).values(
@@ -63,6 +66,7 @@ class TargetsRepository:
             protein_g_target=protein_g,
             carbs_g_target=carbs_g,
             fat_g_target=fat_g,
+            target_weight_lb=target_weight_lb,
             updated_at=updated_at,
         )
         stmt = stmt.on_conflict_do_update(
@@ -72,6 +76,7 @@ class TargetsRepository:
                 "protein_g_target": stmt.excluded.protein_g_target,
                 "carbs_g_target": stmt.excluded.carbs_g_target,
                 "fat_g_target": stmt.excluded.fat_g_target,
+                "target_weight_lb": stmt.excluded.target_weight_lb,
                 "updated_at": updated_at,
             },
         )
