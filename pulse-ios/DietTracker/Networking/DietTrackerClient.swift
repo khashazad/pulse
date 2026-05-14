@@ -115,6 +115,50 @@ actor DietTrackerClient {
         return req
     }
 
+    // MARK: - weight
+
+    func listWeightEntries(from: Date, to: Date) async throws -> [WeightEntry] {
+        let url = try makeURL(
+            path: "/weight",
+            query: [
+                URLQueryItem(name: "from", value: DateOnly.string(from: from)),
+                URLQueryItem(name: "to", value: DateOnly.string(from: to)),
+            ]
+        )
+        return try await fetch(url: url)
+    }
+
+    func getWeight(date: Date) async throws -> WeightEntry {
+        let url = try makeURL(path: "/weight/\(DateOnly.string(from: date))", query: [])
+        return try await fetch(url: url)
+    }
+
+    func upsertWeight(date: Date, weight: Double, unit: WeightUnit) async throws -> WeightEntry {
+        let url = try makeURL(path: "/weight/\(DateOnly.string(from: date))", query: [])
+        let body: [String: Any] = ["weight": weight, "unit": unit.rawValue]
+        let data = try JSONSerialization.data(withJSONObject: body, options: [])
+        return try await sendJSON(url: url, method: "PUT", body: data)
+    }
+
+    func deleteWeight(date: Date) async throws {
+        let url = try makeURL(path: "/weight/\(DateOnly.string(from: date))", query: [])
+        var req = URLRequest(url: url)
+        req.httpMethod = "DELETE"
+        applyAuth(&req)
+        try await sendNoBody(request: req)
+    }
+
+    func fetchCaloriesDaily(from: Date, to: Date) async throws -> [CaloriesDailyRow] {
+        let url = try makeURL(
+            path: "/calories_daily",
+            query: [
+                URLQueryItem(name: "from", value: DateOnly.string(from: from)),
+                URLQueryItem(name: "to", value: DateOnly.string(from: to)),
+            ]
+        )
+        return try await fetch(url: url)
+    }
+
     // MARK: - auth endpoints
 
     func whoami() async throws -> WhoAmI {
