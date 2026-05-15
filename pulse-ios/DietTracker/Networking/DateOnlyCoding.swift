@@ -4,7 +4,7 @@ enum DateOnly {
     static let formatter: DateFormatter = {
         let f = DateFormatter()
         f.locale = Locale(identifier: "en_US_POSIX")
-        f.timeZone = TimeZone(secondsFromGMT: 0)
+        f.timeZone = .current
         f.dateFormat = "yyyy-MM-dd"
         return f
     }()
