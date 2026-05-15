@@ -61,16 +61,43 @@ struct WeightTrendsView: View {
                     .font(.system(size: 13)).foregroundStyle(Theme.FG.tertiary)
                     .frame(height: 160)
             } else {
+                let sorted = entries.sorted { $0.date < $1.date }
+                let regLine = regressionLine(for: sorted, unit: unit)
                 Chart {
-                    ForEach(entries) { entry in
+                    ForEach(sorted) { entry in
                         let displayValue = WeightFormatter.fromLb(entry.weightLb, to: unit)
+                        AreaMark(x: .value("Date", entry.date),
+                                 y: .value("Weight", displayValue))
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [Theme.CTP.blue.opacity(0.25), Theme.CTP.blue.opacity(0)],
+                                    startPoint: .top, endPoint: .bottom
+                                )
+                            )
+                            .interpolationMethod(.monotone)
                         LineMark(x: .value("Date", entry.date),
                                  y: .value("Weight", displayValue))
                             .foregroundStyle(Theme.CTP.blue)
+                            .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
                             .interpolationMethod(.monotone)
-                        PointMark(x: .value("Date", entry.date),
-                                  y: .value("Weight", displayValue))
-                            .foregroundStyle(Theme.CTP.blue)
+                    }
+                    if let last = sorted.last {
+                        PointMark(x: .value("Date", last.date),
+                                  y: .value("Weight", WeightFormatter.fromLb(last.weightLb, to: unit)))
+                            .foregroundStyle(Theme.CTP.mauve)
+                            .symbolSize(80)
+                    }
+                    if let reg = regLine {
+                        LineMark(x: .value("Date", reg.startDate),
+                                 y: .value("Trend", reg.startY),
+                                 series: .value("Series", "regression"))
+                            .foregroundStyle(Theme.CTP.mauve.opacity(0.9))
+                            .lineStyle(StrokeStyle(lineWidth: 1.5, dash: [3, 3]))
+                        LineMark(x: .value("Date", reg.endDate),
+                                 y: .value("Trend", reg.endY),
+                                 series: .value("Series", "regression"))
+                            .foregroundStyle(Theme.CTP.mauve.opacity(0.9))
+                            .lineStyle(StrokeStyle(lineWidth: 1.5, dash: [3, 3]))
                     }
                     if let target {
                         RuleMark(y: .value("Target", WeightFormatter.fromLb(target, to: unit)))
@@ -87,6 +114,35 @@ struct WeightTrendsView: View {
             }
         }
         .padding(16).ctpCard()
+    }
+
+    private struct RegressionLine {
+        let startDate: Date
+        let endDate: Date
+        let startY: Double
+        let endY: Double
+    }
+
+    private func regressionLine(for entries: [WeightEntry], unit: WeightUnit) -> RegressionLine? {
+        let window = Array(entries.suffix(28))
+        guard window.count >= 8 else { return nil }
+        let ys = window.map { WeightFormatter.fromLb($0.weightLb, to: unit) }
+        let n = Double(window.count)
+        let xs = (0..<window.count).map(Double.init)
+        let sx = xs.reduce(0, +)
+        let sy = ys.reduce(0, +)
+        let sxx = xs.reduce(0) { $0 + $1 * $1 }
+        let sxy = zip(xs, ys).reduce(0) { $0 + $1.0 * $1.1 }
+        let denom = n * sxx - sx * sx
+        guard denom != 0 else { return nil }
+        let slope = (n * sxy - sx * sy) / denom
+        let intercept = (sy - slope * sx) / n
+        return RegressionLine(
+            startDate: window.first!.date,
+            endDate: window.last!.date,
+            startY: intercept,
+            endY: slope * Double(window.count - 1) + intercept
+        )
     }
 
     private func rateVsKcalCard(result: WeightAnalyticsResult, unit: WeightUnit) -> some View {
@@ -174,8 +230,11 @@ struct WeightTrendsView: View {
                 Text("Trending away from target")
                     .font(.system(size: 13)).foregroundStyle(Theme.CTP.peach)
             case .date(let d):
-                Text("ETA to target: \(d.formatted(date: .abbreviated, time: .omitted))")
-                    .font(.system(size: 13)).foregroundStyle(Theme.FG.primary)
+                (Text("ETA to target: ")
+                    .foregroundStyle(Theme.FG.primary)
+                + Text(d.formatted(date: .abbreviated, time: .omitted))
+                    .foregroundStyle(Theme.CTP.lavender).bold())
+                    .font(.system(size: 13))
             }
         }
     }

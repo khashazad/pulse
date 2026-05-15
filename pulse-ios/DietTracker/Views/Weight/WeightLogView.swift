@@ -68,10 +68,15 @@ struct WeightLogView: View {
     @ViewBuilder
     private func loadedBody(_ entries: [WeightEntry]) -> some View {
         let displayUnit = WeightUnit(rawValue: displayUnitRaw) ?? .lb
+        let sorted = entries.sorted { $0.date > $1.date }
+        let today = Calendar.current.startOfDay(for: Date())
+        let todayEntry = sorted.first { Calendar.current.startOfDay(for: $0.date) == today }
+        let past = sorted.filter { Calendar.current.startOfDay(for: $0.date) != today }
+
         ScrollView {
             VStack(spacing: Theme.Layout.sectionSpacing) {
-                todayCard(entries: entries, unit: displayUnit)
-                pastList(entries: entries, unit: displayUnit)
+                todayCard(today: today, entry: todayEntry, unit: displayUnit)
+                pastSection(past: past, unit: displayUnit)
                 Spacer(minLength: Theme.Layout.dockClearance)
             }
             .padding(.horizontal, 16)
@@ -79,33 +84,54 @@ struct WeightLogView: View {
         }
     }
 
-    private func todayCard(entries: [WeightEntry], unit: WeightUnit) -> some View {
-        let today = Calendar.current.startOfDay(for: Date())
-        let entry = entries.first {
-            Calendar.current.startOfDay(for: $0.date) == today
-        }
-        return VStack(alignment: .leading, spacing: 8) {
-            Text("Today")
-                .font(.system(size: 11, weight: .semibold))
-                .tracking(0.8)
-                .textCase(.uppercase)
-                .foregroundStyle(Theme.FG.secondary)
-            if let entry {
-                HStack {
-                    Text(WeightFormatter.display(lb: entry.weightLb, in: unit))
-                        .font(.system(size: 32, weight: .bold, design: .rounded))
-                        .foregroundStyle(Theme.FG.primary)
-                    Spacer()
-                    Text(entry.updatedAt, style: .relative)
-                        .font(.system(size: 12))
-                        .foregroundStyle(Theme.FG.tertiary)
+    private func todayCard(today: Date, entry: WeightEntry?, unit: WeightUnit) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Today")
+                    .font(.system(size: 11, weight: .semibold))
+                    .tracking(0.8).textCase(.uppercase)
+                    .foregroundStyle(Theme.FG.secondary)
+                Spacer()
+                Button {
+                    displayUnitRaw = (unit == .lb ? WeightUnit.kg : .lb).rawValue
+                } label: {
+                    Text(unit.rawValue.uppercased())
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(Theme.FG.secondary)
+                        .padding(.horizontal, 8).padding(.vertical, 3)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .fill(Theme.CTP.surface1.opacity(0.5))
+                        )
                 }
+                .buttonStyle(.plain)
+            }
+            if let entry {
+                Button {
+                    sheetState = .edit(entry)
+                } label: {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text(String(format: "%.1f", WeightFormatter.fromLb(entry.weightLb, to: unit)))
+                            .font(.system(size: 34, weight: .bold, design: .rounded))
+                            .foregroundStyle(Theme.FG.primary)
+                            .monospacedDigit()
+                        Text(unit.rawValue)
+                            .font(.system(size: 16))
+                            .foregroundStyle(Theme.FG.tertiary)
+                        Spacer()
+                        Text("tap to edit")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Theme.FG.tertiary)
+                    }
+                }
+                .buttonStyle(.plain)
             } else {
                 Button {
                     sheetState = .add(today)
                 } label: {
-                    HStack {
-                        Image(systemName: "plus.circle.fill")
+                    HStack(spacing: 8) {
+                        Image(systemName: "plus")
+                            .font(.system(size: 16, weight: .semibold))
                         Text("Add today's weight")
                     }
                     .font(.system(size: 16, weight: .semibold))
@@ -116,53 +142,84 @@ struct WeightLogView: View {
         }
         .padding(16)
         .ctpCard()
-        .onTapGesture {
-            if let entry = entries.first(where: {
-                Calendar.current.startOfDay(for: $0.date) == today
-            }) {
-                sheetState = .edit(entry)
-            }
-        }
     }
 
-    private func pastList(entries: [WeightEntry], unit: WeightUnit) -> some View {
-        let today = Calendar.current.startOfDay(for: Date())
-        let past = entries.filter { Calendar.current.startOfDay(for: $0.date) != today }
-        return VStack(alignment: .leading, spacing: 8) {
-            Text("Past")
-                .font(.system(size: 11, weight: .semibold))
-                .tracking(0.8)
-                .textCase(.uppercase)
-                .foregroundStyle(Theme.FG.secondary)
+    private func pastSection(past: [WeightEntry], unit: WeightUnit) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Past")
+                    .font(.system(size: 11, weight: .semibold))
+                    .tracking(0.8).textCase(.uppercase)
+                    .foregroundStyle(Theme.FG.secondary)
+                Spacer()
+                if !past.isEmpty {
+                    Text("\(past.count) \(past.count == 1 ? "entry" : "entries")")
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(Theme.FG.tertiary)
+                }
+            }
+            .padding(.horizontal, 4)
+
             if past.isEmpty {
                 Text("No past weigh-ins.")
                     .font(.system(size: 13))
                     .foregroundStyle(Theme.FG.tertiary)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .ctpCard()
             } else {
-                ForEach(past) { entry in
-                    Button {
-                        sheetState = .edit(entry)
-                    } label: {
-                        HStack {
-                            Text(entry.date.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day()))
-                                .font(.system(size: 14))
-                                .foregroundStyle(Theme.FG.primary)
-                            Spacer()
-                            Text(WeightFormatter.display(lb: entry.weightLb, in: unit))
-                                .font(.system(size: 14, weight: .semibold, design: .rounded))
-                                .foregroundStyle(Theme.FG.primary)
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(Theme.FG.tertiary)
+                let rows = Array(past.prefix(12).enumerated())
+                VStack(spacing: 0) {
+                    ForEach(rows, id: \.element.id) { idx, entry in
+                        let next = past.indices.contains(idx + 1) ? past[idx + 1] : nil
+                        let delta = next.map { entry.weightLb - $0.weightLb }
+                        pastRow(entry: entry, delta: delta, unit: unit)
+                        if idx < rows.count - 1 {
+                            Rectangle()
+                                .fill(Theme.separator)
+                                .frame(height: 0.5)
                         }
-                        .padding(.vertical, 8)
                     }
-                    .buttonStyle(.plain)
-                    Divider().background(Theme.BG.tertiary)
                 }
+                .padding(.horizontal, 14)
+                .ctpCard()
             }
         }
-        .padding(16)
-        .ctpCard()
+    }
+
+    private func pastRow(entry: WeightEntry, delta: Double?, unit: WeightUnit) -> some View {
+        Button {
+            sheetState = .edit(entry)
+        } label: {
+            HStack(spacing: 10) {
+                Text(entry.date.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day()))
+                    .font(.system(size: 14))
+                    .foregroundStyle(Theme.FG.primary)
+                Spacer()
+                if let delta {
+                    Text("\(delta > 0 ? "+" : "")\(String(format: "%.1f", delta))")
+                        .font(.system(size: 11, weight: .medium, design: .monospaced))
+                        .monospacedDigit()
+                        .foregroundStyle(deltaColor(delta))
+                }
+                Text(WeightFormatter.display(lb: entry.weightLb, in: unit))
+                    .font(.system(size: 14, weight: .semibold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(Theme.FG.primary)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Theme.FG.tertiary)
+            }
+            .padding(.vertical, 10)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func deltaColor(_ delta: Double) -> Color {
+        if delta > 0.1 { return Theme.CTP.peach }
+        if delta < -0.1 { return Theme.CTP.green }
+        return Theme.FG.tertiary
     }
 }
