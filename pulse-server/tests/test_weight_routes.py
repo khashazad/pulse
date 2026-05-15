@@ -95,7 +95,7 @@ def test_put_weight_lb(client: TestClient) -> None:
         )
     assert resp.status_code == 200
     body = resp.json()
-    assert body["weight_lb"] == "180.50"
+    assert body["weight_lb"] == 180.50
     assert body["source_unit"] == "lb"
 
 
@@ -116,7 +116,7 @@ def test_put_weight_kg(client: TestClient) -> None:
         )
     assert resp.status_code == 200
     body = resp.json()
-    assert body["weight_lb"] == "154.32"
+    assert body["weight_lb"] == 154.32
     assert body["source_unit"] == "kg"
 
 

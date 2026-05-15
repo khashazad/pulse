@@ -6,7 +6,7 @@ from decimal import ROUND_HALF_EVEN, Decimal
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_serializer, model_validator
 
 
 WeightUnit = Literal["lb", "kg"]
@@ -24,6 +24,12 @@ class WeightEntryResponse(BaseModel):
     source_unit: WeightUnit
     created_at: DateTimeValue
     updated_at: DateTimeValue
+
+    # Pydantic v2 serializes Decimal as JSON string by default; emit a number so
+    # clients (e.g. Swift Codable Double) can decode without custom handling.
+    @field_serializer("weight_lb")
+    def _serialize_weight_lb(self, v: Decimal) -> float:
+        return float(v)
 
 
 class WeightEntryUpsert(BaseModel):
