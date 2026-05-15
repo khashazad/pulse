@@ -3,11 +3,15 @@ from __future__ import annotations
 from datetime import date as DateValue
 
 from fastapi import HTTPException
+from sqlalchemy import func as sa_func
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from diet_tracker_server.macro_aggregates import sum_food_entry_macros
 from diet_tracker_server.models import DailySummaryResponse, FoodEntryResponse, MacroTargets, MacroTotals
+from diet_tracker_server.models.weight import CaloriesDailyRow
 from diet_tracker_server.repositories.entries import EntriesRepository
+from diet_tracker_server.repositories.tables import daily_logs, food_entries
 from diet_tracker_server.repositories.targets import TargetsRepository
 from diet_tracker_server.services.log_ids import daily_log_id
 
@@ -59,3 +63,28 @@ async def build_daily_summary(
         remaining=remaining,
         entries=entries,
     )
+
+
+async def daily_calorie_totals(
+    session: AsyncSession,
+    user_key: str,
+    from_date: DateValue,
+    to_date: DateValue,
+) -> list[CaloriesDailyRow]:
+    stmt = (
+        select(
+            daily_logs.c.log_date.label("log_date"),
+            sa_func.coalesce(sa_func.sum(food_entries.c.calories), 0).label("calories"),
+        )
+        .select_from(food_entries.join(daily_logs, daily_logs.c.id == food_entries.c.daily_log_id))
+        .where(daily_logs.c.user_key == user_key)
+        .where(daily_logs.c.log_date >= from_date)
+        .where(daily_logs.c.log_date <= to_date)
+        .group_by(daily_logs.c.log_date)
+        .order_by(daily_logs.c.log_date.asc())
+    )
+    result = await session.execute(stmt)
+    return [
+        CaloriesDailyRow(log_date=row["log_date"], calories=int(row["calories"]))
+        for row in result.mappings()
+    ]

@@ -40,6 +40,12 @@ from diet_tracker_server.models.meals import (
 )
 from diet_tracker_server.models.summary import DailySummaryResponse
 from diet_tracker_server.models.usda import USDAFoodResult, USDASearchResponse
+from diet_tracker_server.models.weight import (
+    CaloriesDailyRow,
+    WeightEntryResponse,
+    WeightEntryUpsert,
+    WeightUnit,
+)
 
 __all__ = [
     "MacroTotals",
@@ -77,4 +83,8 @@ __all__ = [
     "ContainerResponse",
     "ContainersListResponse",
     "ContainerPhotoStatus",
+    "CaloriesDailyRow",
+    "WeightEntryResponse",
+    "WeightEntryUpsert",
+    "WeightUnit",
 ]
