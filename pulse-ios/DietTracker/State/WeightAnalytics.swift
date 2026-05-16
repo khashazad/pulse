@@ -1,16 +1,7 @@
 import Foundation
+import os.log
 
-struct WindowedPoint: Hashable {
-    let endDate: Date
-    let avgKcal: Double
-    let lbPerDay: Double
-}
-
-struct WeightRegression: Hashable {
-    let slope: Double     // lb/day per kcal/day
-    let intercept: Double // lb/day
-    let rSquared: Double
-}
+private let analyticsDiagLog = Logger(subsystem: "com.khxsh.diettracker", category: "AnalyticsDiag")
 
 enum WeightETA: Hashable {
     case date(Date)
@@ -19,25 +10,22 @@ enum WeightETA: Hashable {
 }
 
 struct WeightAnalyticsResult: Hashable {
-    let scatter: [WindowedPoint]
-    let regression: WeightRegression?
-    let maintenanceKcal: Int?
+    let maintenanceKcal: Int?      // simple energy-balance estimate
+    let recentAvgKcal: Int?        // avg daily intake over recent window
     let trendLbPerWeek: Double?
     let etaToTarget: WeightETA?
-    let validWindowCount: Int
+    let recentWindowDays: Int?     // length of the consecutive-logged window used above
 }
 
 enum WeightAnalytics {
 
-    static let windowDays = 7
-    static let minWeightObsInWindow = 5
-    static let minKcalObsInWindow = 5
-    static let minValidWindows = 14
+    static let maxRecentWindowDays = 30
+    static let minRecentWindowDays = 14
     static let trendWindowDays = 28
-    static let minTrendWeightObs = 7
+    static let minTrendWeightObs = 5
+    static let kcalPerLb = 3500.0
     static let stableLbPerWeekThreshold = 0.05
     static let atTargetLbThreshold = 0.5
-    static let slopeEpsilon = 1e-7
 
     static func compute(
         entries: [WeightEntry],
@@ -46,67 +34,31 @@ enum WeightAnalytics {
         today: Date = .now
     ) -> WeightAnalyticsResult {
         let cal = Calendar(identifier: .gregorian)
-        guard !entries.isEmpty || !kcal.isEmpty else {
-            return WeightAnalyticsResult(
-                scatter: [], regression: nil, maintenanceKcal: nil,
-                trendLbPerWeek: nil, etaToTarget: nil, validWindowCount: 0
-            )
-        }
+        let endDay = cal.startOfDay(for: today)
 
-        let weightByDay: [Date: Double] = Dictionary(
-            uniqueKeysWithValues: entries.map { (cal.startOfDay(for: $0.date), $0.weightLb) }
-        )
         let kcalByDay: [Date: Double] = Dictionary(
             uniqueKeysWithValues: kcal.map { (cal.startOfDay(for: $0.date), Double($0.calories)) }
         )
 
-        let endDay = cal.startOfDay(for: today)
-        let firstObserved = (entries.map(\.date) + kcal.map(\.date))
-            .min().map { cal.startOfDay(for: $0) } ?? endDay
-        let totalDays = max(1, daysBetween(firstObserved, endDay, calendar: cal) + 1)
-
-        var scatter: [WindowedPoint] = []
-        for offset in stride(from: 0, to: totalDays, by: 1) {
-            let windowEnd = cal.date(byAdding: .day, value: offset - (totalDays - 1), to: endDay)!
-            let windowStart = cal.date(byAdding: .day, value: -(windowDays - 1), to: windowEnd)!
-            if windowStart < firstObserved { continue }
-
-            var weightDays: [(Int, Double)] = []
-            var kcalValues: [Double] = []
-            for w in 0..<windowDays {
-                let d = cal.date(byAdding: .day, value: w, to: windowStart)!
-                if let lb = weightByDay[d] { weightDays.append((w, lb)) }
-                if let c = kcalByDay[d] { kcalValues.append(c) }
-            }
-            guard weightDays.count >= minWeightObsInWindow,
-                  kcalValues.count >= minKcalObsInWindow else { continue }
-
-            let xs = weightDays.map { Double($0.0) }
-            let ys = weightDays.map { $0.1 }
-            guard let (slope, _, _) = ols(xs: xs, ys: ys) else { continue }
-            let avgKcal = kcalValues.reduce(0, +) / Double(kcalValues.count)
-            scatter.append(WindowedPoint(endDate: windowEnd, avgKcal: avgKcal, lbPerDay: slope))
-        }
-
-        var regression: WeightRegression? = nil
-        var maintenanceKcal: Int? = nil
-        if scatter.count >= minValidWindows {
-            let xs = scatter.map(\.avgKcal)
-            let ys = scatter.map(\.lbPerDay)
-            if let (m, b, r2) = ols(xs: xs, ys: ys) {
-                regression = WeightRegression(slope: m, intercept: b, rSquared: r2)
-                if abs(m) >= slopeEpsilon {
-                    let maintenance = -b / m
-                    if maintenance.isFinite {
-                        maintenanceKcal = Int(maintenance.rounded())
-                    }
-                }
-            }
-        }
-
-        let trendLbPerWeek = trendLbPerWeek(
-            entries: entries, today: endDay, calendar: cal
+        // Display trend + ETA depend only on weight data; calorie gaps must not
+        // suppress them.
+        let trendCutoff = cal.date(byAdding: .day, value: -(trendWindowDays - 1), to: endDay)!
+        let trendLbPerWeek = Self.trendLbPerWeek(
+            entries: entries, start: trendCutoff, end: endDay, calendar: cal
         )
+
+        // Intake average comes from the consecutive-kcal window so partial
+        // logging doesn't deflate it. The 28-day weight trend is used for the
+        // deficit term so the caption matches what's displayed.
+        let window = recentConsecutiveWindow(
+            kcalByDay: kcalByDay, today: endDay, calendar: cal
+        )
+        let (maintenanceKcal, recentAvgKcal): (Int?, Int?) = window.map { w in
+            simpleMaintenance(
+                kcalByDay: kcalByDay, start: w.start, end: w.end,
+                trendLbPerWeek: trendLbPerWeek, calendar: cal
+            )
+        } ?? (nil, nil)
 
         let eta = computeETA(
             entries: entries,
@@ -116,51 +68,77 @@ enum WeightAnalytics {
             calendar: cal
         )
 
+        #if DEBUG
+        let avgStr = recentAvgKcal.map(String.init) ?? "nil"
+        let trendStr = trendLbPerWeek.map { String(format: "%.2f", $0) } ?? "nil"
+        let maintStr = maintenanceKcal.map(String.init) ?? "nil"
+        let winStr = window.map { "\($0.days)d" } ?? "nil"
+        analyticsDiagLog.notice("window=\(winStr, privacy: .public) recentAvgKcal=\(avgStr, privacy: .public) trendLb/wk=\(trendStr, privacy: .public) maintenance=\(maintStr, privacy: .public)")
+        #endif
+
         return WeightAnalyticsResult(
-            scatter: scatter,
-            regression: regression,
             maintenanceKcal: maintenanceKcal,
+            recentAvgKcal: recentAvgKcal,
             trendLbPerWeek: trendLbPerWeek,
             etaToTarget: eta,
-            validWindowCount: scatter.count
+            recentWindowDays: window.map { $0.days }
         )
     }
 
-    // MARK: - helpers
-
-    private static func ols(xs: [Double], ys: [Double]) -> (slope: Double, intercept: Double, r2: Double)? {
-        guard xs.count == ys.count, xs.count >= 2 else { return nil }
-        let n = Double(xs.count)
-        let meanX = xs.reduce(0, +) / n
-        let meanY = ys.reduce(0, +) / n
-        var sxx = 0.0, sxy = 0.0, syy = 0.0
-        for i in 0..<xs.count {
-            let dx = xs[i] - meanX
-            let dy = ys[i] - meanY
-            sxx += dx * dx
-            sxy += dx * dy
-            syy += dy * dy
+    // Walks back from `today` and returns the most recent contiguous run of
+    // kcal-logged days, capped at `maxRecentWindowDays`. Returns nil if the run
+    // is shorter than `minRecentWindowDays`.
+    private static func recentConsecutiveWindow(
+        kcalByDay: [Date: Double],
+        today: Date,
+        calendar cal: Calendar
+    ) -> (start: Date, end: Date, days: Int)? {
+        var endDay: Date? = nil
+        for offset in 0..<maxRecentWindowDays {
+            let day = cal.date(byAdding: .day, value: -offset, to: today)!
+            if kcalByDay[day] != nil { endDay = day; break }
         }
-        guard sxx > 0 else { return nil }
-        let slope = sxy / sxx
-        let intercept = meanY - slope * meanX
-        let r2 = syy > 0 ? (sxy * sxy) / (sxx * syy) : 1.0
-        return (slope, intercept, r2)
+        guard let end = endDay else { return nil }
+        var start = end
+        for offset in 1..<maxRecentWindowDays {
+            let day = cal.date(byAdding: .day, value: -offset, to: end)!
+            if kcalByDay[day] != nil { start = day } else { break }
+        }
+        let days = daysBetween(start, end, calendar: cal) + 1
+        guard days >= minRecentWindowDays else { return nil }
+        return (start, end, days)
+    }
+
+    private static func simpleMaintenance(
+        kcalByDay: [Date: Double],
+        start: Date,
+        end: Date,
+        trendLbPerWeek: Double?,
+        calendar cal: Calendar
+    ) -> (Int?, Int?) {
+        let inWindow = kcalByDay.filter { $0.key >= start && $0.key <= end }
+        guard !inWindow.isEmpty else { return (nil, nil) }
+        let avg = inWindow.values.reduce(0, +) / Double(inWindow.count)
+        let avgInt = Int(avg.rounded())
+        guard let trend = trendLbPerWeek else { return (nil, avgInt) }
+        // Energy balance: maintenance = intake - rate × kcalPerLb
+        // (rate is negative when losing, so subtracting adds the deficit back.)
+        let lbPerDay = trend / 7.0
+        let maintenance = avg - lbPerDay * kcalPerLb
+        guard maintenance.isFinite, maintenance > 0 else { return (nil, avgInt) }
+        return (Int(maintenance.rounded()), avgInt)
     }
 
     private static func trendLbPerWeek(
         entries: [WeightEntry],
-        today: Date,
+        start: Date,
+        end: Date,
         calendar cal: Calendar
     ) -> Double? {
-        let cutoff = cal.date(byAdding: .day, value: -(trendWindowDays - 1), to: today)!
-        let pts = entries
-            .filter { cal.startOfDay(for: $0.date) >= cutoff }
-            .map { (entry: WeightEntry) -> (Double, Double) in
-                let day = cal.startOfDay(for: entry.date)
-                let offset = Double(daysBetween(cutoff, day, calendar: cal))
-                return (offset, entry.weightLb)
-            }
+        let pts: [(Double, Double)] = entries
+            .map { (cal.startOfDay(for: $0.date), $0.weightLb) }
+            .filter { $0.0 >= start && $0.0 <= end }
+            .map { (Double(daysBetween(start, $0.0, calendar: cal)), $0.1) }
         guard pts.count >= minTrendWeightObs,
               let (slope, _, _) = ols(xs: pts.map(\.0), ys: pts.map(\.1)) else { return nil }
         return slope * 7.0
@@ -196,6 +174,26 @@ enum WeightAnalytics {
         let daysOut = direction / lbPerDay
         let eta = cal.date(byAdding: .day, value: Int(daysOut.rounded()), to: today)!
         return .date(eta)
+    }
+
+    private static func ols(xs: [Double], ys: [Double]) -> (slope: Double, intercept: Double, r2: Double)? {
+        guard xs.count == ys.count, xs.count >= 2 else { return nil }
+        let n = Double(xs.count)
+        let meanX = xs.reduce(0, +) / n
+        let meanY = ys.reduce(0, +) / n
+        var sxx = 0.0, sxy = 0.0, syy = 0.0
+        for i in 0..<xs.count {
+            let dx = xs[i] - meanX
+            let dy = ys[i] - meanY
+            sxx += dx * dx
+            sxy += dx * dy
+            syy += dy * dy
+        }
+        guard sxx > 0 else { return nil }
+        let slope = sxy / sxx
+        let intercept = meanY - slope * meanX
+        let r2 = syy > 0 ? (sxy * sxy) / (sxx * syy) : 1.0
+        return (slope, intercept, r2)
     }
 
     private static func daysBetween(_ a: Date, _ b: Date, calendar cal: Calendar) -> Int {

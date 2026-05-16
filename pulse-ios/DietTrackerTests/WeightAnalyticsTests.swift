@@ -35,36 +35,60 @@ final class WeightAnalyticsTests: XCTestCase {
             targetWeightLb: 170,
             today: today
         )
-        XCTAssertNil(result.regression)
-        XCTAssertLessThan(result.validWindowCount, 14)
+        XCTAssertNil(result.maintenanceKcal)
+        XCTAssertNil(result.recentWindowDays)
     }
 
-    func testRegressionRecoversMaintenance() {
-        // Build 30 days of data where:
-        //  - calories alternate between 1800 and 2400 to give variance,
-        //  - weight loss rate roughly = (kcal - 2500) / (3500 * 7) lb/day per kcal/day
-        //
-        // We pre-compute synthetic weights so that maintenance ≈ 2500.
+    func testSimpleMaintenanceRecovers() {
+        // 30 days of consecutive logs alternating 1800/2400 kcal, weights
+        // matching (c-2500)/3500 lb/day so true maintenance = 2500.
         var entries: [WeightEntry] = []
         var kcalRows: [CaloriesDailyRow] = []
         var weight = 200.0
         for d in stride(from: -29, through: 0, by: 1) {
             let c = (d % 2 == 0) ? 1800 : 2400
             kcalRows.append(kcal(d, c))
-            // rate per day: (c - 2500) / 3500 (lb/day)
             let ratePerDay = Double(c - 2500) / 3500.0
             weight += ratePerDay
             entries.append(entry(d, lb: weight))
         }
         let result = WeightAnalytics.compute(
-            entries: entries,
-            kcal: kcalRows,
-            targetWeightLb: 180,
-            today: today
+            entries: entries, kcal: kcalRows, targetWeightLb: 180, today: today
         )
-        XCTAssertNotNil(result.regression)
         XCTAssertNotNil(result.maintenanceKcal)
-        XCTAssertEqual(result.maintenanceKcal ?? 0, 2500, accuracy: 250)
+        XCTAssertEqual(result.maintenanceKcal ?? 0, 2500, accuracy: 150)
+    }
+
+    func testMaintenanceSkippedOnKcalGap() {
+        // Recent logging stops short of `minRecentWindowDays` due to a gap.
+        var entries: [WeightEntry] = []
+        var kcalRows: [CaloriesDailyRow] = []
+        for d in stride(from: -29, through: 0, by: 1) {
+            entries.append(entry(d, lb: 180.0))
+            if d > -5 || d < -10 {  // a gap days -10..-5 → recent run is only 5d
+                kcalRows.append(kcal(d, 2000))
+            }
+        }
+        let result = WeightAnalytics.compute(
+            entries: entries, kcal: kcalRows, targetWeightLb: 170, today: today
+        )
+        XCTAssertNil(result.maintenanceKcal)
+        XCTAssertNil(result.recentWindowDays)
+    }
+
+    func testTrendIndependentOfKcalGap() {
+        // No kcal logging at all, but plenty of recent weight data → trend
+        // and ETA must still be reported.
+        var entries: [WeightEntry] = []
+        for d in stride(from: -27, through: 0, by: 1) {
+            entries.append(entry(d, lb: 180.0 - Double(28 + d) * 0.07))
+        }
+        let result = WeightAnalytics.compute(
+            entries: entries, kcal: [], targetWeightLb: 170, today: today
+        )
+        XCTAssertNotNil(result.trendLbPerWeek)
+        XCTAssertNotNil(result.etaToTarget)
+        XCTAssertNil(result.maintenanceKcal)
     }
 
     func testStableTrendETA() {
@@ -82,7 +106,6 @@ final class WeightAnalyticsTests: XCTestCase {
     }
 
     func testTrendingAwayETA() {
-        // Weight is rising; target is below current weight -> .never
         var entries: [WeightEntry] = []
         for d in stride(from: -29, through: 0, by: 1) {
             entries.append(entry(d, lb: 180.0 + Double(30 + d) * 0.1))
@@ -108,20 +131,5 @@ final class WeightAnalyticsTests: XCTestCase {
             today: today
         )
         XCTAssertNil(result.etaToTarget)
-    }
-
-    func testValidWindowRequiresFiveOfSeven() {
-        // 20 days. Within any 7-day window, weight observations are <=4.
-        var entries: [WeightEntry] = []
-        for d in stride(from: -19, through: 0, by: 2) {  // every other day -> max 4 in 7
-            entries.append(entry(d, lb: 180.0))
-        }
-        let result = WeightAnalytics.compute(
-            entries: entries,
-            kcal: (-19...0).map { kcal($0, 2000) },
-            targetWeightLb: 170,
-            today: today
-        )
-        XCTAssertEqual(result.validWindowCount, 0)
     }
 }

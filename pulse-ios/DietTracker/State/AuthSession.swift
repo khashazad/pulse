@@ -1,6 +1,9 @@
 import Foundation
 import Observation
 import AuthenticationServices
+import os.log
+
+private let authDiagLog = Logger(subsystem: "com.khxsh.diettracker", category: "AuthDiag")
 
 @Observable
 final class AuthSession {
@@ -12,6 +15,8 @@ final class AuthSession {
     }
 
     private(set) var state: State
+    /// Invoked after sign-out or 401 handling so per-session caches can be cleared.
+    var onSessionCleared: (() -> Void)?
 
     var email: String? {
         if case .signedIn(let e) = state { return e } else { return nil }
@@ -44,8 +49,10 @@ final class AuthSession {
         self.keychainAccount = keychainAccount
         self.urlSession = urlSession
         if let stored = Self.readStored(service: keychainService, account: keychainAccount) {
+            authDiagLog.notice("init: Keychain HIT (email=\(stored.email, privacy: .public))")
             self.state = .signedIn(email: stored.email)
         } else {
+            authDiagLog.notice("init: Keychain MISS")
             self.state = .signedOut
         }
         // One-shot cleanup of the previous API-key Keychain item; safe if absent.
@@ -87,11 +94,14 @@ final class AuthSession {
     }
 
     func handleUnauthorized() {
+        authDiagLog.notice("handleUnauthorized: clearing Keychain")
         _ = clearStored()
         state = .signedOut
+        onSessionCleared?()
     }
 
     func signOut() async {
+        authDiagLog.notice("signOut: user-initiated, clearing Keychain")
         if let token = storedToken {
             let client = DietTrackerClient(
                 baseURL: baseURL,
@@ -103,6 +113,7 @@ final class AuthSession {
         }
         _ = clearStored()
         state = .signedOut
+        onSessionCleared?()
     }
 
     func makeClient() -> DietTrackerClient? {
