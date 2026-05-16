@@ -1,9 +1,31 @@
 import SwiftUI
 import Charts
 
+enum WeightChartRange: String, CaseIterable, Hashable {
+    case d7, d30, y1
+
+    var days: Int {
+        switch self {
+        case .d7: return 7
+        case .d30: return 30
+        case .y1: return 365
+        }
+    }
+
+    var label: String {
+        switch self {
+        case .d7: return "7d"
+        case .d30: return "30d"
+        case .y1: return "1y"
+        }
+    }
+}
+
 struct WeightTrendsView: View {
     @Environment(AuthSession.self) private var auth
+    @Environment(UserTargetsStore.self) private var targetsStore
     @State private var model: WeightTrendsModel?
+    @State private var weightChartRange: WeightChartRange = .d30
 
     @AppStorage(WeightUnit.displayPreferenceKey)
     private var displayUnitRaw: String = WeightUnit.defaultDisplayUnit.rawValue
@@ -30,8 +52,11 @@ struct WeightTrendsView: View {
             }
         }
         .task {
-            if model == nil { model = WeightTrendsModel(auth: auth) }
+            if model == nil { model = WeightTrendsModel(auth: auth, targetsStore: targetsStore) }
             await model?.load()
+        }
+        .onChange(of: targetsStore.targets?.targetWeightLb) { _, _ in
+            model?.recomputeAnalytics()
         }
         .refreshable { await model?.load() }
     }
@@ -42,7 +67,6 @@ struct WeightTrendsView: View {
         ScrollView {
             VStack(spacing: Theme.Layout.sectionSpacing) {
                 weightOverTimeCard(entries: model?.entries ?? [], target: model?.targetWeightLb, unit: displayUnit)
-                rateVsKcalCard(result: result, unit: displayUnit)
                 analyticsCard(result: result, unit: displayUnit)
                 Spacer(minLength: Theme.Layout.dockClearance)
             }
@@ -51,82 +75,112 @@ struct WeightTrendsView: View {
         }
     }
 
+    private func filteredEntries(_ entries: [WeightEntry]) -> [WeightEntry] {
+        let cutoff = Calendar.current.date(
+            byAdding: .day, value: -(weightChartRange.days - 1), to: Date()
+        ) ?? Date()
+        return entries.filter { $0.date >= Calendar.current.startOfDay(for: cutoff) }
+    }
+
     private func weightOverTimeCard(entries: [WeightEntry], target: Double?, unit: WeightUnit) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Weight over time")
-                .font(.system(size: 11, weight: .semibold)).tracking(0.8).textCase(.uppercase)
-                .foregroundStyle(Theme.FG.secondary)
-            if entries.isEmpty {
+        let visible = filteredEntries(entries).sorted { $0.date < $1.date }
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("Weight over time")
+                    .font(.system(size: 11, weight: .semibold)).tracking(0.8).textCase(.uppercase)
+                    .foregroundStyle(Theme.FG.secondary)
+                Spacer()
+                CTPSegmented(selection: $weightChartRange, options: WeightChartRange.allCases) { $0.label }
+                    .frame(width: 140)
+            }
+            if visible.isEmpty {
                 Text("Log a few weigh-ins to see your trend here.")
                     .font(.system(size: 13)).foregroundStyle(Theme.FG.tertiary)
                     .frame(height: 160)
             } else {
+                let regLine = regressionLine(for: visible, unit: unit)
+                let displayValues = visible.map { WeightFormatter.fromLb($0.weightLb, to: unit) }
+                let yMin = displayValues.min() ?? 0
+                let yMax = displayValues.max() ?? 0
+                let pad = max(1.0, (yMax - yMin) * 0.1)
                 Chart {
-                    ForEach(entries) { entry in
+                    ForEach(visible) { entry in
                         let displayValue = WeightFormatter.fromLb(entry.weightLb, to: unit)
                         LineMark(x: .value("Date", entry.date),
                                  y: .value("Weight", displayValue))
                             .foregroundStyle(Theme.CTP.blue)
+                            .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
                             .interpolationMethod(.monotone)
                         PointMark(x: .value("Date", entry.date),
                                   y: .value("Weight", displayValue))
-                            .foregroundStyle(Theme.CTP.blue)
+                            .foregroundStyle(Theme.CTP.blue.opacity(0.6))
+                            .symbolSize(18)
+                    }
+                    if let last = visible.last {
+                        PointMark(x: .value("Date", last.date),
+                                  y: .value("Weight", WeightFormatter.fromLb(last.weightLb, to: unit)))
+                            .foregroundStyle(Theme.CTP.mauve)
+                            .symbolSize(80)
+                    }
+                    if let reg = regLine {
+                        LineMark(x: .value("Date", reg.startDate),
+                                 y: .value("Trend", reg.startY),
+                                 series: .value("Series", "regression"))
+                            .foregroundStyle(Theme.CTP.mauve.opacity(0.9))
+                            .lineStyle(StrokeStyle(lineWidth: 1.5, dash: [3, 3]))
+                        LineMark(x: .value("Date", reg.endDate),
+                                 y: .value("Trend", reg.endY),
+                                 series: .value("Series", "regression"))
+                            .foregroundStyle(Theme.CTP.mauve.opacity(0.9))
+                            .lineStyle(StrokeStyle(lineWidth: 1.5, dash: [3, 3]))
                     }
                     if let target {
-                        RuleMark(y: .value("Target", WeightFormatter.fromLb(target, to: unit)))
-                            .foregroundStyle(Theme.CTP.green)
-                            .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 3]))
-                            .annotation(position: .top, alignment: .trailing) {
-                                Text("target")
-                                    .font(.system(size: 10, weight: .semibold))
-                                    .foregroundStyle(Theme.CTP.green)
-                            }
+                        let targetDisplay = WeightFormatter.fromLb(target, to: unit)
+                        if targetDisplay >= yMin - pad && targetDisplay <= yMax + pad {
+                            RuleMark(y: .value("Target", targetDisplay))
+                                .foregroundStyle(Theme.CTP.green)
+                                .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                                .annotation(position: .top, alignment: .trailing) {
+                                    Text("target")
+                                        .font(.system(size: 10, weight: .semibold))
+                                        .foregroundStyle(Theme.CTP.green)
+                                }
+                        }
                     }
                 }
+                .chartYScale(domain: (yMin - pad)...(yMax + pad))
                 .frame(height: 200)
             }
         }
         .padding(16).ctpCard()
     }
 
-    private func rateVsKcalCard(result: WeightAnalyticsResult, unit: WeightUnit) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Rate vs calories")
-                .font(.system(size: 11, weight: .semibold)).tracking(0.8).textCase(.uppercase)
-                .foregroundStyle(Theme.FG.secondary)
-            if result.regression == nil {
-                Text("Collecting data — \(result.validWindowCount)/\(WeightAnalytics.minValidWindows) valid weeks")
-                    .font(.system(size: 13)).foregroundStyle(Theme.FG.tertiary)
-                    .frame(height: 160, alignment: .leading)
-            } else {
-                Chart {
-                    ForEach(Array(result.scatter.enumerated()), id: \.offset) { _, p in
-                        PointMark(x: .value("kcal", p.avgKcal),
-                                  y: .value("lb/wk", p.lbPerDay * 7))
-                            .foregroundStyle(Theme.CTP.lavender)
-                    }
-                    if let reg = result.regression, !result.scatter.isEmpty {
-                        let minX = result.scatter.map(\.avgKcal).min() ?? 0
-                        let maxX = result.scatter.map(\.avgKcal).max() ?? 0
-                        LineMark(x: .value("kcal", minX),
-                                 y: .value("lb/wk", (reg.slope * minX + reg.intercept) * 7))
-                            .foregroundStyle(Theme.CTP.mauve)
-                        LineMark(x: .value("kcal", maxX),
-                                 y: .value("lb/wk", (reg.slope * maxX + reg.intercept) * 7))
-                            .foregroundStyle(Theme.CTP.mauve)
-                    }
-                    if let kcal = result.maintenanceKcal {
-                        RuleMark(x: .value("Maintenance", Double(kcal)))
-                            .foregroundStyle(Theme.CTP.green)
-                            .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 3]))
-                    }
-                    RuleMark(y: .value("Zero", 0.0))
-                        .foregroundStyle(Theme.FG.tertiary.opacity(0.4))
-                }
-                .frame(height: 200)
-            }
-        }
-        .padding(16).ctpCard()
+    private struct RegressionLine {
+        let startDate: Date
+        let endDate: Date
+        let startY: Double
+        let endY: Double
+    }
+
+    private func regressionLine(for entries: [WeightEntry], unit: WeightUnit) -> RegressionLine? {
+        guard entries.count >= 8 else { return nil }
+        let ys = entries.map { WeightFormatter.fromLb($0.weightLb, to: unit) }
+        let n = Double(entries.count)
+        let xs = (0..<entries.count).map(Double.init)
+        let sx = xs.reduce(0, +)
+        let sy = ys.reduce(0, +)
+        let sxx = xs.reduce(0) { $0 + $1 * $1 }
+        let sxy = zip(xs, ys).reduce(0) { $0 + $1.0 * $1.1 }
+        let denom = n * sxx - sx * sx
+        guard denom != 0 else { return nil }
+        let slope = (n * sxy - sx * sy) / denom
+        let intercept = (sy - slope * sx) / n
+        return RegressionLine(
+            startDate: entries.first!.date,
+            endDate: entries.last!.date,
+            startY: intercept,
+            endY: slope * Double(entries.count - 1) + intercept
+        )
     }
 
     private func analyticsCard(result: WeightAnalyticsResult, unit: WeightUnit) -> some View {
@@ -142,13 +196,18 @@ struct WeightTrendsView: View {
                         .foregroundStyle(Theme.FG.primary)
                     Text("kcal/day").foregroundStyle(Theme.FG.tertiary)
                     Spacer()
-                    if let r2 = result.regression?.rSquared {
-                        confidenceChip(r2: r2)
-                    }
                 }
                 Text("Maintenance").font(.system(size: 12)).foregroundStyle(Theme.FG.tertiary)
+                if let avg = result.recentAvgKcal,
+                   let lbPerWeek = result.trendLbPerWeek,
+                   let days = result.recentWindowDays {
+                    let deficitKcalDay = Int((-lbPerWeek / 7.0 * 3500.0).rounded())
+                    let sign = deficitKcalDay >= 0 ? "+" : "−"
+                    Text("Last \(days) consecutive logged days: \(avg.formatted()) avg intake \(sign) \(abs(deficitKcalDay)) kcal/day (\(String(format: "%+.1f", lbPerWeek)) lb/wk × 3500)")
+                        .font(.system(size: 11)).foregroundStyle(Theme.FG.tertiary)
+                }
             } else {
-                Text("Need \(WeightAnalytics.minValidWindows - result.validWindowCount) more valid weeks for maintenance estimate.")
+                Text("Need more recent weight + calorie data for a maintenance estimate.")
                     .font(.system(size: 13)).foregroundStyle(Theme.FG.tertiary)
             }
             if let lbPerWeek = result.trendLbPerWeek {
@@ -174,24 +233,13 @@ struct WeightTrendsView: View {
                 Text("Trending away from target")
                     .font(.system(size: 13)).foregroundStyle(Theme.CTP.peach)
             case .date(let d):
-                Text("ETA to target: \(d.formatted(date: .abbreviated, time: .omitted))")
-                    .font(.system(size: 13)).foregroundStyle(Theme.FG.primary)
+                (Text("ETA to target: ")
+                    .foregroundStyle(Theme.FG.primary)
+                + Text(d.formatted(date: .abbreviated, time: .omitted))
+                    .foregroundStyle(Theme.CTP.lavender).bold())
+                    .font(.system(size: 13))
             }
         }
     }
 
-    private func confidenceChip(r2: Double) -> some View {
-        let (label, color): (String, Color) = {
-            switch r2 {
-            case 0.5...: return ("R²=\(String(format: "%.2f", r2))", Theme.CTP.green)
-            case 0.1..<0.5: return ("R²=\(String(format: "%.2f", r2))", Theme.CTP.peach)
-            default: return ("low confidence", Theme.FG.tertiary)
-            }
-        }()
-        return Text(label)
-            .font(.system(size: 10, weight: .semibold, design: .monospaced))
-            .padding(.horizontal, 8).padding(.vertical, 3)
-            .background(Capsule().fill(color.opacity(0.16)))
-            .foregroundStyle(color)
-    }
 }

@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @Environment(AuthSession.self) private var auth
+    @Environment(UserTargetsStore.self) private var targetsStore
     @Environment(\.dismiss) private var dismiss
 
     @State private var targetWeightInput: String = ""
@@ -28,6 +29,7 @@ struct SettingsView: View {
                 targetWeightLb: lb
             )
             _ = try await client.upsertTargets(updated)
+            targetsStore.update(updated)
         } catch {
             // Silent failure on save — user can retry. Matches existing macro-target save behavior.
         }
@@ -145,6 +147,7 @@ struct SettingsView: View {
             .task {
                 guard let client = auth.makeClient() else { return }
                 if let current = try? await client.fetchTargets() {
+                    targetsStore.update(current)
                     if let lb = current.targetWeightLb {
                         targetWeightInput = String(format: "%.1f", WeightFormatter.fromLb(lb, to: targetUnit))
                     }
@@ -212,4 +215,5 @@ struct SettingsView: View {
 #Preview {
     SettingsView()
         .environment(AuthSession(baseURL: URL(string: "https://example.test")!))
+        .environment(UserTargetsStore())
 }

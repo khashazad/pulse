@@ -19,13 +19,16 @@ final class WeightTrendsModel {
     private(set) var entries: [WeightEntry] = []
     private(set) var kcal: [CaloriesDailyRow] = []
     private(set) var analytics: LoadState<WeightAnalyticsResult> = .idle
-    var range: TrendsRange = .d90
-    var targetWeightLb: Double?
+    var range: TrendsRange = .y1
 
     private weak var auth: AuthSession?
+    private weak var targetsStore: UserTargetsStore?
 
-    init(auth: AuthSession) {
+    var targetWeightLb: Double? { targetsStore?.targets?.targetWeightLb }
+
+    init(auth: AuthSession, targetsStore: UserTargetsStore) {
         self.auth = auth
+        self.targetsStore = targetsStore
     }
 
     func load(today: Date = Date()) async {
@@ -39,12 +42,11 @@ final class WeightTrendsModel {
 
         async let entriesTask = client.listWeightEntries(from: from, to: today)
         async let kcalTask = client.fetchCaloriesDaily(from: from, to: today)
-        async let targetsTask = client.fetchTargets()
 
         do {
             self.entries = try await entriesTask
             self.kcal = try await kcalTask
-            self.targetWeightLb = (try? await targetsTask)?.targetWeightLb
+            await targetsStore?.refresh(client: client)
             let result = WeightAnalytics.compute(
                 entries: entries,
                 kcal: kcal,
@@ -58,5 +60,15 @@ final class WeightTrendsModel {
         } catch {
             analytics = .failed(.server(status: -1))
         }
+    }
+
+    func recomputeAnalytics(today: Date = Date()) {
+        let result = WeightAnalytics.compute(
+            entries: entries,
+            kcal: kcal,
+            targetWeightLb: targetWeightLb,
+            today: today
+        )
+        analytics = .loaded(result)
     }
 }
