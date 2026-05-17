@@ -241,3 +241,25 @@ weight_entries = Table(
     UniqueConstraint("user_key", "log_date", name="uq_weight_entries_user_key_log_date"),
     Index("idx_weight_entries_user_key_log_date", "user_key", "log_date"),
 )
+
+progress_photos = Table(
+    "progress_photos",
+    metadata,
+    Column("id", UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")),
+    Column("user_key", Text, nullable=False),
+    Column("log_date", Date, nullable=False),
+    Column("slot", Text, nullable=False),
+    Column("photo", LargeBinary, nullable=False),
+    Column("photo_thumb", LargeBinary, nullable=False),
+    Column("photo_mime", Text, nullable=False, server_default=text("'image/jpeg'")),
+    Column("bytes", Integer, nullable=False),
+    Column("sha256", Text, nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    CheckConstraint(
+        "slot in ('front','left','right','back')",
+        name="progress_photos_slot_check",
+    ),
+    UniqueConstraint("user_key", "log_date", "slot", name="uq_progress_photos_user_date_slot"),
+    Index("idx_progress_photos_user_date", "user_key", "log_date"),
+)
