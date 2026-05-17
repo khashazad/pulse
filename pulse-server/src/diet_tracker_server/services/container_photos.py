@@ -3,14 +3,10 @@
 from __future__ import annotations
 
 from diet_tracker_server.services.image_processing import (
-    ImageProcessingError,
+    PhotoTooLargeError,
+    UnsupportedImageError,
     process_photo,
 )
-
-# Backwards compatibility: the router and tests reference PhotoTooLargeError
-# and UnsupportedImageError. Map them to the unified ImageProcessingError.
-PhotoTooLargeError = ImageProcessingError
-UnsupportedImageError = ImageProcessingError
 
 
 def process_container_photo(

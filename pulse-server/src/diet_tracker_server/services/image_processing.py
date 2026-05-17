@@ -14,7 +14,15 @@ MAX_PIXELS: Final[int] = 25_000_000  # decompression-bomb guard
 
 
 class ImageProcessingError(ValueError):
-    """Raised when the supplied bytes can't be processed into a photo."""
+    """Base class for image-processing failures."""
+
+
+class PhotoTooLargeError(ImageProcessingError):
+    """Raw payload exceeds the byte cap."""
+
+
+class UnsupportedImageError(ImageProcessingError):
+    """Bytes can't be decoded, or dimensions exceed the pixel cap."""
 
 
 def _resize(img: Image.Image, max_edge: int) -> Image.Image:
@@ -46,14 +54,14 @@ def process_photo(
       trigger Pillow's decompression-bomb protection.
     """
     if len(raw) > max_bytes:
-        raise ImageProcessingError(
+        raise PhotoTooLargeError(
             f"photo exceeds {max_bytes} bytes (got {len(raw)})"
         )
     data = bytes(raw)
     try:
         with Image.open(io.BytesIO(data)) as im:
             if im.width * im.height > MAX_PIXELS:
-                raise ImageProcessingError("photo exceeds pixel budget")
+                raise UnsupportedImageError("photo exceeds pixel budget")
             im = ImageOps.exif_transpose(im) or im
             im.load()
             full = _resize(im, MAX_FULL_PX)
@@ -62,6 +70,6 @@ def process_photo(
     except ImageProcessingError:
         raise
     except Image.DecompressionBombError as exc:
-        raise ImageProcessingError(f"Decompression bomb: {exc}") from exc
+        raise UnsupportedImageError(f"Decompression bomb: {exc}") from exc
     except (UnidentifiedImageError, OSError, ValueError) as exc:
-        raise ImageProcessingError(str(exc)) from exc
+        raise UnsupportedImageError(str(exc)) from exc
