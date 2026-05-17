@@ -36,6 +36,14 @@ final class PhotoUploadQueue {
         return entries.filter { $0.nextAttemptAt <= now }
     }
 
+    /// Earliest `nextAttemptAt` among entries scheduled strictly after `now`,
+    /// used to wake the worker for backoff retries. Returns nil when the
+    /// queue is empty or contains no future-scheduled work.
+    func nextDueDate(after now: Date) -> Date? {
+        lock.lock(); defer { lock.unlock() }
+        return entries.map { $0.nextAttemptAt }.filter { $0 > now }.min()
+    }
+
     func markSuccess(id: UUID) throws {
         try mutate { $0.removeAll { $0.id == id } }
     }

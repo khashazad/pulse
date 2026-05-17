@@ -67,14 +67,22 @@ final class ProgressPhotoStore {
     private func image(date: Date, slot: ProgressPhotoSlot, size: ProgressPhotoClient.Size) async -> UIImage? {
         let day = normalize(date)
         guard let meta = metadata[day]?[slot] else { return nil }
-        if let cached = cache.image(forSHA: meta.sha256) { return cached }
+        let variant = cacheVariant(for: size)
+        if let cached = cache.image(forSHA: meta.sha256, variant: variant) { return cached }
         guard let client = auth?.makeProgressPhotoClient() else { return nil }
         do {
             let data = try await client.download(date: date, slot: slot, size: size)
-            try cache.store(data: data, sha: meta.sha256)
-            return cache.image(forSHA: meta.sha256)
+            try cache.store(data: data, sha: meta.sha256, variant: variant)
+            return cache.image(forSHA: meta.sha256, variant: variant)
         } catch {
             return nil
+        }
+    }
+
+    private func cacheVariant(for size: ProgressPhotoClient.Size) -> ProgressPhotoCache.Variant {
+        switch size {
+        case .full: return .full
+        case .thumb: return .thumb
         }
     }
 
@@ -162,8 +170,15 @@ final class ProgressPhotoStore {
     private func drainLoop() async {
         defer { workerTask = nil }
         while !Task.isCancelled {
-            let due = queue.allDue(now: Date())
-            if due.isEmpty { return }
+            let now = Date()
+            let due = queue.allDue(now: now)
+            if due.isEmpty {
+                guard let next = queue.nextDueDate(after: now) else { return }
+                let delay = max(0, next.timeIntervalSince(now))
+                let nanos = UInt64(min(delay, TimeInterval(UInt64.max / 1_000_000_000)) * 1_000_000_000)
+                do { try await Task.sleep(nanoseconds: nanos) } catch { return }
+                continue
+            }
             for item in due {
                 await processOne(item)
             }
