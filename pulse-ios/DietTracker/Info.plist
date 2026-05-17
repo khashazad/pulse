@@ -25,7 +25,7 @@
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>NSCameraUsageDescription</key>
-	<string>To take photos of meal-prep containers.</string>
+	<string>To take progress photos and meal-prep container photos.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>To pick photos of meal-prep containers from your library.</string>
 	<key>UIApplicationSceneManifest</key>
