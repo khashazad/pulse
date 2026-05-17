@@ -59,7 +59,11 @@ class ProgressPhotoRepository:
             )
         )
         stmt = stmt.on_conflict_do_update(
-            constraint="uq_progress_photos_user_date_slot",
+            index_elements=[
+                progress_photos.c.user_key,
+                progress_photos.c.log_date,
+                progress_photos.c.slot,
+            ],
             set_={
                 "photo": stmt.excluded.photo,
                 "photo_thumb": stmt.excluded.photo_thumb,
