@@ -127,6 +127,42 @@ async def put_photo(
     return _row_to_metadata(row)
 
 
+@router.put("/photos/{log_date}")
+async def put_photos_batch(
+    request: Request,
+    log_date: DateValue,
+    session: AsyncSession = Depends(get_session_dependency),
+) -> list[dict]:
+    """Upsert multiple slots in one multipart request.
+
+    Each named file field maps to a slot (`front`, `left`, `right`, `back`).
+    All upserts run in a single transaction.
+    """
+    form = await request.form()
+    assignments: dict[str, bytes] = {}
+    for key in form:
+        if key not in ALLOWED_SLOTS:
+            raise HTTPException(
+                status_code=400, detail=f"unknown slot field: {key}"
+            )
+        upload = form[key]
+        if not hasattr(upload, "read"):
+            raise HTTPException(
+                status_code=400, detail=f"field {key} must be a file"
+            )
+        assignments[key] = await _read_capped(upload, MAX_UPLOAD_BYTES)
+    user_key = request.state.user_key
+    repo = ProgressPhotoRepository(session)
+    async with transaction(session):
+        rows = await upsert_batch(
+            repo=repo,
+            user_key=user_key,
+            log_date=log_date,
+            assignments=assignments,
+        )
+    return [_row_to_metadata(r) for r in rows]
+
+
 @router.delete("/photos/{log_date}/{slot}", status_code=204)
 async def delete_photo(
     request: Request,

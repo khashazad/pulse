@@ -208,3 +208,55 @@ def test_delete_returns_404_when_missing(client: TestClient) -> None:
         MockRepo.return_value.delete = AsyncMock(return_value=False)
         resp = client.delete("/measures/photos/2026-05-17/front", headers=HEADERS)
     assert resp.status_code == 404
+
+
+def test_put_batch_uploads_multiple_slots(client: TestClient) -> None:
+    src1 = _png_bytes(400, 600)
+    src2 = _png_bytes(400, 600)
+    with patch(
+        "diet_tracker_server.routers.measures_photos.ProgressPhotoRepository"
+    ) as MockRepo:
+        instance = MockRepo.return_value
+        instance.upsert = AsyncMock(
+            side_effect=[
+                _row(slot="front", sha="sha-front"),
+                _row(slot="back", sha="sha-back"),
+            ]
+        )
+        resp = client.put(
+            "/measures/photos/2026-05-17",
+            headers=HEADERS,
+            files=[
+                ("front", ("f.png", src1, "image/png")),
+                ("back", ("b.png", src2, "image/png")),
+            ],
+        )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert len(body) == 2
+    assert {row["slot"] for row in body} == {"front", "back"}
+
+
+def test_put_batch_rejects_empty_request(client: TestClient) -> None:
+    resp = client.put("/measures/photos/2026-05-17", headers=HEADERS, files=[])
+    assert resp.status_code == 400
+
+
+def test_put_batch_rejects_unknown_slot_field(client: TestClient) -> None:
+    src = _png_bytes(100, 100)
+    resp = client.put(
+        "/measures/photos/2026-05-17",
+        headers=HEADERS,
+        files=[("topdown", ("t.png", src, "image/png"))],
+    )
+    assert resp.status_code == 400
+
+
+def test_put_batch_rejects_future_date(client: TestClient) -> None:
+    src = _png_bytes(100, 100)
+    resp = client.put(
+        "/measures/photos/2099-01-01",
+        headers=HEADERS,
+        files=[("front", ("f.png", src, "image/png"))],
+    )
+    assert resp.status_code == 400
