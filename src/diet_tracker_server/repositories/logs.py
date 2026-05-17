@@ -1,3 +1,15 @@
+"""Daily-log aggregation persistence layer.
+
+Provides :class:`LogsRepository`, which owns the read-side SQL that summarizes
+per-day macro totals and entry counts by joining ``daily_logs`` to
+``food_entries``. Used by the logs service to power calendar / history
+endpoints.
+
+Sits between the logs service and the underlying Postgres table definitions
+(``repositories/tables.py``); writes to ``daily_logs`` live in
+``EntriesRepository.ensure_daily_log`` instead.
+"""
+
 from __future__ import annotations
 
 from datetime import date as DateValue
@@ -10,26 +22,34 @@ from diet_tracker_server.repositories.tables import daily_logs, food_entries
 
 
 class LogsRepository:
-    # Summary: Initializes a logs repository bound to an active SQLAlchemy session.
-    # Parameters:
-    # - session (AsyncSession): SQLAlchemy async session used for all repository operations.
-    # Returns:
-    # - None: Stores the session for subsequent method calls.
-    # Raises/Throws:
-    # - None: Initialization only stores references and performs no I/O.
     def __init__(self, session: AsyncSession) -> None:
+        """Bind the repository to an open async session.
+
+        **Inputs:**
+        - session (AsyncSession): SQLAlchemy async session used for all queries
+          issued by this repository instance.
+        """
         self._session = session
 
-    # Summary: Lists daily aggregate totals and entry counts for a user across a date range.
-    # Parameters:
-    # - user_key (str): User identifier whose logs are queried.
-    # - from_date (DateValue): Inclusive start date filter.
-    # - to_date (DateValue): Inclusive end date filter.
-    # Returns:
-    # - list[dict[str, Any]]: Date-ordered aggregate rows with macro totals and entry counts.
-    # Raises/Throws:
-    # - sqlalchemy.exc.SQLAlchemyError: Raised when SQL execution fails.
     async def list_logs(self, user_key: str, from_date: DateValue, to_date: DateValue) -> list[dict[str, Any]]:
+        """List per-day macro totals and entry counts for a user across a date range.
+
+        Outer-joins ``daily_logs`` to ``food_entries`` so days with zero
+        entries still appear with zero totals. Results are ordered most-recent
+        first.
+
+        **Inputs:**
+        - user_key (str): User identifier whose logs are queried.
+        - from_date (DateValue): Inclusive start date filter.
+        - to_date (DateValue): Inclusive end date filter.
+
+        **Outputs:**
+        - list[dict[str, Any]]: Date-ordered aggregate rows with macro totals
+          and entry counts.
+
+        **Exceptions:**
+        - sqlalchemy.exc.SQLAlchemyError: Raised when SQL execution fails.
+        """
         join_stmt = daily_logs.outerjoin(food_entries, food_entries.c.daily_log_id == daily_logs.c.id)
         stmt = (
             select(

@@ -1,4 +1,10 @@
-"""DTOs for the /measures/photos endpoints."""
+"""DTOs for the /measures/photos endpoints.
+
+Defines :class:`ProgressPhotoMetadata` (per-slot metadata returned by
+the list/get endpoints) and the ``ProgressPhotoSlot`` literal plus its
+``ALLOWED_SLOTS`` tuple used to validate inbound slot values. Consumed
+by the progress-photo router, service, and repository.
+"""
 
 from __future__ import annotations
 
@@ -12,6 +18,8 @@ ALLOWED_SLOTS: tuple[ProgressPhotoSlot, ...] = ("front", "left", "right", "back"
 
 
 class ProgressPhotoMetadata(BaseModel):
+    """Response fragment describing one stored progress photo's metadata."""
+
     date: DateValue
     slot: ProgressPhotoSlot
     mime: str

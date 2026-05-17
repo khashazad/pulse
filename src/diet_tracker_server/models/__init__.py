@@ -1,3 +1,14 @@
+"""Public Pydantic DTO surface for the diet-tracker-server.
+
+Aggregates and re-exports every request/response/internal DTO used by the
+HTTP routers, service layer, and tests, grouped by feature module: macro
+common types, food entries, daily logs, USDA search, custom foods, food
+memory, meals, containers, weight tracking, and daily summaries. This file
+plays the role of the single import entry point — application code should
+prefer ``from diet_tracker_server.models import ...`` over reaching into
+the individual submodules.
+"""
+
 from diet_tracker_server.models.common import MacroTargets, MacroTotals
 from diet_tracker_server.models.containers import (
     ContainerCreate,

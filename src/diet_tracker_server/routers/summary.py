@@ -1,3 +1,11 @@
+"""HTTP endpoints for daily-summary and calorie-trend reads.
+
+Exposes ``GET /summary/{date}`` (combined targets + consumed totals +
+remaining budget + entries for one day) and ``GET /calories_daily?from&to``
+(time-series of daily calorie totals used by trend charts). Both endpoints
+defer to :mod:`services.summary_service` for the actual aggregation.
+"""
+
 from __future__ import annotations
 
 from datetime import date as DateValue
@@ -18,21 +26,27 @@ from diet_tracker_server.services.weight_service import validate_range
 router = APIRouter(dependencies=[Depends(require_session)])
 
 
-# Summary: Returns a daily diet summary combining targets, consumed totals, and remaining budget.
-# Parameters:
-# - summary_date (datetime.date): Date whose diet summary is requested.
-# Returns:
-# - DailySummaryResponse: Per-day targets, consumed totals, remaining totals, and raw entries.
-# Raises/Throws:
-# - fastapi.HTTPException: Raised with 404 when no target profile exists for the user.
-# - RuntimeError: Raised when the database pool is not initialized.
-# - sqlalchemy.exc.SQLAlchemyError: Raised when SQL execution fails.
 @router.get("/summary/{summary_date}", response_model=DailySummaryResponse)
 async def daily_summary(
     request: Request,
     summary_date: DateValue,
     session: AsyncSession = Depends(get_session_dependency),
 ) -> DailySummaryResponse:
+    """Return a daily diet summary combining targets, consumed totals, remaining budget, and entries.
+
+    **Inputs:**
+    - request (Request): Active request providing ``user_key``.
+    - summary_date (date): Date whose diet summary is requested.
+    - session (AsyncSession): DB session dependency.
+
+    **Outputs:**
+    - DailySummaryResponse: Per-day targets, consumed totals, remaining totals, and raw entries.
+
+    **Exceptions:**
+    - HTTPException(404): Raised when no target profile exists for the user.
+    - RuntimeError: Raised when the database pool is not initialized.
+    - sqlalchemy.exc.SQLAlchemyError: Raised when SQL execution fails.
+    """
     user_key = request.state.user_key
     return await build_daily_summary(
         session=session,
@@ -48,6 +62,20 @@ async def calories_daily(
     to: DateValue = Query(...),
     session: AsyncSession = Depends(get_session_dependency),
 ) -> list[CaloriesDailyRow]:
+    """Return per-day calorie totals across an inclusive date range.
+
+    **Inputs:**
+    - request (Request): Active request providing ``user_key``.
+    - from_ (date): Inclusive start date (query alias ``from``).
+    - to (date): Inclusive end date.
+    - session (AsyncSession): DB session dependency.
+
+    **Outputs:**
+    - list[CaloriesDailyRow]: One row per day in the requested window.
+
+    **Exceptions:**
+    - HTTPException(400): Raised when the date range fails :func:`validate_range`.
+    """
     try:
         validate_range(from_, to)
     except ValueError as exc:

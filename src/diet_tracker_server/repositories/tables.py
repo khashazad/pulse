@@ -1,3 +1,29 @@
+"""SQLAlchemy-Core table definitions for the diet-tracker Postgres schema.
+
+Declares every ``Table`` object referenced by the repositories layer using a
+single shared :class:`MetaData`. There are no ORM mappings — repositories build
+queries directly against these table objects. ``bootstrap_schema()`` (in
+``db.py``) keeps the live database in sync by executing ``schema.sql`` on
+startup; this module is the canonical Python-side representation of that schema.
+
+Tables defined here:
+
+- ``daily_target_profile`` — per-user macro and weight targets.
+- ``daily_logs`` — one row per ``(user_key, log_date)`` aggregating a day's intake.
+- ``custom_foods`` — user-defined foods with stored macros at a chosen basis.
+- ``food_memory`` — per-user lookup table mapping a phrase to either a USDA food
+  or a custom food (with alias array support).
+- ``meals`` / ``meal_items`` — saved meals and their pre-scaled component items.
+- ``food_entries`` — individual logged entries belonging to a daily log.
+- ``sessions`` — Bearer-token session store keyed by SHA-256 token hash.
+- ``containers`` — reusable container tares with optional photo blobs.
+- ``weight_entries`` — one weight reading per ``(user_key, log_date)``.
+- ``progress_photos`` — per-day progress-photo blobs keyed by slot.
+
+Every table is scoped by ``user_key`` so the same schema supports the
+multi-user model while the legacy single-user deployment uses one fixed key.
+"""
+
 from __future__ import annotations
 
 from sqlalchemy import (

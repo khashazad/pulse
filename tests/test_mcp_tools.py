@@ -1,3 +1,11 @@
+"""Tests that `build_mcp` registers the documented tool surface and instructions.
+
+Verifies that the MCP server returned by `build_mcp` exposes every tool
+the iOS/agent contracts depend on, and that the assembled workflow
+instructions reference the canonical helpers (e.g., `resolve_food`,
+`list_meals`, alias-management tools).
+"""
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock
@@ -7,6 +15,7 @@ import pytest
 
 @pytest.mark.asyncio
 async def test_build_mcp_registers_expected_tools() -> None:
+    """`build_mcp` registers every tool name the documented agent workflow expects."""
     from diet_tracker_server.mcp import build_mcp
 
     mcp = build_mcp(lambda: MagicMock())
@@ -46,6 +55,7 @@ async def test_build_mcp_registers_expected_tools() -> None:
 
 @pytest.mark.asyncio
 async def test_build_mcp_emits_workflow_instructions() -> None:
+    """The MCP server's instructions string includes the canonical workflow guidance."""
     from diet_tracker_server.mcp import build_mcp
     from diet_tracker_server.mcp.server import WORKFLOW_INSTRUCTIONS
 
@@ -58,6 +68,7 @@ async def test_build_mcp_emits_workflow_instructions() -> None:
 
 @pytest.mark.asyncio
 async def test_workflow_instructions_mention_aliases() -> None:
+    """Workflow instructions reference the alias-management tools."""
     from diet_tracker_server.mcp.server import WORKFLOW_INSTRUCTIONS
     assert "add_meal_alias" in WORKFLOW_INSTRUCTIONS
     assert "add_food_alias" in WORKFLOW_INSTRUCTIONS

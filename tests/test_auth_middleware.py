@@ -1,3 +1,12 @@
+"""Behaviour tests for `SessionAuthMiddleware` and `UserKeyGuardrailMiddleware`.
+
+Builds a minimal FastAPI app to exercise the middleware stack in isolation:
+unauthenticated pass-through on `/health`, 401 responses for missing/
+malformed/expired/unknown Bearer tokens, happy-path session slide +
+`request.state` attachment, the `user_key` query guardrail, and exemption
+paths for the MCP and OAuth metadata routes.
+"""
+
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
@@ -10,6 +19,11 @@ from fastapi.testclient import TestClient
 
 @pytest.fixture(autouse=True)
 def _env(monkeypatch):
+    """Populate every env var required by `Settings` for this module's tests.
+
+    **Inputs:**
+    - monkeypatch (pytest.MonkeyPatch): Used to set env vars and reset the settings cache.
+    """
     monkeypatch.setenv("DATABASE_URL", "postgresql://localhost/test")
     monkeypatch.setenv("USDA_API_KEY", "x")
     monkeypatch.setenv("GOOGLE_CLIENT_ID", "cid")
@@ -26,6 +40,11 @@ def _env(monkeypatch):
 
 
 def _build_app():
+    """Construct a tiny FastAPI app wired with the production auth middlewares.
+
+    **Outputs:**
+    - FastAPI: App exposing ``/health`` (public) and ``/me`` (session-required).
+    """
     from diet_tracker_server.auth.middleware import (
         SessionAuthMiddleware,
         UserKeyGuardrailMiddleware,
@@ -48,6 +67,17 @@ def _build_app():
 
 
 def _patched_session_repo(*, get_return, slide_return=1, delete_return=1):
+    """Build an AsyncMock `SessionsRepository` and matching async-context session.
+
+    **Inputs:**
+    - get_return (Any): Value returned by ``repo.get`` — usually a dict row or ``None``.
+    - slide_return (int): Rows affected by ``slide`` (default ``1``).
+    - delete_return (int): Rows affected by ``delete`` (default ``1``).
+
+    **Outputs:**
+    - tuple[AsyncMock, AsyncMock]: ``(repo, ctx)`` ready for patching the
+      middleware's ``SessionsRepository`` and ``get_session`` references.
+    """
     repo = AsyncMock()
     repo.get.return_value = get_return
     repo.slide.return_value = slide_return
@@ -60,6 +90,7 @@ def _patched_session_repo(*, get_return, slide_return=1, delete_return=1):
 
 
 def test_health_unauthenticated_passes_through():
+    """`/health` returns 200 with no Bearer header attached."""
     app = _build_app()
     with TestClient(app) as c:
         r = c.get("/health")
@@ -67,6 +98,7 @@ def test_health_unauthenticated_passes_through():
 
 
 def test_protected_missing_bearer_returns_401():
+    """Protected `/me` returns 401 when no Authorization header is provided."""
     app = _build_app()
     with TestClient(app) as c:
         r = c.get("/me")
@@ -74,6 +106,7 @@ def test_protected_missing_bearer_returns_401():
 
 
 def test_protected_invalid_bearer_format_returns_401():
+    """Non-Bearer Authorization schemes are rejected with 401."""
     app = _build_app()
     with TestClient(app) as c:
         r = c.get("/me", headers={"Authorization": "Token abc"})
@@ -81,6 +114,7 @@ def test_protected_invalid_bearer_format_returns_401():
 
 
 def test_protected_unknown_session_returns_401():
+    """Bearer token that doesn't match any stored session returns 401."""
     app = _build_app()
     repo, ctx = _patched_session_repo(get_return=None)
     with patch("diet_tracker_server.auth.middleware.get_session", return_value=ctx), \
@@ -91,6 +125,7 @@ def test_protected_unknown_session_returns_401():
 
 
 def test_protected_expired_session_returns_401_and_deletes():
+    """Expired session returns 401 and triggers deletion of the stale row."""
     app = _build_app()
     past = datetime.now(timezone.utc) - timedelta(days=1)
     repo, ctx = _patched_session_repo(get_return={"email": "u@e.com", "expires_at": past})
@@ -103,6 +138,7 @@ def test_protected_expired_session_returns_401_and_deletes():
 
 
 def test_protected_happy_path_slides_and_attaches_state():
+    """Valid session slides expiry and attaches email + user_key to `request.state`."""
     app = _build_app()
     future = datetime.now(timezone.utc) + timedelta(days=7)
     repo, ctx = _patched_session_repo(get_return={"email": "khashzd@gmail.com", "expires_at": future})
@@ -116,6 +152,7 @@ def test_protected_happy_path_slides_and_attaches_state():
 
 
 def test_user_key_query_guardrail_returns_400_on_protected_route():
+    """`user_key` query param on a protected route returns 400 before auth runs."""
     app = _build_app()
     with TestClient(app) as c:
         r = c.get("/me?user_key=foo")
@@ -125,6 +162,7 @@ def test_user_key_query_guardrail_returns_400_on_protected_route():
 
 
 def test_user_key_query_guardrail_skips_health_and_auth_routes():
+    """`user_key` guardrail does not fire on `/health` or `/auth/*` paths."""
     app = _build_app()
     with TestClient(app) as c:
         r1 = c.get("/health?user_key=foo")
@@ -135,6 +173,12 @@ def test_user_key_query_guardrail_skips_health_and_auth_routes():
 
 
 def _build_app_with_mcp_exemptions():
+    """Build a FastAPI app whose middlewares exempt `/mcp/*` and OAuth metadata paths.
+
+    **Outputs:**
+    - FastAPI: App with ``/mcp/probe``, ``/authorize``, and
+      ``/.well-known/oauth-authorization-server`` routes registered.
+    """
     from diet_tracker_server.auth.middleware import (
         SessionAuthMiddleware,
         UserKeyGuardrailMiddleware,
@@ -168,6 +212,7 @@ def _build_app_with_mcp_exemptions():
 
 
 def test_mcp_prefix_bypasses_session_auth():
+    """Requests under `/mcp/*` skip session auth and return 200 without a Bearer token."""
     app = _build_app_with_mcp_exemptions()
     with TestClient(app) as c:
         r = c.get("/mcp/probe")  # no Bearer header
@@ -175,6 +220,7 @@ def test_mcp_prefix_bypasses_session_auth():
 
 
 def test_oauth_metadata_bypasses_session_auth():
+    """Exempt OAuth metadata routes return 200 without a Bearer token."""
     app = _build_app_with_mcp_exemptions()
     with TestClient(app) as c:
         r1 = c.get("/authorize")

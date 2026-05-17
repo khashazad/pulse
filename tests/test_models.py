@@ -1,14 +1,16 @@
+"""Lightweight model and `Settings` validation tests.
+
+Covers env-driven `Settings` parsing (required `DATABASE_URL`),
+`FoodEntryCreate` accept/reject paths for valid and negative-calorie
+payloads, `MacroTargets` validation, and aliases defaults on
+`FoodMemoryEntry` and `MealSummary`.
+"""
+
 import pytest
 
 
-# Summary: Validates that Settings reads required values from environment variables.
-# Parameters:
-# - monkeypatch (pytest.MonkeyPatch): Fixture used to set temporary environment values.
-# Returns:
-# - None: The test performs assertions only.
-# Raises/Throws:
-# - AssertionError: Raised when actual settings values differ from expectations.
 def test_settings_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`Settings` populates required and default fields from env vars."""
     monkeypatch.setenv("DATABASE_URL", "postgresql://localhost/test")
     monkeypatch.setenv("USDA_API_KEY", "test-usda-key")
     monkeypatch.setenv("LEGACY_USER_KEY", "khash")
@@ -23,14 +25,8 @@ def test_settings_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
     assert settings.timezone == "America/Toronto"
 
 
-# Summary: Ensures that Settings validation fails when DATABASE_URL is missing.
-# Parameters:
-# - monkeypatch (pytest.MonkeyPatch): Fixture used to clear and set environment values.
-# Returns:
-# - None: The test only validates exception behavior.
-# Raises/Throws:
-# - AssertionError: Raised when Settings unexpectedly initializes without DATABASE_URL.
 def test_settings_requires_database_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`Settings` raises when `DATABASE_URL` is missing from the environment."""
     monkeypatch.delenv("DATABASE_URL", raising=False)
     monkeypatch.setenv("USDA_API_KEY", "k")
 
@@ -40,14 +36,8 @@ def test_settings_requires_database_url(monkeypatch: pytest.MonkeyPatch) -> None
         Settings(_env_file=None)
 
 
-# Summary: Confirms valid food-entry payloads are accepted by FoodEntryCreate.
-# Parameters:
-# - None: Uses hardcoded representative payload data.
-# Returns:
-# - None: Performs field assertions only.
-# Raises/Throws:
-# - AssertionError: Raised when parsed model values are unexpected.
 def test_food_entry_create_validation() -> None:
+    """A typical USDA-backed payload is accepted by `FoodEntryCreate`."""
     from diet_tracker_server.models import FoodEntryCreate
 
     entry = FoodEntryCreate(
@@ -64,14 +54,8 @@ def test_food_entry_create_validation() -> None:
     assert entry.date is None
 
 
-# Summary: Ensures FoodEntryCreate rejects payloads with negative calories.
-# Parameters:
-# - None: Uses a payload with an invalid negative calorie value.
-# Returns:
-# - None: Validates exception behavior.
-# Raises/Throws:
-# - AssertionError: Raised when invalid payloads do not fail validation.
 def test_food_entry_create_rejects_negative_calories() -> None:
+    """Negative `calories` is rejected by `FoodEntryCreate`."""
     from diet_tracker_server.models import FoodEntryCreate
 
     with pytest.raises(Exception):
@@ -87,14 +71,8 @@ def test_food_entry_create_rejects_negative_calories() -> None:
         )
 
 
-# Summary: Confirms macro target payloads are parsed and validated successfully.
-# Parameters:
-# - None: Uses a valid macro target payload.
-# Returns:
-# - None: Performs field assertions only.
-# Raises/Throws:
-# - AssertionError: Raised when parsed model values are unexpected.
 def test_macro_targets_validation() -> None:
+    """A valid `MacroTargets` payload parses with expected field values."""
     from diet_tracker_server.models import MacroTargets
 
     targets = MacroTargets(calories=2000, protein_g=150.0, carbs_g=200.0, fat_g=80.0)
@@ -102,12 +80,14 @@ def test_macro_targets_validation() -> None:
 
 
 def test_food_memory_table_has_aliases_column() -> None:
+    """`food_memory` and `meals` tables both expose an `aliases` column."""
     from diet_tracker_server.repositories.tables import food_memory, meals
     assert "aliases" in food_memory.c
     assert "aliases" in meals.c
 
 
 def test_food_memory_entry_aliases_defaults_to_empty_list() -> None:
+    """`FoodMemoryEntry.aliases` defaults to `[]` when not provided."""
     from datetime import datetime
     from uuid import uuid4
     from diet_tracker_server.models import FoodMemoryEntry
@@ -131,6 +111,7 @@ def test_food_memory_entry_aliases_defaults_to_empty_list() -> None:
 
 
 def test_meal_summary_aliases_defaults_to_empty_list() -> None:
+    """`MealSummary.aliases` defaults to `[]` when not provided."""
     from uuid import uuid4
     from diet_tracker_server.models import MealSummary
 

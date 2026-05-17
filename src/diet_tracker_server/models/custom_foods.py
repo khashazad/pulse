@@ -1,3 +1,13 @@
+"""DTOs for the /custom-foods endpoints.
+
+Defines the create/update/response shapes for user-authored "custom
+foods" — foods not backed by USDA, typically derived from a photo or a
+user-supplied label. Also exports the ``CustomFoodBasis`` and
+``CustomFoodSource`` literal aliases reused by the food-memory module.
+Consumed by the custom foods router/service and by ``ResolvedFood`` in
+food memory.
+"""
+
 from __future__ import annotations
 
 from datetime import datetime as DateTimeValue
@@ -11,6 +21,8 @@ CustomFoodSource = Literal["manual", "photo", "corrected"]
 
 
 class CustomFoodCreate(BaseModel):
+    """Request body for ``POST /custom-foods`` — full creation payload."""
+
     name: str
     basis: CustomFoodBasis
     serving_size: float | None = None
@@ -24,6 +36,8 @@ class CustomFoodCreate(BaseModel):
 
 
 class CustomFoodUpdate(BaseModel):
+    """Request body for ``PATCH /custom-foods/{id}`` — all fields optional for partial update."""
+
     name: str | None = None
     basis: CustomFoodBasis | None = None
     serving_size: float | None = None
@@ -37,6 +51,8 @@ class CustomFoodUpdate(BaseModel):
 
 
 class CustomFoodResponse(BaseModel):
+    """Response body representing a single custom-food row."""
+
     id: UUID
     user_key: str
     name: str
@@ -55,4 +71,6 @@ class CustomFoodResponse(BaseModel):
 
 
 class CustomFoodListResponse(BaseModel):
+    """Response body for ``GET /custom-foods`` — wraps the custom-food list."""
+
     custom_foods: list[CustomFoodResponse]

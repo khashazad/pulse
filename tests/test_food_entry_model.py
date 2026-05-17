@@ -1,3 +1,11 @@
+"""Validation tests for `FoodEntryCreate` and `FoodEntryResponse`.
+
+Covers acceptance of USDA-only and custom-food-only payloads, rejection
+of both-set / neither-set / missing-USDA-description payloads, the
+guarantee that client-supplied `meal_id` / `meal_name` are dropped on
+the way in, and the serialization of those fields on the response model.
+"""
+
 from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
@@ -7,6 +15,7 @@ from diet_tracker_server.models.entries import FoodEntryCreate, FoodEntryRespons
 
 
 def test_food_entry_create_accepts_usda_only() -> None:
+    """USDA-only payload is accepted and ``custom_food_id`` defaults to ``None``."""
     from diet_tracker_server.models import FoodEntryCreate
 
     entry = FoodEntryCreate(
@@ -24,6 +33,7 @@ def test_food_entry_create_accepts_usda_only() -> None:
 
 
 def test_food_entry_create_accepts_custom_only() -> None:
+    """Custom-food-only payload is accepted and ``usda_fdc_id`` defaults to ``None``."""
     from diet_tracker_server.models import FoodEntryCreate
 
     cf_id = uuid4()
@@ -41,6 +51,7 @@ def test_food_entry_create_accepts_custom_only() -> None:
 
 
 def test_food_entry_create_rejects_both_sources() -> None:
+    """Specifying both USDA and custom-food sources fails validation."""
     from diet_tracker_server.models import FoodEntryCreate
 
     with pytest.raises(Exception):
@@ -58,6 +69,7 @@ def test_food_entry_create_rejects_both_sources() -> None:
 
 
 def test_food_entry_create_rejects_neither_source() -> None:
+    """Omitting both USDA and custom-food sources fails validation."""
     from diet_tracker_server.models import FoodEntryCreate
 
     with pytest.raises(Exception):
@@ -72,6 +84,7 @@ def test_food_entry_create_rejects_neither_source() -> None:
 
 
 def test_food_entry_create_rejects_missing_usda_description() -> None:
+    """A USDA payload without `usda_description` fails validation."""
     from diet_tracker_server.models import FoodEntryCreate
 
     with pytest.raises(Exception):
@@ -87,12 +100,14 @@ def test_food_entry_create_rejects_missing_usda_description() -> None:
 
 
 def test_food_entry_create_does_not_expose_meal_link_fields() -> None:
+    """`FoodEntryCreate.model_fields` does not declare `meal_id` or `meal_name`."""
     fields = FoodEntryCreate.model_fields
     assert "meal_id" not in fields
     assert "meal_name" not in fields
 
 
 def test_food_entry_create_ignores_client_supplied_meal_link() -> None:
+    """Client-supplied `meal_id` / `meal_name` are dropped during validation."""
     # meal_id / meal_name are server-controlled (only set by log_meal). When clients
     # try to forge them in the public payload, FoodEntryCreate must not surface them
     # as attributes that downstream code could trust.
@@ -113,6 +128,7 @@ def test_food_entry_create_ignores_client_supplied_meal_link() -> None:
 
 
 def test_food_entry_response_serializes_meal_link() -> None:
+    """`FoodEntryResponse` serializes `meal_id` and `meal_name` when set."""
     meal_id = UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
     response = FoodEntryResponse(
         id=UUID("11111111-1111-1111-1111-111111111111"),
@@ -142,6 +158,7 @@ def test_food_entry_response_serializes_meal_link() -> None:
 
 
 def test_food_entry_response_meal_link_defaults_to_none() -> None:
+    """`FoodEntryResponse.meal_id` and `meal_name` default to `None` when unset."""
     response = FoodEntryResponse(
         id=UUID("11111111-1111-1111-1111-111111111111"),
         daily_log_id=UUID("22222222-2222-2222-2222-222222222222"),

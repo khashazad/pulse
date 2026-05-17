@@ -1,3 +1,16 @@
+"""FastAPI application entry point and ASGI wiring.
+
+Constructs the ``app`` instance: registers the lifespan that initializes the
+SQLAlchemy pool, bootstraps schema, and owns the USDA client; installs the
+session-auth and user-key guardrail middlewares (with MCP path exemptions);
+mounts every feature router; and grafts the FastMCP server plus its OAuth
+metadata routes at ``/mcp``.
+
+This module is the composition root of the backend — uvicorn imports ``app``
+from here and every cross-cutting concern (auth, DB, MCP, USDA) is wired up
+in this file.
+"""
+
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
@@ -30,30 +43,39 @@ from diet_tracker_server.usda import USDAClient
 usda_client: USDAClient | None = None
 
 
-# Summary: Returns the initialized USDA client used by API routers.
-# Parameters:
-# - None: Uses module-level USDA client state initialized during app lifespan.
-# Returns:
-# - USDAClient: Configured client for USDA FoodData Central requests.
-# Raises/Throws:
-# - RuntimeError: Raised when called before startup initialization completes.
 def get_usda_client() -> USDAClient:
+    """Return the initialized USDA client used by API routers.
+
+    Reads the module-level USDA client state populated during app lifespan
+    startup.
+
+    **Outputs:**
+    - USDAClient: Configured client for USDA FoodData Central requests.
+
+    **Exceptions:**
+    - RuntimeError: Raised when called before startup initialization completes.
+    """
     if usda_client is None:
         raise RuntimeError("USDA client not initialized")
     return usda_client
 
 
-# Summary: Manages startup and shutdown resources for the FastAPI application.
-# Parameters:
-# - app (FastAPI): Active FastAPI application instance bound to this lifespan.
-# Returns:
-# - None: Yields control while the application is running.
-# Raises/Throws:
-# - pydantic_core.ValidationError: Raised when required settings are missing.
-# - psycopg.Error: Raised when database initialization or schema bootstrap fails.
-# - httpx.HTTPError: Raised if USDA client shutdown encounters transport issues.
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    """Manage startup and shutdown resources for the FastAPI application.
+
+    Initializes the SQLAlchemy pool, bootstraps the schema, constructs the
+    shared USDA client, yields while the app is running, then tears down the
+    USDA client and pool.
+
+    **Inputs:**
+    - app (FastAPI): Active FastAPI application instance bound to this lifespan.
+
+    **Exceptions:**
+    - pydantic_core.ValidationError: Raised when required settings are missing.
+    - psycopg.Error: Raised when database initialization or schema bootstrap fails.
+    - httpx.HTTPError: Raised if USDA client shutdown encounters transport issues.
+    """
     del app
     global usda_client
     settings = get_settings()
@@ -96,15 +118,13 @@ app.add_middleware(
 )
 
 
-# Summary: Returns a simple health status payload for service monitoring.
-# Parameters:
-# - None: Endpoint does not require inputs.
-# Returns:
-# - dict[str, str]: Static health payload with service status.
-# Raises/Throws:
-# - None: Endpoint always returns a static success payload.
 @app.get("/health")
 async def health() -> dict[str, str]:
+    """Return a simple health status payload for service monitoring.
+
+    **Outputs:**
+    - dict[str, str]: Static health payload with service status.
+    """
     return {"status": "ok"}
 
 

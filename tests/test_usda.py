@@ -1,14 +1,16 @@
+"""Unit tests for `usda.normalize_food_nutrients`.
+
+Covers both USDA nutrient payload shapes (the flat search-result format
+with `nutrientId` + `value`, and the nested-metadata format used in
+detail responses) plus the safe zero defaults when no nutrient rows are
+present.
+"""
+
 from diet_tracker_server.usda import normalize_food_nutrients
 
 
-# Summary: Ensures nutrient normalization extracts standard macros from search-style payloads.
-# Parameters:
-# - None: Uses a representative static USDA food search result sample.
-# Returns:
-# - None: Performs assertions on normalized nutrient fields.
-# Raises/Throws:
-# - AssertionError: Raised when normalized fields are incorrect.
 def test_normalize_extracts_macros_from_search_result() -> None:
+    """Nutrient normalization extracts macros and serving size from search-style payloads."""
     raw = {
         "fdcId": 171287,
         "description": "Egg, whole, raw, fresh",
@@ -29,14 +31,8 @@ def test_normalize_extracts_macros_from_search_result() -> None:
     assert result["serving_size"] == 50.0
 
 
-# Summary: Ensures normalization supports USDA's nested nutrient metadata format.
-# Parameters:
-# - None: Uses a sample where nutrient IDs are nested under `nutrient` metadata.
-# Returns:
-# - None: Performs assertions on normalized nutrient and serving fields.
-# Raises/Throws:
-# - AssertionError: Raised when normalized fields are incorrect.
 def test_normalize_handles_nested_nutrient_format() -> None:
+    """Normalization supports the nested `nutrient: {id, amount}` payload variant."""
     raw = {
         "fdcId": 173430,
         "description": "Butter, salted",
@@ -55,14 +51,8 @@ def test_normalize_handles_nested_nutrient_format() -> None:
     assert result["serving_size_unit"] == "1 tbsp"
 
 
-# Summary: Ensures normalization provides safe zero defaults when nutrient data is absent.
-# Parameters:
-# - None: Uses a payload with no nutrient rows.
-# Returns:
-# - None: Performs assertions on default values.
-# Raises/Throws:
-# - AssertionError: Raised when defaults are incorrect.
 def test_normalize_handles_missing_nutrients() -> None:
+    """An empty `foodNutrients` list yields zero defaults rather than raising."""
     raw = {"fdcId": 1, "description": "Mystery food", "foodNutrients": []}
     result = normalize_food_nutrients(raw)
     assert result["calories"] == 0

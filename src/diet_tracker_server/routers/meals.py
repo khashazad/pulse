@@ -1,3 +1,12 @@
+"""HTTP endpoints for saved meals and the meal-log shortcut.
+
+Exposes the ``/meals`` router covering meal CRUD, per-item CRUD nested under
+``/meals/{id}/items``, and ``POST /meals/{id}/log`` which expands a meal's
+items into individual food entries that share an ``entry_group_id``. Heavy
+work — creating meals with their items, logging meals atomically — lives in
+:mod:`services.meals_service`.
+"""
+
 from __future__ import annotations
 
 from datetime import datetime as DateTimeValue
@@ -34,15 +43,31 @@ TZ = ZoneInfo(settings.timezone)
 
 
 class LogMealRequest(BaseModel):
+    """Request body for ``POST /meals/{id}/log``.
+
+    A naive ``consumed_at`` is treated as wall-clock time in the configured
+    timezone (``TZ``); ``None`` defers to the server's current time.
+    """
+
     consumed_at: DateTimeValue | None = None
 
 
 class LogMealResponse(BaseModel):
+    """Response body for ``POST /meals/{id}/log``: created entries plus updated daily totals."""
+
     entries: list[FoodEntryResponse]
     daily_totals: MacroTotals
 
 
 def _item_to_response(row: dict) -> MealItemResponse:
+    """Project a raw ``meal_items`` row into the public response model.
+
+    **Inputs:**
+    - row (dict): Column→value mapping returned by :class:`MealsRepository`.
+
+    **Outputs:**
+    - MealItemResponse: Pydantic DTO with numeric fields normalized.
+    """
     return MealItemResponse(
         id=row["id"],
         meal_id=row["meal_id"],
@@ -65,6 +90,15 @@ def _item_to_response(row: dict) -> MealItemResponse:
 
 
 def _meal_to_response(meal_row: dict, item_rows: list[dict]) -> MealResponse:
+    """Combine a ``meals`` row and its ``meal_items`` rows into the public response model.
+
+    **Inputs:**
+    - meal_row (dict): The parent meal row.
+    - item_rows (list[dict]): The meal's items, in display order.
+
+    **Outputs:**
+    - MealResponse: Pydantic DTO with embedded item list.
+    """
     return MealResponse(
         id=meal_row["id"],
         user_key=meal_row["user_key"],
@@ -77,12 +111,20 @@ def _meal_to_response(meal_row: dict, item_rows: list[dict]) -> MealResponse:
     )
 
 
-# Summary: Lists meals owned by a user with item counts.
 @router.get("/meals", response_model=MealsListResponse)
 async def list_meals(
     request: Request,
     session: AsyncSession = Depends(get_session_dependency),
 ) -> MealsListResponse:
+    """List meals owned by the authenticated user with item counts and aggregate macros.
+
+    **Inputs:**
+    - request (Request): Active request providing ``user_key``.
+    - session (AsyncSession): DB session dependency.
+
+    **Outputs:**
+    - MealsListResponse: Per-meal summaries (no item bodies).
+    """
     user_key = request.state.user_key
     repo = MealsRepository(session)
     rows = await repo.list_meals(user_key)
@@ -104,13 +146,25 @@ async def list_meals(
     )
 
 
-# Summary: Creates a meal with pre-scaled items.
 @router.post("/meals", status_code=201, response_model=MealResponse)
 async def create_meal(
     request: Request,
     body: MealCreate,
     session: AsyncSession = Depends(get_session_dependency),
 ) -> MealResponse:
+    """Create a meal together with its pre-scaled items in one transaction.
+
+    **Inputs:**
+    - request (Request): Active request providing ``user_key``.
+    - body (MealCreate): Meal metadata and items.
+    - session (AsyncSession): DB session dependency.
+
+    **Outputs:**
+    - MealResponse: The newly persisted meal with its items.
+
+    **Exceptions:**
+    - HTTPException(409): Raised when the user already owns a meal with that name.
+    """
     user_key = request.state.user_key
     now = DateTimeValue.now(tz=TZ)
     try:
@@ -123,13 +177,25 @@ async def create_meal(
     return _meal_to_response(meal_row, item_rows)
 
 
-# Summary: Fetches a meal with its items.
 @router.get("/meals/{meal_id}", response_model=MealResponse)
 async def get_meal(
     request: Request,
     meal_id: UUID,
     session: AsyncSession = Depends(get_session_dependency),
 ) -> MealResponse:
+    """Fetch a meal by id with all its items.
+
+    **Inputs:**
+    - request (Request): Active request providing ``user_key``.
+    - meal_id (UUID): Meal primary key.
+    - session (AsyncSession): DB session dependency.
+
+    **Outputs:**
+    - MealResponse: The meal and its items.
+
+    **Exceptions:**
+    - HTTPException(404): Raised when no meal with that id is owned by the user.
+    """
     user_key = request.state.user_key
     repo = MealsRepository(session)
     meal_row = await repo.get_meal(meal_id, user_key)
@@ -139,7 +205,6 @@ async def get_meal(
     return _meal_to_response(meal_row, item_rows)
 
 
-# Summary: Updates meal name/notes.
 @router.patch("/meals/{meal_id}", response_model=MealResponse)
 async def update_meal(
     request: Request,
@@ -147,6 +212,21 @@ async def update_meal(
     body: MealUpdate,
     session: AsyncSession = Depends(get_session_dependency),
 ) -> MealResponse:
+    """Update a meal's name or notes; recomputes ``normalized_name`` when ``name`` changes.
+
+    **Inputs:**
+    - request (Request): Active request providing ``user_key``.
+    - meal_id (UUID): Meal primary key.
+    - body (MealUpdate): Subset of fields to overwrite.
+    - session (AsyncSession): DB session dependency.
+
+    **Outputs:**
+    - MealResponse: The updated meal with its items.
+
+    **Exceptions:**
+    - HTTPException(409): Raised when renaming would collide with another meal's name.
+    - HTTPException(404): Raised when no meal with that id is owned by the user.
+    """
     user_key = request.state.user_key
     fields = body.model_dump(exclude_unset=True)
     if "name" in fields and fields["name"] is not None:
@@ -164,13 +244,22 @@ async def update_meal(
     return _meal_to_response(meal_row, item_rows)
 
 
-# Summary: Deletes a meal and all its items.
 @router.delete("/meals/{meal_id}", status_code=204)
 async def delete_meal(
     request: Request,
     meal_id: UUID,
     session: AsyncSession = Depends(get_session_dependency),
 ) -> None:
+    """Delete a meal and cascade-delete its items.
+
+    **Inputs:**
+    - request (Request): Active request providing ``user_key``.
+    - meal_id (UUID): Meal primary key.
+    - session (AsyncSession): DB session dependency.
+
+    **Exceptions:**
+    - HTTPException(404): Raised when no meal with that id is owned by the user.
+    """
     user_key = request.state.user_key
     repo = MealsRepository(session)
     async with transaction(session):
@@ -179,7 +268,6 @@ async def delete_meal(
         raise HTTPException(status_code=404, detail="Meal not found")
 
 
-# Summary: Adds an item to a meal.
 @router.post("/meals/{meal_id}/items", status_code=201, response_model=MealItemResponse)
 async def add_meal_item(
     request: Request,
@@ -187,6 +275,25 @@ async def add_meal_item(
     body: MealItemCreate,
     session: AsyncSession = Depends(get_session_dependency),
 ) -> MealItemResponse:
+    """Append a new item to a meal. The item must reference exactly one food source.
+
+    Position is assigned server-side via ``next_position``. The item must
+    specify exactly one of ``usda_fdc_id`` or ``custom_food_id``; if USDA is
+    used, ``usda_description`` is required.
+
+    **Inputs:**
+    - request (Request): Active request providing ``user_key``.
+    - meal_id (UUID): Owning meal's primary key.
+    - body (MealItemCreate): Item payload (display name, quantity, food pointer, macros).
+    - session (AsyncSession): DB session dependency.
+
+    **Outputs:**
+    - MealItemResponse: The newly created item.
+
+    **Exceptions:**
+    - HTTPException(422): Raised when food-pointer cardinality is wrong or USDA description is missing.
+    - HTTPException(404): Raised when the meal does not exist for this user.
+    """
     user_key = request.state.user_key
     has_usda = body.usda_fdc_id is not None
     has_custom = body.custom_food_id is not None
@@ -226,7 +333,6 @@ async def add_meal_item(
     return _item_to_response(row)
 
 
-# Summary: Deletes a meal item.
 @router.delete("/meals/{meal_id}/items/{item_id}", status_code=204)
 async def delete_meal_item(
     request: Request,
@@ -234,6 +340,17 @@ async def delete_meal_item(
     item_id: UUID,
     session: AsyncSession = Depends(get_session_dependency),
 ) -> None:
+    """Delete a single item from a meal.
+
+    **Inputs:**
+    - request (Request): Active request providing ``user_key``.
+    - meal_id (UUID): Owning meal's primary key.
+    - item_id (UUID): Meal-item primary key.
+    - session (AsyncSession): DB session dependency.
+
+    **Exceptions:**
+    - HTTPException(404): Raised when the meal or the item does not exist for this user.
+    """
     user_key = request.state.user_key
     repo = MealsRepository(session)
     async with transaction(session):
@@ -245,7 +362,6 @@ async def delete_meal_item(
         raise HTTPException(status_code=404, detail="Meal item not found")
 
 
-# Summary: Logs every item of a meal as separate food entries (one entry_group_id).
 @router.post("/meals/{meal_id}/log", response_model=LogMealResponse)
 async def log_meal_endpoint(
     request: Request,
@@ -253,6 +369,20 @@ async def log_meal_endpoint(
     body: LogMealRequest | None = None,
     session: AsyncSession = Depends(get_session_dependency),
 ) -> LogMealResponse:
+    """Expand every meal item into a food entry sharing one ``entry_group_id``.
+
+    A naive ``consumed_at`` is interpreted in the configured timezone; ``None``
+    defers to the server's current wall-clock time.
+
+    **Inputs:**
+    - request (Request): Active request providing ``user_key``.
+    - meal_id (UUID): Meal to log.
+    - body (LogMealRequest | None): Optional payload carrying ``consumed_at``.
+    - session (AsyncSession): DB session dependency.
+
+    **Outputs:**
+    - LogMealResponse: The created entries plus updated daily macro totals.
+    """
     user_key = request.state.user_key
     now = DateTimeValue.now(tz=TZ)
     consumed_at = body.consumed_at if body else None

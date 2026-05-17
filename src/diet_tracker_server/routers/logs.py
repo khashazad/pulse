@@ -1,3 +1,10 @@
+"""HTTP endpoint that returns per-day aggregate logs across a date range.
+
+Exposes the ``/logs`` router with a single ``GET`` that yields one
+``DailyLogSummary`` per calendar date inside the requested window. Backed by
+:class:`LogsRepository` which performs the SQL aggregation server-side.
+"""
+
 from __future__ import annotations
 
 from datetime import date as DateValue
@@ -13,15 +20,6 @@ from diet_tracker_server.repositories.logs import LogsRepository
 router = APIRouter(dependencies=[Depends(require_session)])
 
 
-# Summary: Lists historical daily logs for a user across a date range.
-# Parameters:
-# - from_date (datetime.date): Inclusive start date for returned logs.
-# - to_date (datetime.date): Inclusive end date for returned logs.
-# Returns:
-# - LogsListResponse: Daily aggregate totals and entry counts ordered by date desc.
-# Raises/Throws:
-# - RuntimeError: Raised when the database pool is not initialized.
-# - sqlalchemy.exc.SQLAlchemyError: Raised when SQL execution fails.
 @router.get("/logs", response_model=LogsListResponse)
 async def list_logs(
     request: Request,
@@ -29,6 +27,22 @@ async def list_logs(
     to_date: DateValue = Query(alias="to"),
     session: AsyncSession = Depends(get_session_dependency),
 ) -> LogsListResponse:
+    """List historical daily logs for the authenticated user across an inclusive date range.
+
+    **Inputs:**
+    - request (Request): Active request providing ``user_key``.
+    - from_date (date): Inclusive start date (query alias ``from``).
+    - to_date (date): Inclusive end date (query alias ``to``).
+    - session (AsyncSession): DB session dependency.
+
+    **Outputs:**
+    - LogsListResponse: Daily aggregate totals and entry counts ordered by date descending.
+
+    **Exceptions:**
+    - HTTPException(400): Raised when ``from_date`` is after ``to_date``.
+    - RuntimeError: Raised when the database pool is not initialized.
+    - sqlalchemy.exc.SQLAlchemyError: Raised when SQL execution fails.
+    """
     if from_date > to_date:
         raise HTTPException(status_code=400, detail="'from' date must be on or before 'to' date")
 

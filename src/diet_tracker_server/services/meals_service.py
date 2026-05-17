@@ -1,3 +1,13 @@
+"""Meals service: create saved meals and expand them into food entries.
+
+Owns the two write paths that touch the ``meals`` and ``meal_items`` tables
+plus the read-and-expand flow that turns a saved meal into a batch of
+food entries (``log_meal``). Composes :class:`MealsRepository`,
+:func:`create_entries_with_side_effects`, and the alias-normalization helpers.
+Each saved meal pre-scales macros at create time so logging is a pure
+fan-out (no rescaling).
+"""
+
 from __future__ import annotations
 
 from datetime import datetime as DateTimeValue
@@ -20,14 +30,17 @@ from diet_tracker_server.services.entries_service import create_entries_with_sid
 from diet_tracker_server.services.normalize import normalize_name
 
 
-# Summary: Validates that a meal item references exactly one food source (USDA or custom).
-# Parameters:
-# - item (MealItemCreate): Caller-supplied item payload.
-# Returns:
-# - None: Returns silently when the payload is valid.
-# Raises/Throws:
-# - fastapi.HTTPException: Raised with 422 when both or neither sources are provided.
 def _validate_item_source(item: MealItemCreate) -> None:
+    """Validate that a meal item references exactly one food source (USDA xor custom).
+
+    **Inputs:**
+    - item (MealItemCreate): Caller-supplied item payload.
+
+    **Exceptions:**
+    - fastapi.HTTPException: Raised with 422 when both or neither sources
+      are provided, or when ``usda_fdc_id`` is set without
+      ``usda_description``.
+    """
     has_usda = item.usda_fdc_id is not None
     has_custom = item.custom_food_id is not None
     if has_usda == has_custom:
@@ -42,23 +55,35 @@ def _validate_item_source(item: MealItemCreate) -> None:
         )
 
 
-# Summary: Creates a meal with its items in one transaction; macros are pre-scaled at create time.
-# Parameters:
-# - session (AsyncSession): Active SQLAlchemy session (caller controls transaction boundary).
-# - user_key (str): Owner.
-# - payload (MealCreate): Meal definition with items.
-# - now (DateTimeValue): Timestamp.
-# Returns:
-# - tuple[dict[str, Any], list[dict[str, Any]]]: Created meal row and its inserted item rows.
-# Raises/Throws:
-# - fastapi.HTTPException: Raised with 422 when an item violates the exactly-one-of rule.
-# - sqlalchemy.exc.IntegrityError: Raised on duplicate (user_key, normalized_name) meal name.
 async def create_meal_with_items(
     session: AsyncSession,
     user_key: str,
     payload: MealCreate,
     now: DateTimeValue,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """Create a meal with its items in one transaction; macros are pre-scaled at create time.
+
+    Validates each item's source, pre-checks alias collisions (mapped to
+    409), then inserts the meal row and its items in declaration order.
+
+    **Inputs:**
+    - session (AsyncSession): Active SQLAlchemy session (caller controls
+      the transaction boundary).
+    - user_key (str): Owning user's scoping key.
+    - payload (MealCreate): Meal definition with items.
+    - now (DateTimeValue): Timestamp stamped on the inserted rows.
+
+    **Outputs:**
+    - tuple[dict[str, Any], list[dict[str, Any]]]: Created meal row and its
+      inserted item rows in position order.
+
+    **Exceptions:**
+    - fastapi.HTTPException: Raised with 422 when an item violates the
+      exactly-one-of rule, or with 409 when an alias collides with an
+      existing meal name/alias.
+    - sqlalchemy.exc.IntegrityError: Raised on duplicate
+      ``(user_key, normalized_name)`` meal name.
+    """
     repo = MealsRepository(session)
     for item in payload.items:
         _validate_item_source(item)
@@ -107,18 +132,6 @@ async def create_meal_with_items(
     return meal_row, item_rows
 
 
-# Summary: Expands a stored meal into food entries (one shared entry_group_id).
-# Parameters:
-# - session (AsyncSession): Active SQLAlchemy session.
-# - user_key (str): Owner.
-# - meal_id (UUID): Target meal.
-# - now (DateTimeValue): Default consumed_at when not specified.
-# - consumed_at (DateTimeValue | None): Explicit consumption time, defaults to `now`.
-# Returns:
-# - tuple[list[dict[str, Any]], list[dict[str, Any]]]: Created entry rows and the full daily-log
-#   rows used for totals (mirrors create_entries_with_side_effects).
-# Raises/Throws:
-# - fastapi.HTTPException: Raised with 404 when the meal does not exist or has no items.
 async def log_meal(
     session: AsyncSession,
     user_key: str,
@@ -126,6 +139,29 @@ async def log_meal(
     now: DateTimeValue,
     consumed_at: DateTimeValue | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Expand a stored meal into food entries sharing one ``entry_group_id``.
+
+    Opens a transaction, loads the meal and its items, then delegates to
+    :func:`create_entries_with_side_effects` with server-controlled
+    ``meal_id`` / ``meal_name`` set on every inserted row.
+
+    **Inputs:**
+    - session (AsyncSession): Active SQLAlchemy session.
+    - user_key (str): Owning user's scoping key.
+    - meal_id (UUID): Target meal id.
+    - now (DateTimeValue): Default ``consumed_at`` when not specified.
+    - consumed_at (DateTimeValue | None): Explicit consumption time; defaults
+      to ``now``.
+
+    **Outputs:**
+    - tuple[list[dict[str, Any]], list[dict[str, Any]]]: Created entry rows
+      and the full daily-log rows used for totals (mirrors
+      :func:`create_entries_with_side_effects`).
+
+    **Exceptions:**
+    - fastapi.HTTPException: Raised with 404 when the meal does not exist
+      for this user, or with 400 when the meal has no items.
+    """
     async with transaction(session):
         repo = MealsRepository(session)
         meal = await repo.get_meal(meal_id, user_key)
@@ -167,10 +203,29 @@ async def log_meal(
 
 
 def _optional_float(value: Any) -> float | None:
+    """Coerce a possibly-``None`` numeric value to ``float | None``.
+
+    **Inputs:**
+    - value (Any): Numeric value or ``None``.
+
+    **Outputs:**
+    - float | None: ``None`` when input is ``None``, otherwise ``float(value)``.
+    """
     return None if value is None else float(value)
 
 
 def normalize_alias_list(aliases: list[str], canonical_normalized_name: str) -> list[str]:
+    """Normalize aliases, drop empties, dedupe, and drop the alias equal to the canonical name.
+
+    **Inputs:**
+    - aliases (list[str]): Raw, user-supplied alias strings.
+    - canonical_normalized_name (str): Already-normalized canonical name;
+      an alias equal to this value is discarded.
+
+    **Outputs:**
+    - list[str]: Order-preserving list of normalized, unique aliases that do
+      not collide with the canonical name.
+    """
     seen: set[str] = set()
     out: list[str] = []
     for raw in aliases:
@@ -188,6 +243,19 @@ async def assert_meal_alias_available(
     alias: str,
     exclude_meal_id: UUID | None,
 ) -> None:
+    """Verify an alias is not already used as a meal name or alias on another meal.
+
+    **Inputs:**
+    - session (AsyncSession): Active SQLAlchemy session.
+    - user_key (str): Owning user's scoping key.
+    - alias (str): Normalized alias to check.
+    - exclude_meal_id (UUID | None): Meal id to exclude from the check (the
+      meal being edited).
+
+    **Exceptions:**
+    - ValueError: Raised when ``alias`` collides with another meal.
+    - sqlalchemy.exc.SQLAlchemyError: Raised when SQL execution fails.
+    """
     stmt = (
         select(meals_table.c.normalized_name)
         .where(meals_table.c.user_key == user_key)

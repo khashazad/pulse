@@ -1,3 +1,10 @@
+"""Unit tests for `services.container_photos.process_container_photo`.
+
+Validates JPEG output of the full + thumbnail pair, max-edge clamping at
+1600 px, the no-upscale guarantee, oversize/non-image rejection, the
+decompression-bomb pixel guard, and the EXIF-orientation transpose.
+"""
+
 from __future__ import annotations
 
 import io
@@ -13,6 +20,15 @@ from diet_tracker_server.services.container_photos import (
 
 
 def _png_bytes(width: int, height: int) -> bytes:
+    """Render an in-memory PNG of the given dimensions for use as test input.
+
+    **Inputs:**
+    - width (int): Image width in pixels.
+    - height (int): Image height in pixels.
+
+    **Outputs:**
+    - bytes: PNG-encoded image bytes.
+    """
     img = Image.new("RGB", (width, height), color=(200, 100, 50))
     buf = io.BytesIO()
     img.save(buf, format="PNG")
@@ -20,6 +36,7 @@ def _png_bytes(width: int, height: int) -> bytes:
 
 
 def test_returns_full_and_thumb_jpeg() -> None:
+    """`process_container_photo` returns JPEG full + thumb pair with proper max-edge sizes."""
     src = _png_bytes(800, 600)
     full, thumb, mime = process_container_photo(src, max_bytes=10 * 1024 * 1024)
     assert mime == "image/jpeg"
@@ -32,6 +49,7 @@ def test_returns_full_and_thumb_jpeg() -> None:
 
 
 def test_caps_full_size_to_1600() -> None:
+    """Full-size output is clamped so the longest edge is exactly 1600 px."""
     src = _png_bytes(3000, 1500)
     full, _thumb, _mime = process_container_photo(src, max_bytes=10 * 1024 * 1024)
     full_img = Image.open(io.BytesIO(full))
@@ -39,6 +57,7 @@ def test_caps_full_size_to_1600() -> None:
 
 
 def test_does_not_upscale_smaller_images() -> None:
+    """Inputs smaller than the cap are returned at their original dimensions."""
     src = _png_bytes(400, 300)
     full, _thumb, _mime = process_container_photo(src, max_bytes=10 * 1024 * 1024)
     full_img = Image.open(io.BytesIO(full))
@@ -46,18 +65,19 @@ def test_does_not_upscale_smaller_images() -> None:
 
 
 def test_too_large_input_raises() -> None:
+    """Inputs exceeding ``max_bytes`` raise `PhotoTooLargeError`."""
     with pytest.raises(PhotoTooLargeError):
         process_container_photo(b"\x00" * (1024 + 1), max_bytes=1024)
 
 
 def test_non_image_input_raises() -> None:
+    """Non-image payloads raise `UnsupportedImageError`."""
     with pytest.raises(UnsupportedImageError):
         process_container_photo(b"this is not an image", max_bytes=10 * 1024 * 1024)
 
 
 def test_rejects_oversized_dimensions(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Decompression-bomb guard: image whose decoded pixel count exceeds
-    MAX_PIXELS must be rejected before any pixel allocation."""
+    """Decompression-bomb guard rejects images whose pixel count exceeds `MAX_PIXELS`."""
     from diet_tracker_server.services import container_photos as svc
 
     monkeypatch.setattr(svc, "MAX_PIXELS", 100)
@@ -68,9 +88,7 @@ def test_rejects_oversized_dimensions(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_exif_orientation_is_baked_into_pixels() -> None:
-    """A landscape JPEG with orientation=6 (rotate 90° CW) should come back
-    as a portrait image after re-encoding (EXIF is dropped, so the orientation
-    has to be applied to the pixels first)."""
+    """EXIF orientation=6 (rotate 90 CW) is applied to pixels so output is portrait."""
     img = Image.new("RGB", (200, 100), color=(50, 100, 150))
     exif = img.getexif()
     exif[0x0112] = 6  # Orientation tag: rotate 90° CW

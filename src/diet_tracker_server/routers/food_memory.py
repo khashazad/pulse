@@ -1,3 +1,11 @@
+"""HTTP endpoints for the per-user food-memory cache.
+
+Exposes the ``/food-memory`` router covering list, name-resolve (returns the
+cached pointer or ``type=none``), upsert of USDA-backed memories, upsert of
+custom-food-backed memories, and delete by name. Used by the iOS client to
+short-circuit USDA round-trips for foods the user has already logged.
+"""
+
 from __future__ import annotations
 
 from datetime import datetime as DateTimeValue
@@ -27,6 +35,14 @@ TZ = ZoneInfo(settings.timezone)
 
 
 def _to_entry(row: dict) -> FoodMemoryEntry:
+    """Project a raw ``food_memory`` row mapping into the public response model.
+
+    **Inputs:**
+    - row (dict): Column→value mapping returned by :class:`FoodMemoryRepository`.
+
+    **Outputs:**
+    - FoodMemoryEntry: Pydantic DTO with nullable numeric fields normalized.
+    """
     return FoodMemoryEntry(
         id=row["id"],
         user_key=row["user_key"],
@@ -47,36 +63,63 @@ def _to_entry(row: dict) -> FoodMemoryEntry:
     )
 
 
-# Summary: Lists every memory entry for a user.
 @router.get("/food-memory", response_model=FoodMemoryListResponse)
 async def list_food_memory(
     request: Request,
     session: AsyncSession = Depends(get_session_dependency),
 ) -> FoodMemoryListResponse:
+    """List every food-memory entry owned by the authenticated user.
+
+    **Inputs:**
+    - request (Request): Active request providing ``user_key``.
+    - session (AsyncSession): DB session dependency.
+
+    **Outputs:**
+    - FoodMemoryListResponse: Memory entries in repository-defined order.
+    """
     user_key = request.state.user_key
     repo = FoodMemoryRepository(session)
     rows = await repo.list_for_user(user_key)
     return FoodMemoryListResponse(entries=[_to_entry(r) for r in rows])
 
 
-# Summary: Resolves a free-text food name to the cached memory entry, or `type=none`.
 @router.get("/food-memory/resolve", response_model=ResolvedFood)
 async def resolve_food(
     request: Request,
     name: str = Query(..., min_length=1),
     session: AsyncSession = Depends(get_session_dependency),
 ) -> ResolvedFood:
+    """Resolve a free-text food name to a cached memory entry or ``type=none``.
+
+    **Inputs:**
+    - request (Request): Active request providing ``user_key``.
+    - name (str): Free-text food name to resolve; must be non-empty.
+    - session (AsyncSession): DB session dependency.
+
+    **Outputs:**
+    - ResolvedFood: Discriminated-union payload identifying the memory match
+      (USDA pointer, custom-food pointer, or ``none``).
+    """
     user_key = request.state.user_key
     return await resolve_food_by_name(session=session, user_key=user_key, name=name)
 
 
-# Summary: Upserts a USDA-pointer memory entry with cached per-basis macros.
 @router.put("/food-memory/usda", response_model=FoodMemoryEntry)
 async def remember_food_usda(
     request: Request,
     body: FoodMemoryUsdaWrite,
     session: AsyncSession = Depends(get_session_dependency),
 ) -> FoodMemoryEntry:
+    """Upsert a USDA-pointer memory entry with cached per-basis macros.
+
+    **Inputs:**
+    - request (Request): Active request providing ``user_key``.
+    - body (FoodMemoryUsdaWrite): Name, USDA id, basis, serving info, and per-basis macros.
+    - session (AsyncSession): DB session dependency.
+
+    **Outputs:**
+    - FoodMemoryEntry: The upserted memory row.
+    """
     user_key = request.state.user_key
     now = DateTimeValue.now(tz=TZ)
     repo = FoodMemoryRepository(session)
@@ -99,13 +142,25 @@ async def remember_food_usda(
     return _to_entry(row)
 
 
-# Summary: Upserts a custom-food-pointer memory entry; macros come from the linked custom food.
 @router.put("/food-memory/custom", response_model=FoodMemoryEntry)
 async def remember_food_custom(
     request: Request,
     body: FoodMemoryCustomWrite,
     session: AsyncSession = Depends(get_session_dependency),
 ) -> FoodMemoryEntry:
+    """Upsert a custom-food-pointer memory entry; macros are sourced from the linked custom food.
+
+    **Inputs:**
+    - request (Request): Active request providing ``user_key``.
+    - body (FoodMemoryCustomWrite): Name and ``custom_food_id`` to link.
+    - session (AsyncSession): DB session dependency.
+
+    **Outputs:**
+    - FoodMemoryEntry: The upserted memory row.
+
+    **Exceptions:**
+    - HTTPException(404): Raised when the referenced custom food does not exist for the user.
+    """
     user_key = request.state.user_key
     now = DateTimeValue.now(tz=TZ)
     custom_foods_repo = CustomFoodsRepository(session)
@@ -123,13 +178,22 @@ async def remember_food_custom(
     return _to_entry(row)
 
 
-# Summary: Deletes a memory entry by name.
 @router.delete("/food-memory", status_code=204)
 async def forget_food(
     request: Request,
     name: str = Query(..., min_length=1),
     session: AsyncSession = Depends(get_session_dependency),
 ) -> None:
+    """Delete the memory entry whose normalized name matches ``name``.
+
+    **Inputs:**
+    - request (Request): Active request providing ``user_key``.
+    - name (str): Free-text food name; normalized server-side before lookup.
+    - session (AsyncSession): DB session dependency.
+
+    **Exceptions:**
+    - HTTPException(404): Raised when no memory entry matches the normalized name.
+    """
     user_key = request.state.user_key
     repo = FoodMemoryRepository(session)
     async with transaction(session):

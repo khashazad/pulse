@@ -1,3 +1,12 @@
+"""Food-memory resolution and alias-management logic.
+
+Resolves free-text food phrases against the user's per-row ``food_memory``
+table (which may point either at a USDA food or a user-defined custom food),
+materializing the macros and basis needed to scale and log. Also exposes
+alias normalization and collision-detection helpers used by the food-memory
+write paths.
+"""
+
 from __future__ import annotations
 
 from typing import Any
@@ -11,21 +20,30 @@ from diet_tracker_server.repositories.tables import food_memory
 from diet_tracker_server.services.normalize import normalize_name
 
 
-# Summary: Resolves a free-text food name against the user's memory.
-# Parameters:
-# - session (AsyncSession): Active SQLAlchemy session.
-# - user_key (str): Owner.
-# - name (str): User-supplied food phrase.
-# Returns:
-# - ResolvedFood: `type` is `"none"` when no memory exists, otherwise `"memory_usda"` or
-#   `"custom_food"` with all fields needed to scale macros and call log_food.
-# Raises/Throws:
-# - sqlalchemy.exc.SQLAlchemyError: Raised when SQL execution fails.
 async def resolve_food_by_name(
     session: AsyncSession,
     user_key: str,
     name: str,
 ) -> ResolvedFood:
+    """Resolve a free-text food name against the user's memory table.
+
+    Normalizes the name and queries ``food_memory``; returns a discriminated
+    :class:`ResolvedFood` carrying every field the caller needs to scale
+    macros and call ``log_food`` without further lookups.
+
+    **Inputs:**
+    - session (AsyncSession): Active SQLAlchemy session.
+    - user_key (str): Owning user's scoping key.
+    - name (str): User-supplied food phrase.
+
+    **Outputs:**
+    - ResolvedFood: ``type`` is ``"none"`` when no memory entry exists;
+      otherwise ``"memory_usda"`` or ``"custom_food"`` with all fields
+      needed to scale macros and call ``log_food``.
+
+    **Exceptions:**
+    - sqlalchemy.exc.SQLAlchemyError: Raised when SQL execution fails.
+    """
     repo = FoodMemoryRepository(session)
     row = await repo.get_by_name(user_key=user_key, normalized_name=normalize_name(name))
     if row is None:
@@ -62,10 +80,28 @@ async def resolve_food_by_name(
 
 
 def _optional_float(value: Any) -> float | None:
+    """Coerce a possibly-``None`` numeric value to ``float | None``.
+
+    **Inputs:**
+    - value (Any): Numeric value or ``None``.
+
+    **Outputs:**
+    - float | None: ``None`` when input is ``None``, otherwise ``float(value)``.
+    """
     return None if value is None else float(value)
 
 
 def _custom_food_from_row(row: dict[str, Any]) -> dict[str, Any]:
+    """Project the joined ``cf_*`` columns of a memory row back into a custom-food dict.
+
+    **Inputs:**
+    - row (dict[str, Any]): Joined memory+custom-food row keyed by the
+      ``cf_<column>`` aliases used in the join.
+
+    **Outputs:**
+    - dict[str, Any]: Custom-food fields shaped like the bare custom_foods
+      row (``id``, ``user_key``, ``name``, ``basis``, macros, timestamps).
+    """
     return {
         "id": row["cf_id"],
         "user_key": row["cf_user_key"],
@@ -86,7 +122,17 @@ def _custom_food_from_row(row: dict[str, Any]) -> dict[str, Any]:
 
 
 def normalize_alias_list(aliases: list[str], canonical_normalized_name: str) -> list[str]:
-    """Normalize aliases, drop empties, drop dups, drop alias equal to canonical name."""
+    """Normalize aliases, drop empties, dedupe, and drop the alias equal to the canonical name.
+
+    **Inputs:**
+    - aliases (list[str]): Raw, user-supplied alias strings.
+    - canonical_normalized_name (str): Already-normalized canonical name;
+      an alias equal to this value is discarded.
+
+    **Outputs:**
+    - list[str]: Order-preserving list of normalized, unique aliases that do
+      not collide with the canonical name.
+    """
     seen: set[str] = set()
     out: list[str] = []
     for raw in aliases:
@@ -104,7 +150,19 @@ async def assert_food_alias_available(
     alias: str,
     exclude_normalized_name: str | None,
 ) -> None:
-    """Raise ValueError if `alias` is already used as a canonical name or alias on another row."""
+    """Verify an alias is not already used as a canonical name or alias on another row.
+
+    **Inputs:**
+    - session (AsyncSession): Active SQLAlchemy session.
+    - user_key (str): Owning user's scoping key.
+    - alias (str): Normalized alias to check.
+    - exclude_normalized_name (str | None): Canonical name to exclude from
+      the check (the row being edited).
+
+    **Exceptions:**
+    - ValueError: Raised when ``alias`` collides with another memory row.
+    - sqlalchemy.exc.SQLAlchemyError: Raised when SQL execution fails.
+    """
     stmt = (
         select(food_memory.c.normalized_name)
         .where(food_memory.c.user_key == user_key)

@@ -1,3 +1,12 @@
+"""Integration tests for ``ProgressPhotoRepository``.
+
+Covers the ``progress_photos`` upsert + slot semantics: write a JPEG plus
+thumbnail per ``(user_key, log_date, slot)``, replace an existing slot in place,
+filter list-by-metadata results to an inclusive date range, retrieve full vs.
+thumb bytes by flag, and delete a slot. Integration test: hits a real Postgres
+via ``TEST_DATABASE_URL``.
+"""
+
 from __future__ import annotations
 
 import hashlib
@@ -18,6 +27,14 @@ pytestmark = pytest.mark.integration
 
 
 def _integration_database_url() -> str:
+    """Resolve the SQLAlchemy URL for the integration database, skipping if unset.
+
+    **Outputs:**
+    - str: SQLAlchemy-async URL derived from ``TEST_DATABASE_URL``.
+
+    **Exceptions:**
+    - ``pytest.skip.Exception``: Raised via ``pytest.skip`` when ``TEST_DATABASE_URL`` is not set.
+    """
     raw_url = os.getenv("TEST_DATABASE_URL")
     if raw_url is None:
         pytest.skip("Set TEST_DATABASE_URL to run integration tests")
@@ -25,12 +42,22 @@ def _integration_database_url() -> str:
 
 
 async def _truncate(engine) -> None:
+    """Truncate the ``progress_photos`` table, restarting identity sequences.
+
+    **Inputs:**
+    - engine: SQLAlchemy async engine bound to the integration database.
+    """
     async with engine.begin() as conn:
         await conn.exec_driver_sql("TRUNCATE TABLE progress_photos RESTART IDENTITY CASCADE")
 
 
 @pytest_asyncio.fixture
 async def session() -> AsyncSession:
+    """Per-test async session with a freshly-truncated ``progress_photos`` table.
+
+    **Outputs:**
+    - ``AsyncSession``: open session, disposed of with the engine on teardown.
+    """
     engine = create_async_engine(_integration_database_url())
     await _truncate(engine)
     factory = async_sessionmaker(engine, expire_on_commit=False)
@@ -40,19 +67,35 @@ async def session() -> AsyncSession:
 
 
 def _now() -> DateTimeValue:
+    """Return the current UTC timestamp for ``created_at`` / ``updated_at`` fields.
+
+    **Outputs:**
+    - datetime: timezone-aware UTC ``datetime``.
+    """
     return DateTimeValue.now(tz=TimezoneValue.utc)
 
 
 def _jpeg() -> bytes:
+    """Return a fixed byte payload representing a full-size JPEG body.
+
+    **Outputs:**
+    - bytes: deterministic fake JPEG bytes used as the ``photo`` argument.
+    """
     return b"\xff\xd8\xff\xe0fake-jpeg-bytes"
 
 
 def _thumb() -> bytes:
+    """Return a fixed byte payload representing a thumbnail JPEG body.
+
+    **Outputs:**
+    - bytes: deterministic fake JPEG bytes used as the ``photo_thumb`` argument.
+    """
     return b"\xff\xd8\xff\xe0fake-thumb"
 
 
 @pytest.mark.asyncio
 async def test_upsert_then_get_round_trip(session: AsyncSession) -> None:
+    """``upsert`` persists slot metadata and ``get_photo`` returns the matching full and thumbnail bytes."""
     repo = ProgressPhotoRepository(session)
     user_key = f"test-{uuid.uuid4().hex}"
     sha = hashlib.sha256(_jpeg()).hexdigest()
@@ -88,6 +131,7 @@ async def test_upsert_then_get_round_trip(session: AsyncSession) -> None:
 
 @pytest.mark.asyncio
 async def test_upsert_replaces_existing_slot(session: AsyncSession) -> None:
+    """A second ``upsert`` for the same ``(user_key, log_date, slot)`` replaces the prior row in place."""
     repo = ProgressPhotoRepository(session)
     user_key = f"test-{uuid.uuid4().hex}"
     async with transaction(session):
@@ -112,6 +156,7 @@ async def test_upsert_replaces_existing_slot(session: AsyncSession) -> None:
 
 @pytest.mark.asyncio
 async def test_list_metadata_filters_by_range(session: AsyncSession) -> None:
+    """``list_metadata`` returns only rows whose ``log_date`` falls within the inclusive ``[frm, to]`` window."""
     repo = ProgressPhotoRepository(session)
     user_key = f"test-{uuid.uuid4().hex}"
     async with transaction(session):
@@ -133,6 +178,7 @@ async def test_list_metadata_filters_by_range(session: AsyncSession) -> None:
 
 @pytest.mark.asyncio
 async def test_delete_removes_slot(session: AsyncSession) -> None:
+    """``delete`` removes a single slot row so subsequent ``get_photo`` returns ``None``."""
     repo = ProgressPhotoRepository(session)
     user_key = f"test-{uuid.uuid4().hex}"
     async with transaction(session):

@@ -1,3 +1,10 @@
+"""HTTP endpoints for reading and writing the user's macro target profile.
+
+Exposes ``GET /targets`` (current profile) and ``PUT /targets`` (upsert).
+Backed by :class:`TargetsRepository`; one row per user_key keyed by
+calories/protein/carbs/fat plus an optional ``target_weight_lb``.
+"""
+
 from __future__ import annotations
 
 from datetime import datetime as DateTimeValue
@@ -17,18 +24,25 @@ router = APIRouter(dependencies=[Depends(require_session)])
 TZ = ZoneInfo(settings.timezone)
 
 
-# Summary: Fetches the user's currently configured macro targets.
-# Returns:
-# - MacroTargets: Active calorie/protein/carbs/fat targets for the user.
-# Raises/Throws:
-# - fastapi.HTTPException: Raised with 404 when no target profile exists for the user.
-# - RuntimeError: Raised when the database pool is not initialized.
-# - sqlalchemy.exc.SQLAlchemyError: Raised when SQL execution fails.
 @router.get("/targets", response_model=MacroTargets)
 async def get_targets(
     request: Request,
     session: AsyncSession = Depends(get_session_dependency),
 ) -> MacroTargets:
+    """Fetch the user's currently configured macro targets.
+
+    **Inputs:**
+    - request (Request): Active request providing ``user_key``.
+    - session (AsyncSession): DB session dependency.
+
+    **Outputs:**
+    - MacroTargets: Active calorie/protein/carbs/fat targets plus optional target weight.
+
+    **Exceptions:**
+    - HTTPException(404): Raised when no target profile exists for the user.
+    - RuntimeError: Raised when the database pool is not initialized.
+    - sqlalchemy.exc.SQLAlchemyError: Raised when SQL execution fails.
+    """
     user_key = request.state.user_key
     repository = TargetsRepository(session)
     row = await repository.get_target_profile(user_key)
@@ -45,20 +59,26 @@ async def get_targets(
     )
 
 
-# Summary: Creates or updates the user's macro target profile.
-# Parameters:
-# - body (MacroTargets): Requested macro target values.
-# Returns:
-# - MacroTargets: Persisted macro target values.
-# Raises/Throws:
-# - RuntimeError: Raised when the database pool is not initialized.
-# - sqlalchemy.exc.SQLAlchemyError: Raised when SQL execution fails.
 @router.put("/targets", response_model=MacroTargets)
 async def update_targets(
     request: Request,
     body: MacroTargets,
     session: AsyncSession = Depends(get_session_dependency),
 ) -> MacroTargets:
+    """Create or update the user's macro target profile (idempotent upsert).
+
+    **Inputs:**
+    - request (Request): Active request providing ``user_key``.
+    - body (MacroTargets): Desired macro target values.
+    - session (AsyncSession): DB session dependency.
+
+    **Outputs:**
+    - MacroTargets: The persisted target values (echo of ``body``).
+
+    **Exceptions:**
+    - RuntimeError: Raised when the database pool is not initialized.
+    - sqlalchemy.exc.SQLAlchemyError: Raised when SQL execution fails.
+    """
     user_key = request.state.user_key
     now = DateTimeValue.now(tz=TZ)
     repository = TargetsRepository(session)

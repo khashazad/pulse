@@ -1,3 +1,10 @@
+"""HTTP tests for the `target_weight_lb` field on `/targets`.
+
+Covers GET/PUT round-tripping of `target_weight_lb`, including the
+null-permitted GET response. Uses a TestClient with DB and auth
+middleware mocked.
+"""
+
 from __future__ import annotations
 
 import os
@@ -14,11 +21,21 @@ os.environ.setdefault("USDA_API_KEY", "test")
 
 
 def _now() -> DateTimeValue:
+    """Return the current UTC timestamp.
+
+    **Outputs:**
+    - datetime: Aware ``datetime`` in UTC.
+    """
     return DateTimeValue.now(tz=TimezoneValue.utc)
 
 
 @pytest.fixture
 def client() -> TestClient:
+    """TestClient with DB pool, USDA client, and auth middleware mocked.
+
+    **Outputs:**
+    - TestClient: Client whose Bearer-authenticated requests pass auth.
+    """
     fut = _now() + TimeDeltaValue(days=7)
     session_repo = AsyncMock()
     session_repo.get.return_value = {"email": "khashzd@gmail.com", "expires_at": fut}
@@ -43,6 +60,7 @@ def client() -> TestClient:
         from diet_tracker_server.db import get_session_dependency
 
         async def _fake_session_dep():
+            """Yield a `MagicMock` DB session with a working async `begin()` ctx."""
             session = MagicMock()
             session.begin = MagicMock()
             session.begin.return_value.__aenter__ = AsyncMock(return_value=session)
@@ -61,6 +79,7 @@ HEADERS = {"Authorization": "Bearer tok"}
 
 
 def test_get_targets_includes_target_weight(client: TestClient) -> None:
+    """`GET /targets` exposes `target_weight_lb` in the response payload."""
     with patch(
         "diet_tracker_server.routers.targets.TargetsRepository"
     ) as MockRepo:
@@ -80,6 +99,7 @@ def test_get_targets_includes_target_weight(client: TestClient) -> None:
 
 
 def test_get_targets_null_target_weight(client: TestClient) -> None:
+    """`GET /targets` returns `target_weight_lb=null` when unset in the DB."""
     with patch(
         "diet_tracker_server.routers.targets.TargetsRepository"
     ) as MockRepo:
@@ -99,6 +119,7 @@ def test_get_targets_null_target_weight(client: TestClient) -> None:
 
 
 def test_put_targets_writes_target_weight(client: TestClient) -> None:
+    """`PUT /targets` forwards `target_weight_lb` to the repository upsert."""
     with patch(
         "diet_tracker_server.routers.targets.TargetsRepository"
     ) as MockRepo:

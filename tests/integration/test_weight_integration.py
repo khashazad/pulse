@@ -1,3 +1,12 @@
+"""Integration tests for the weight-entry service + repository stack.
+
+Covers ``upsert_weight`` (kg→lb conversion, same-day replacement keeping the row
+id), ``get_weight`` round-trip, ``list_weight_range`` ordering, ``delete_weight``
+return semantics (True then False on a repeat), and idempotency of
+``bootstrap_schema``. Integration test: hits a real Postgres via
+``TEST_DATABASE_URL`` through the module-level ``db`` pool.
+"""
+
 from __future__ import annotations
 
 import os
@@ -28,6 +37,11 @@ pytestmark = pytest.mark.integration
 
 @pytest_asyncio.fixture
 async def session() -> AsyncSession:
+    """Initialize the module DB pool, run schema bootstrap, truncate weight rows, and yield a session.
+
+    **Outputs:**
+    - ``AsyncSession``: open async session over the integration database.
+    """
     test_db_url = os.environ.get("TEST_DATABASE_URL")
     if test_db_url is None:
         pytest.skip("Set TEST_DATABASE_URL to run integration tests")
@@ -42,6 +56,7 @@ async def session() -> AsyncSession:
 
 @pytest.mark.asyncio
 async def test_upsert_then_get(session: AsyncSession) -> None:
+    """``upsert_weight`` converts kg→lb (70kg→154.32lb) and ``get_weight`` returns the stored value."""
     today = DateValue.today()
     now = DateTimeValue.now(tz=TimezoneValue.utc)
     user_key = "test_user_" + uuid.uuid4().hex[:8]
@@ -64,6 +79,7 @@ async def test_upsert_then_get(session: AsyncSession) -> None:
 
 @pytest.mark.asyncio
 async def test_upsert_replaces_same_date(session: AsyncSession) -> None:
+    """A second ``upsert_weight`` on the same date updates the row in place, preserving its id."""
     today = DateValue.today()
     now = DateTimeValue.now(tz=TimezoneValue.utc)
     user_key = "test_user_" + uuid.uuid4().hex[:8]
@@ -83,6 +99,7 @@ async def test_upsert_replaces_same_date(session: AsyncSession) -> None:
 
 @pytest.mark.asyncio
 async def test_list_range(session: AsyncSession) -> None:
+    """``list_weight_range`` returns all entries in the inclusive window ordered by ``log_date`` ascending."""
     today = DateValue.today()
     now = DateTimeValue.now(tz=TimezoneValue.utc)
     user_key = "test_user_" + uuid.uuid4().hex[:8]
@@ -105,6 +122,7 @@ async def test_list_range(session: AsyncSession) -> None:
 
 @pytest.mark.asyncio
 async def test_delete(session: AsyncSession) -> None:
+    """``delete_weight`` returns ``True`` for an existing row and ``False`` on a repeated delete."""
     today = DateValue.today()
     now = DateTimeValue.now(tz=TimezoneValue.utc)
     user_key = "test_user_" + uuid.uuid4().hex[:8]
@@ -118,5 +136,6 @@ async def test_delete(session: AsyncSession) -> None:
 
 @pytest.mark.asyncio
 async def test_bootstrap_is_idempotent(session: AsyncSession) -> None:
+    """``bootstrap_schema`` is safe to invoke twice in a single process."""
     # If we get here, bootstrap already ran. Run it a second time.
     await db.bootstrap_schema()

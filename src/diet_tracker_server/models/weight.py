@@ -1,3 +1,13 @@
+"""DTOs for the /measures/weight endpoints.
+
+Defines the weight unit literal (:data:`WeightUnit`), the request shape
+for upserts (:class:`WeightEntryUpsert` — accepts ``lb`` or ``kg`` and
+enforces the storable range), the response shape
+(:class:`WeightEntryResponse`), and :class:`CaloriesDailyRow` (a small
+helper row type used alongside weight history endpoints). Consumed by
+the weight router and service.
+"""
+
 from __future__ import annotations
 
 from datetime import date as DateValue
@@ -18,6 +28,8 @@ _MAX_WEIGHT_KG = (_MAX_WEIGHT_LB / _KG_TO_LB).quantize(Decimal("0.01"), rounding
 
 
 class WeightEntryResponse(BaseModel):
+    """Response body representing one weight entry (always stored in pounds)."""
+
     id: UUID
     log_date: DateValue
     weight_lb: Decimal
@@ -29,15 +41,34 @@ class WeightEntryResponse(BaseModel):
     # clients (e.g. Swift Codable Double) can decode without custom handling.
     @field_serializer("weight_lb")
     def _serialize_weight_lb(self, v: Decimal) -> float:
+        """Serialize the stored Decimal as a JSON number rather than a string.
+
+        **Inputs:**
+        - v (Decimal): The stored weight in pounds.
+
+        **Outputs:**
+        - float: ``v`` coerced to ``float`` for JSON emission.
+        """
         return float(v)
 
 
 class WeightEntryUpsert(BaseModel):
+    """Request body for ``PUT /measures/weight/{date}`` — accepts lb or kg input."""
+
     weight: Decimal = Field(gt=0)
     unit: WeightUnit
 
     @model_validator(mode="after")
     def _check_storable(self) -> "WeightEntryUpsert":
+        """Round to two decimals and reject values outside the storable range.
+
+        **Outputs:**
+        - WeightEntryUpsert: The validated model instance, unchanged.
+
+        **Exceptions:**
+        - ValueError: Raised when the rounded value is ``<= 0`` or exceeds
+          the per-unit maximum (``9999.99 lb`` or the kg equivalent).
+        """
         rounded = self.weight.quantize(Decimal("0.01"), rounding=ROUND_HALF_EVEN)
         if rounded <= 0:
             raise ValueError("weight must be at least 0.01")
@@ -48,5 +79,7 @@ class WeightEntryUpsert(BaseModel):
 
 
 class CaloriesDailyRow(BaseModel):
+    """One row of the daily calorie history used alongside the weight chart."""
+
     log_date: DateValue
     calories: int

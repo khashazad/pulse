@@ -1,3 +1,13 @@
+"""Integration tests for ``ContainersRepository``.
+
+Covers create / get / list / update / delete on the ``containers`` table plus
+the photo bytea side-channel: ``set_photo`` / ``get_photo`` (full + thumb) /
+``clear_photo``, the user-scoping invariant on listing, the unique normalized
+name constraint, and the rule that list rows must NOT include the ``photo`` or
+``photo_thumb`` BYTEA columns. Integration test: hits a real Postgres via
+``TEST_DATABASE_URL``.
+"""
+
 from __future__ import annotations
 
 import os
@@ -16,6 +26,14 @@ pytestmark = pytest.mark.integration
 
 
 def _integration_database_url() -> str:
+    """Resolve the SQLAlchemy URL for the integration database, skipping if unset.
+
+    **Outputs:**
+    - str: SQLAlchemy-async URL derived from ``TEST_DATABASE_URL``.
+
+    **Exceptions:**
+    - ``pytest.skip.Exception``: Raised via ``pytest.skip`` when ``TEST_DATABASE_URL`` is not set.
+    """
     raw_url = os.getenv("TEST_DATABASE_URL")
     if raw_url is None:
         pytest.skip("Set TEST_DATABASE_URL to run integration tests")
@@ -23,12 +41,22 @@ def _integration_database_url() -> str:
 
 
 async def _truncate(engine) -> None:
+    """Truncate the ``containers`` table, restarting identity sequences.
+
+    **Inputs:**
+    - engine: SQLAlchemy async engine bound to the integration database.
+    """
     async with engine.begin() as conn:
         await conn.exec_driver_sql("TRUNCATE TABLE containers RESTART IDENTITY CASCADE")
 
 
 @pytest_asyncio.fixture
 async def session() -> AsyncSession:
+    """Per-test async session with a freshly-truncated ``containers`` table.
+
+    **Outputs:**
+    - ``AsyncSession``: open session, disposed of with the engine on teardown.
+    """
     engine = create_async_engine(_integration_database_url())
     await _truncate(engine)
     factory = async_sessionmaker(engine, expire_on_commit=False)
@@ -38,11 +66,17 @@ async def session() -> AsyncSession:
 
 
 def _now() -> DateTimeValue:
+    """Return the current UTC timestamp for ``created_at`` / ``updated_at`` fields.
+
+    **Outputs:**
+    - datetime: timezone-aware UTC ``datetime``.
+    """
     return DateTimeValue.now(tz=TimezoneValue.utc)
 
 
 @pytest.mark.asyncio
 async def test_create_then_get(session: AsyncSession) -> None:
+    """``create`` returns a row whose fields round-trip through ``get_by_id`` without leaking photo blobs."""
     repo = ContainersRepository(session)
     async with transaction(session):
         row = await repo.create(
@@ -63,6 +97,7 @@ async def test_create_then_get(session: AsyncSession) -> None:
 
 @pytest.mark.asyncio
 async def test_duplicate_normalized_name_raises(session: AsyncSession) -> None:
+    """A second ``create`` with the same ``normalized_name`` for the same user raises ``IntegrityError``."""
     repo = ContainersRepository(session)
     async with transaction(session):
         await repo.create("khash", "Big Pyrex", "big pyrex", 412.0, _now())
@@ -73,6 +108,7 @@ async def test_duplicate_normalized_name_raises(session: AsyncSession) -> None:
 
 @pytest.mark.asyncio
 async def test_list_for_user_excludes_other_users(session: AsyncSession) -> None:
+    """``list_for_user`` returns only rows owned by the requested ``user_key``."""
     repo = ContainersRepository(session)
     async with transaction(session):
         await repo.create("khash", "A", "a", 100.0, _now())
@@ -83,7 +119,7 @@ async def test_list_for_user_excludes_other_users(session: AsyncSession) -> None
 
 @pytest.mark.asyncio
 async def test_list_does_not_select_blob_columns(session: AsyncSession) -> None:
-    """list rows must not contain `photo` or `photo_thumb` keys."""
+    """``list_for_user`` rows omit ``photo`` / ``photo_thumb`` BYTEA columns even when set."""
     repo = ContainersRepository(session)
     async with transaction(session):
         await repo.create("khash", "A", "a", 100.0, _now())
@@ -104,6 +140,7 @@ async def test_list_does_not_select_blob_columns(session: AsyncSession) -> None:
 
 @pytest.mark.asyncio
 async def test_update_fields(session: AsyncSession) -> None:
+    """``update_fields`` applies a partial column update and returns the new row."""
     repo = ContainersRepository(session)
     async with transaction(session):
         row = await repo.create("khash", "A", "a", 100.0, _now())
@@ -117,6 +154,7 @@ async def test_update_fields(session: AsyncSession) -> None:
 
 @pytest.mark.asyncio
 async def test_delete(session: AsyncSession) -> None:
+    """``delete`` removes a row and subsequent ``get_by_id`` returns ``None``."""
     repo = ContainersRepository(session)
     async with transaction(session):
         row = await repo.create("khash", "A", "a", 100.0, _now())
@@ -128,6 +166,7 @@ async def test_delete(session: AsyncSession) -> None:
 
 @pytest.mark.asyncio
 async def test_get_photo_returns_full_or_thumb(session: AsyncSession) -> None:
+    """``get_photo`` returns the full or thumbnail bytes plus mime per the ``thumb`` flag."""
     repo = ContainersRepository(session)
     async with transaction(session):
         row = await repo.create("khash", "A", "a", 100.0, _now())
@@ -147,6 +186,7 @@ async def test_get_photo_returns_full_or_thumb(session: AsyncSession) -> None:
 
 @pytest.mark.asyncio
 async def test_clear_photo(session: AsyncSession) -> None:
+    """``clear_photo`` wipes the stored bytes so subsequent ``get_photo`` returns ``None``."""
     repo = ContainersRepository(session)
     async with transaction(session):
         row = await repo.create("khash", "A", "a", 100.0, _now())
@@ -158,7 +198,7 @@ async def test_clear_photo(session: AsyncSession) -> None:
 
 @pytest.mark.asyncio
 async def test_set_then_get_photo_round_trip(session: AsyncSession) -> None:
-    """End-to-end: set bytes, fetch them, confirm content matches."""
+    """Bytes written by ``set_photo`` come back unchanged through both full and thumb reads."""
     repo = ContainersRepository(session)
     async with transaction(session):
         row = await repo.create("khash", "RT", "rt", 50.0, _now())

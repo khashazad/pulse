@@ -1,3 +1,11 @@
+"""HTTP endpoints for logging and listing individual food entries.
+
+Exposes the ``/entries`` router covering atomic multi-entry creation
+(``POST``), single-date listing with macro totals (``GET``), and entry
+deletion (``DELETE``). Aggregation and side-effects (memory writes, daily-log
+upsert) live in :mod:`services.entries_service`.
+"""
+
 from __future__ import annotations
 
 from datetime import date as DateValue
@@ -27,21 +35,31 @@ router = APIRouter(dependencies=[Depends(require_session)])
 TZ = ZoneInfo(settings.timezone)
 
 
-# Summary: Creates one or more food entries atomically.
-# Parameters:
-# - body (EntriesCreateRequest): Requested entries.
-# Returns:
-# - EntriesCreateResponse: Persisted entries and macro totals (full day when the batch uses one
-#   calendar date; sums of the created rows only when dates are mixed).
-# Raises/Throws:
-# - RuntimeError: Raised when the database pool is not initialized.
-# - sqlalchemy.exc.SQLAlchemyError: Raised when SQL execution fails.
 @router.post("/entries", status_code=201, response_model=EntriesCreateResponse)
 async def create_entries(
     request: Request,
     body: EntriesCreateRequest,
     session: AsyncSession = Depends(get_session_dependency),
 ) -> EntriesCreateResponse:
+    """Create one or more food entries atomically and return updated daily totals.
+
+    Delegates to :func:`create_entries_with_side_effects` which also upserts
+    memory pointers and the daily-log aggregate row.
+
+    **Inputs:**
+    - request (Request): Active request providing ``user_key``.
+    - body (EntriesCreateRequest): Items to insert.
+    - session (AsyncSession): DB session dependency.
+
+    **Outputs:**
+    - EntriesCreateResponse: The newly created entries plus macro totals — full
+      day when the batch covers a single date, otherwise sums over just the
+      created rows.
+
+    **Exceptions:**
+    - RuntimeError: Raised when the database pool is not initialized.
+    - sqlalchemy.exc.SQLAlchemyError: Raised when SQL execution fails.
+    """
     user_key = request.state.user_key
     now = DateTimeValue.now(tz=TZ)
 
@@ -57,20 +75,26 @@ async def create_entries(
     return EntriesCreateResponse(entries=created, daily_totals=sum_food_entry_macros(all_entries))
 
 
-# Summary: Lists all entries for a user's requested log date.
-# Parameters:
-# - log_date (datetime.date): Date filter for selecting entries.
-# Returns:
-# - EntriesListResponse: Date-scoped entries with aggregate macros.
-# Raises/Throws:
-# - RuntimeError: Raised when the database pool is not initialized.
-# - sqlalchemy.exc.SQLAlchemyError: Raised when SQL execution fails.
 @router.get("/entries", response_model=EntriesListResponse)
 async def list_entries(
     request: Request,
     log_date: DateValue = Query(..., alias="date"),
     session: AsyncSession = Depends(get_session_dependency),
 ) -> EntriesListResponse:
+    """List every entry belonging to the user's daily log for ``log_date``.
+
+    **Inputs:**
+    - request (Request): Active request providing ``user_key``.
+    - log_date (date): Calendar date filter (query alias ``date``).
+    - session (AsyncSession): DB session dependency.
+
+    **Outputs:**
+    - EntriesListResponse: The day's entries together with aggregate macro totals.
+
+    **Exceptions:**
+    - RuntimeError: Raised when the database pool is not initialized.
+    - sqlalchemy.exc.SQLAlchemyError: Raised when SQL execution fails.
+    """
     user_key = request.state.user_key
     repository = EntriesRepository(session)
     daily_log = daily_log_id(user_key, log_date)
@@ -80,20 +104,22 @@ async def list_entries(
     return EntriesListResponse(date=log_date, entries=entries, totals=sum_food_entry_macros(entries))
 
 
-# Summary: Deletes a single food entry by ID.
-# Parameters:
-# - entry_id (UUID): UUID identifying the food entry row.
-# Returns:
-# - None: Endpoint returns HTTP 204 when deletion succeeds.
-# Raises/Throws:
-# - fastapi.HTTPException: Raised with 404 when the entry does not exist.
-# - RuntimeError: Raised when the database pool is not initialized.
-# - sqlalchemy.exc.SQLAlchemyError: Raised when SQL execution fails.
 @router.delete("/entries/{entry_id}", status_code=204)
 async def delete_entry(
     entry_id: UUID,
     session: AsyncSession = Depends(get_session_dependency),
 ) -> None:
+    """Delete a single food entry by id and return HTTP 204.
+
+    **Inputs:**
+    - entry_id (UUID): Food-entry primary key.
+    - session (AsyncSession): DB session dependency.
+
+    **Exceptions:**
+    - HTTPException(404): Raised when no entry with that id exists.
+    - RuntimeError: Raised when the database pool is not initialized.
+    - sqlalchemy.exc.SQLAlchemyError: Raised when SQL execution fails.
+    """
     repository = EntriesRepository(session)
     async with transaction(session):
         is_deleted = await repository.delete_entry(entry_id)

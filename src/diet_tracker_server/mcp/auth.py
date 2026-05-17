@@ -1,3 +1,15 @@
+"""GitHub-allowlist authentication middleware for the MCP server.
+
+Defines :class:`GitHubAllowlistMiddleware`, a FastMCP middleware that rejects
+tool calls from GitHub users outside a configured allowlist. It runs after
+``GitHubProvider`` has validated the OAuth bearer token and populated the access
+token with GitHub claims (notably ``login``).
+
+This module is the MCP layer's authorization gate, sitting alongside
+``server.py``'s OAuth bootstrap; only allowlisted GitHub identities reach the
+diet-tracking tools.
+"""
+
 from __future__ import annotations
 
 from fastmcp.exceptions import ToolError
@@ -14,9 +26,32 @@ class GitHubAllowlistMiddleware(Middleware):
     """
 
     def __init__(self, allowed_logins: set[str]) -> None:
+        """Build the middleware with a case-insensitive allowlist.
+
+        **Inputs:**
+        - allowed_logins (set[str]): GitHub usernames permitted to invoke tools;
+          stored lowercased for case-insensitive comparison.
+        """
         self._allowed = {login.lower() for login in allowed_logins}
 
     async def on_call_tool(self, context: MiddlewareContext, call_next):
+        """Gate a tool invocation on the caller's GitHub ``login`` claim.
+
+        When the allowlist is empty the call passes through unchanged
+        (open-mode). Otherwise the current access token must carry a ``login``
+        (or ``username``) claim matching an allowlisted user.
+
+        **Inputs:**
+        - context (MiddlewareContext): FastMCP middleware context for this tool call.
+        - call_next: Callable that continues middleware chain execution.
+
+        **Outputs:**
+        - The downstream tool invocation's result when authorization succeeds.
+
+        **Exceptions:**
+        - ToolError: No access token is available, or the token's GitHub login
+          is missing/not in the allowlist.
+        """
         if not self._allowed:
             return await call_next(context)
         token = get_access_token()

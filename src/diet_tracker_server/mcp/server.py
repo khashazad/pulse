@@ -1,3 +1,24 @@
+"""FastMCP server definition exposing diet-tracking tools to MCP clients.
+
+Provides :func:`build_mcp`, the factory that wires up the ``FastMCP`` instance
+with optional GitHub-OAuth authentication and a complete suite of tools:
+USDA-backed food search and logging, food-memory (per-user name → food
+mapping), custom foods, meal-prep containers, reusable meals (create / log /
+alias / item CRUD), macro targets, and day summaries. Also defines the Pydantic
+request/response models that shape the wire format
+(``FoodCandidate``, ``SearchFoodResponse``, ``LogFoodResponse``,
+``LogMealResponse``, ``DaySummary``) and the row→model adapters
+(``_container_response``, ``_custom_food_response``, ``_food_memory_entry``,
+``_meal_item_response``, ``_meal_response``) used by those tools.
+
+Sits at the top of the MCP layer: it pulls in repositories under
+``repositories/`` and orchestration services under ``services/`` so the MCP
+surface mirrors the REST surface and shares the same single-tenant
+``LEGACY_USER_KEY`` data. The ``WORKFLOW_INSTRUCTIONS`` constant is the prompt
+the FastMCP server ships to clients describing the canonical food-logging
+workflow.
+"""
+
 from __future__ import annotations
 
 from datetime import date as DateValue
@@ -96,6 +117,12 @@ Diet tracking workflow. Follow this order on every food-related interaction:
 
 
 class FoodCandidate(BaseModel):
+    """One USDA search hit returned to the MCP client.
+
+    Carries the macros at the basis (``per_100g`` or ``per_serving``) indicated
+    by ``basis``; the client must scale to the user's quantity before logging.
+    """
+
     fdc_id: int
     description: str
     basis: str  # "per_100g" or "per_serving"
@@ -108,6 +135,12 @@ class FoodCandidate(BaseModel):
 
 
 class SearchFoodResponse(BaseModel):
+    """Envelope for ``search_food`` results: the echoed query plus candidates.
+
+    The ``note`` field is a fixed reminder to the caller that macros are at the
+    candidate's basis and must be scaled before logging.
+    """
+
     query: str
     candidates: list[FoodCandidate]
     note: str = (
@@ -118,6 +151,12 @@ class SearchFoodResponse(BaseModel):
 
 
 class LogFoodResponse(BaseModel):
+    """Result of logging a single food entry.
+
+    Returns the new entry, today's running totals, and (when targets are set)
+    the user's target profile plus remaining macros for the day.
+    """
+
     entry: FoodEntryResponse
     day_totals: MacroTotals
     target: MacroTargets | None = None
@@ -125,6 +164,12 @@ class LogFoodResponse(BaseModel):
 
 
 class LogMealResponse(BaseModel):
+    """Result of logging a saved meal (one food entry per item).
+
+    Mirrors :class:`LogFoodResponse` but carries the list of entries created
+    from the meal's items.
+    """
+
     entries: list[FoodEntryResponse]
     day_totals: MacroTotals
     target: MacroTargets | None = None
@@ -132,6 +177,12 @@ class LogMealResponse(BaseModel):
 
 
 class DaySummary(BaseModel):
+    """Per-day summary returned by ``get_day``.
+
+    Bundles the date, target profile (if any), consumed macros, remaining
+    macros vs. target (if any), and all food entries for that day.
+    """
+
     date: DateValue
     target: MacroTargets | None
     consumed: MacroTotals
@@ -140,10 +191,28 @@ class DaySummary(BaseModel):
 
 
 def _basis_for(food: dict[str, Any]) -> str:
+    """Infer the macro basis label for a USDA search row.
+
+    **Inputs:**
+    - food (dict[str, Any]): Normalized USDA food row.
+
+    **Outputs:**
+    - str: ``"per_serving"`` when the row carries a ``serving_size``,
+      otherwise ``"per_100g"``.
+    """
     return "per_serving" if food.get("serving_size") else "per_100g"
 
 
 def _container_response(row: dict[str, Any]) -> ContainerResponse:
+    """Adapt a ``containers`` repository row to its wire DTO.
+
+    **Inputs:**
+    - row (dict[str, Any]): Column→value mapping from ``ContainersRepository``.
+
+    **Outputs:**
+    - ContainerResponse: Pydantic model with floats/booleans coerced from the
+      raw DB types.
+    """
     return ContainerResponse(
         id=row["id"],
         user_key=row["user_key"],
@@ -157,6 +226,15 @@ def _container_response(row: dict[str, Any]) -> ContainerResponse:
 
 
 def _custom_food_response(row: dict[str, Any]) -> CustomFoodResponse:
+    """Adapt a ``custom_foods`` repository row to its wire DTO.
+
+    **Inputs:**
+    - row (dict[str, Any]): Column→value mapping from ``CustomFoodsRepository``.
+
+    **Outputs:**
+    - CustomFoodResponse: Pydantic model with numerics coerced and
+      ``serving_size`` left ``None`` when the column is null.
+    """
     return CustomFoodResponse(
         id=row["id"],
         user_key=row["user_key"],
@@ -177,6 +255,15 @@ def _custom_food_response(row: dict[str, Any]) -> CustomFoodResponse:
 
 
 def _food_memory_entry(row: dict[str, Any]) -> FoodMemoryEntry:
+    """Adapt a ``food_memory`` repository row to its wire DTO.
+
+    **Inputs:**
+    - row (dict[str, Any]): Column→value mapping from ``FoodMemoryRepository``.
+
+    **Outputs:**
+    - FoodMemoryEntry: Pydantic model with numerics coerced and any nullable
+      column passed through as ``None``.
+    """
     return FoodMemoryEntry(
         id=row["id"],
         user_key=row["user_key"],
@@ -199,6 +286,15 @@ def _food_memory_entry(row: dict[str, Any]) -> FoodMemoryEntry:
 
 
 def _meal_item_response(row: dict[str, Any]) -> MealItemResponse:
+    """Adapt a ``meal_items`` repository row to its wire DTO.
+
+    **Inputs:**
+    - row (dict[str, Any]): Column→value mapping for one meal item.
+
+    **Outputs:**
+    - MealItemResponse: Pydantic model with macros and quantity values coerced
+      to the wire types.
+    """
     return MealItemResponse(
         id=row["id"],
         meal_id=row["meal_id"],
@@ -221,6 +317,17 @@ def _meal_item_response(row: dict[str, Any]) -> MealItemResponse:
 
 
 def _meal_response(meal_row: dict[str, Any], item_rows: list[dict[str, Any]]) -> MealResponse:
+    """Combine a meal row and its item rows into a wire DTO.
+
+    **Inputs:**
+    - meal_row (dict[str, Any]): Column→value mapping for the parent meal.
+    - item_rows (list[dict[str, Any]]): Column→value mappings for each meal item,
+      already ordered by position.
+
+    **Outputs:**
+    - MealResponse: Pydantic model with each item adapted via
+      :func:`_meal_item_response`.
+    """
     return MealResponse(
         id=meal_row["id"],
         user_key=meal_row["user_key"],
@@ -235,12 +342,27 @@ def _meal_response(meal_row: dict[str, Any], item_rows: list[dict[str, Any]]) ->
 
 
 def build_mcp(usda_getter) -> FastMCP:
-    """Construct the FastMCP server. `usda_getter` is a callable returning the live USDAClient.
+    """Construct the FastMCP server and register every diet-tracking tool.
 
-    Indirection lets callers bind to `app.get_usda_client` after lifespan startup without import cycles.
+    Indirection through ``usda_getter`` lets callers bind to
+    ``app.get_usda_client`` after lifespan startup without import cycles. When
+    GitHub OAuth is configured (``GITHUB_CLIENT_ID``/``SECRET`` +
+    ``PUBLIC_BASE_URL``) the server uses ``GitHubProvider`` plus
+    :class:`GitHubAllowlistMiddleware`; otherwise it runs unauthenticated and is
+    refused outside local env (unless ``MCP_ALLOW_UNAUTH=true``).
 
-    Auth: GitHubProvider when GITHUB_CLIENT_ID/SECRET + PUBLIC_BASE_URL are set (claude.ai connector
-    requires OAuth + DCR). Otherwise the MCP layer runs unauthenticated (local dev only).
+    **Inputs:**
+    - usda_getter: Zero-arg callable returning the live ``USDAClient``;
+      consulted lazily inside the ``search_food`` tool.
+
+    **Outputs:**
+    - FastMCP: Fully wired MCP server with all food/meal/target/container tools
+      registered, ready to be mounted by ``app.py``.
+
+    **Exceptions:**
+    - RuntimeError: Refused to build an unauthenticated MCP outside local env
+      when ``MCP_ALLOW_UNAUTH`` is not set (belt-and-suspenders guard for
+      callers that bypass Settings validation).
     """
     settings = get_settings()
     tz = ZoneInfo(settings.timezone)
@@ -1144,6 +1266,18 @@ def _target_and_remaining(
     target_row: dict[str, Any] | None,
     day_totals: MacroTotals,
 ) -> tuple[MacroTargets | None, MacroTotals | None]:
+    """Compute the target profile and remaining-vs-target totals for a day.
+
+    **Inputs:**
+    - target_row (dict[str, Any] | None): Row from ``TargetsRepository`` or
+      ``None`` when no target profile exists.
+    - day_totals (MacroTotals): Consumed macros for the day.
+
+    **Outputs:**
+    - tuple[MacroTargets | None, MacroTotals | None]: ``(target, remaining)``
+      where both are ``None`` when no profile exists, and ``remaining`` is the
+      element-wise difference rounded to one decimal place for macro grams.
+    """
     if target_row is None:
         return None, None
     target_obj = MacroTargets(

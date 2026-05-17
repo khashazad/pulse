@@ -1,3 +1,13 @@
+"""Integration tests for entries + logs + summary repositories.
+
+Covers two scenarios end-to-end against Postgres: transactional rollback of
+``create_entries_with_side_effects`` when a duplicate ``entry_id`` triggers a PK
+violation mid-batch (no partial rows persist), and the per-day aggregate /
+remaining-target math served by ``LogsRepository.list_logs`` plus
+``build_daily_summary`` over multiple ``food_entries`` rows. Integration test:
+hits a real Postgres via ``TEST_DATABASE_URL``.
+"""
+
 from __future__ import annotations
 
 import os
@@ -23,28 +33,30 @@ from diet_tracker_server.services.summary_service import build_daily_summary
 pytestmark = pytest.mark.integration
 
 
-# Summary: Returns the integration database URL from test environment variables.
-# Parameters:
-# - None: Reads from TEST_DATABASE_URL process environment variable.
-# Returns:
-# - str: SQLAlchemy-compatible async database URL for integration tests.
-# Raises/Throws:
-# - pytest.skip.Exception: Raised when no integration database URL is configured.
 def _integration_database_url() -> str:
+    """Return the integration database URL from test environment variables.
+
+    **Outputs:**
+    - str: SQLAlchemy-compatible async database URL for integration tests.
+
+    **Exceptions:**
+    - ``pytest.skip.Exception``: Raised when no integration database URL is configured.
+    """
     raw_url = os.getenv("TEST_DATABASE_URL")
     if raw_url is None:
         pytest.skip("Set TEST_DATABASE_URL to run integration tests")
     return to_sqlalchemy_url(raw_url)
 
 
-# Summary: Truncates integration test tables so each test starts from clean state.
-# Parameters:
-# - engine (sqlalchemy.ext.asyncio.AsyncEngine): Async SQLAlchemy engine for the test database.
-# Returns:
-# - None: Executes truncation statements and commits within transaction scope.
-# Raises/Throws:
-# - sqlalchemy.exc.SQLAlchemyError: Raised when truncation SQL execution fails.
 async def _truncate_tables(engine) -> None:
+    """Truncate integration test tables so each test starts from clean state.
+
+    **Inputs:**
+    - engine (``sqlalchemy.ext.asyncio.AsyncEngine``): async SQLAlchemy engine for the test database.
+
+    **Exceptions:**
+    - ``sqlalchemy.exc.SQLAlchemyError``: Raised when truncation SQL execution fails.
+    """
     table_names = [
         "food_entries",
         "meal_items",
@@ -60,57 +72,48 @@ async def _truncate_tables(engine) -> None:
         )
 
 
-# Summary: Builds a reusable async session factory for integration test cases.
-# Parameters:
-# - None: Uses integration database URL from environment variables.
-# Returns:
-# - async_sessionmaker[AsyncSession]: Factory that creates independent async sessions.
-# Raises/Throws:
-# - sqlalchemy.exc.SQLAlchemyError: Raised when SQLAlchemy engine creation fails.
 @pytest_asyncio.fixture(scope="session")
 async def session_factory() -> async_sessionmaker[AsyncSession]:
+    """Build a reusable async session factory for integration test cases.
+
+    **Outputs:**
+    - ``async_sessionmaker[AsyncSession]``: factory that creates independent async sessions.
+    """
     engine = create_async_engine(_integration_database_url(), pool_pre_ping=True)
     factory: async_sessionmaker[AsyncSession] = async_sessionmaker(engine, expire_on_commit=False)
     yield factory
     await engine.dispose()
 
 
-# Summary: Clears integration test tables before and after each test function.
-# Parameters:
-# - session_factory (async_sessionmaker[AsyncSession]): Session factory fixture with bound engine.
-# Returns:
-# - None: Provides isolation boundaries for test side effects.
-# Raises/Throws:
-# - sqlalchemy.exc.SQLAlchemyError: Raised when cleanup SQL execution fails.
 @pytest_asyncio.fixture(autouse=True)
 async def clean_database(session_factory: async_sessionmaker[AsyncSession]) -> None:
+    """Clear integration test tables before and after each test function.
+
+    **Inputs:**
+    - session_factory (``async_sessionmaker[AsyncSession]``): session factory fixture with bound engine.
+    """
     await _truncate_tables(session_factory.kw["bind"])
     yield
     await _truncate_tables(session_factory.kw["bind"])
 
 
-# Summary: Creates a per-test async session for repository/service integration checks.
-# Parameters:
-# - session_factory (async_sessionmaker[AsyncSession]): Fixture-provided async session factory.
-# Returns:
-# - AsyncSession: Open SQLAlchemy async session with explicit lifecycle management.
-# Raises/Throws:
-# - sqlalchemy.exc.SQLAlchemyError: Raised when session creation fails.
 @pytest_asyncio.fixture
 async def session(session_factory: async_sessionmaker[AsyncSession]) -> AsyncSession:
+    """Create a per-test async session for repository/service integration checks.
+
+    **Inputs:**
+    - session_factory (``async_sessionmaker[AsyncSession]``): fixture-provided async session factory.
+
+    **Outputs:**
+    - ``AsyncSession``: open SQLAlchemy async session with explicit lifecycle management.
+    """
     async with session_factory() as db_session:
         yield db_session
 
 
-# Summary: Verifies create-entries flow runs atomically and rolls back all writes on mid-transaction failure.
-# Parameters:
-# - session (AsyncSession): Active integration database session.
-# Returns:
-# - None: Performs assertions that no rows persist after rollback.
-# Raises/Throws:
-# - AssertionError: Raised when rows remain after forced rollback.
 @pytest.mark.asyncio
 async def test_create_entries_rolls_back_on_error(session: AsyncSession) -> None:
+    """``create_entries_with_side_effects`` rolls back the full batch when a duplicate ``entry_id`` triggers an ``IntegrityError`` mid-transaction."""
     user_key = f"user-{uuid.uuid4()}"
     now = DateTimeValue.now(tz=TimezoneValue.utc)
     log_date = now.date()
@@ -153,15 +156,9 @@ async def test_create_entries_rolls_back_on_error(session: AsyncSession) -> None
     assert persisted_rows == []
 
 
-# Summary: Verifies logs and summary calculations produce expected aggregate totals and remaining targets.
-# Parameters:
-# - session (AsyncSession): Active integration database session.
-# Returns:
-# - None: Performs assertions on computed aggregate and remaining macro values.
-# Raises/Throws:
-# - AssertionError: Raised when aggregate totals deviate from inserted fixtures.
 @pytest.mark.asyncio
 async def test_logs_and_summary_aggregates(session: AsyncSession) -> None:
+    """``LogsRepository.list_logs`` and ``build_daily_summary`` aggregate per-day macros and compute remaining targets correctly."""
     user_key = f"user-{uuid.uuid4()}"
     target_repo = TargetsRepository(session)
     logs_repo = LogsRepository(session)

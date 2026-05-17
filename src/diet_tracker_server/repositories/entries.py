@@ -1,3 +1,15 @@
+"""Food-entry persistence layer.
+
+Provides :class:`EntriesRepository`, which owns SQL access to ``food_entries``
+plus the ``daily_logs`` parent row required to anchor each entry. Responsible
+for: deterministic daily-log ID derivation, idempotent daily-log creation,
+food-entry insert/list/delete, and projection of the public response columns.
+
+Sits between the food-logging service and the underlying Postgres table
+definitions (``repositories/tables.py``); it is the only module in the codebase
+allowed to issue ``food_entries`` SQL.
+"""
+
 from __future__ import annotations
 
 import uuid
@@ -14,14 +26,15 @@ from diet_tracker_server.repositories.tables import daily_logs, food_entries
 from diet_tracker_server.services.log_ids import daily_log_id as canonical_daily_log_id
 
 
-# Summary: Returns food-entry columns that match the public FoodEntryResponse schema.
-# Parameters:
-# - None: Uses module-level SQLAlchemy table metadata for food_entries.
-# Returns:
-# - tuple[Any, ...]: Ordered SQLAlchemy column elements excluding internal-only columns.
-# Raises/Throws:
-# - None: Column tuple construction is deterministic and non-throwing.
 def _food_entry_response_columns() -> tuple[Any, ...]:
+    """Return the food-entry column projection matching ``FoodEntryResponse``.
+
+    Internal-only columns are intentionally omitted so this projection is safe
+    to use for any caller-facing endpoint.
+
+    **Outputs:**
+    - tuple[Any, ...]: Ordered SQLAlchemy column elements ready for ``select()``.
+    """
     return (
         food_entries.c.id,
         food_entries.c.daily_log_id,
@@ -46,38 +59,45 @@ def _food_entry_response_columns() -> tuple[Any, ...]:
 
 
 class EntriesRepository:
-    # Summary: Initializes an entries repository bound to an active SQLAlchemy session.
-    # Parameters:
-    # - session (AsyncSession): SQLAlchemy async session used for all repository operations.
-    # Returns:
-    # - None: Stores the session for subsequent method calls.
-    # Raises/Throws:
-    # - None: Initialization only stores references and performs no I/O.
     def __init__(self, session: AsyncSession) -> None:
+        """Bind the repository to an open async session.
+
+        **Inputs:**
+        - session (AsyncSession): SQLAlchemy async session used for all queries
+          issued by this repository instance.
+        """
         self._session = session
 
-    # Summary: Derives a deterministic daily log UUID using user key and log date.
-    # Parameters:
-    # - user_key (str): Unique user identifier owning the diet log.
-    # - log_date (DateValue): Date associated with the daily log identifier.
-    # Returns:
-    # - str: UUID5 string derived from user key and date.
-    # Raises/Throws:
-    # - None: UUID derivation is deterministic for valid inputs.
     @staticmethod
     def daily_log_id(user_key: str, log_date: DateValue) -> str:
+        """Derive the deterministic UUID5 daily-log id for a user and date.
+
+        Delegates to :func:`services.log_ids.daily_log_id` so the same hashing
+        is used wherever the id is needed.
+
+        **Inputs:**
+        - user_key (str): Owning user identifier.
+        - log_date (DateValue): Date associated with the daily log.
+
+        **Outputs:**
+        - str: UUID5 string derived from ``user_key`` and ``log_date``.
+        """
         return canonical_daily_log_id(user_key, log_date)
 
-    # Summary: Inserts a daily log if it does not already exist for the user/date pair.
-    # Parameters:
-    # - daily_log_id (str): UUID string for the daily log primary key.
-    # - user_key (str): User identifier owning the log.
-    # - log_date (DateValue): Date represented by the daily log.
-    # Returns:
-    # - None: Executes insert/upsert side effect only.
-    # Raises/Throws:
-    # - sqlalchemy.exc.SQLAlchemyError: Raised when SQL execution fails.
     async def ensure_daily_log(self, daily_log_id: str, user_key: str, log_date: DateValue) -> None:
+        """Insert the daily-log row for a user/date pair if it does not exist.
+
+        Uses ``ON CONFLICT DO NOTHING`` against the
+        ``(user_key, log_date)`` unique index so the call is idempotent.
+
+        **Inputs:**
+        - daily_log_id (str): UUID string for the daily-log primary key.
+        - user_key (str): Owning user identifier.
+        - log_date (DateValue): Date represented by the daily log.
+
+        **Exceptions:**
+        - sqlalchemy.exc.SQLAlchemyError: Raised when SQL execution fails.
+        """
         stmt = (
             pg_insert(daily_logs)
             .values(id=daily_log_id, user_key=user_key, log_date=log_date)
@@ -85,31 +105,6 @@ class EntriesRepository:
         )
         await self._session.execute(stmt)
 
-    # Summary: Creates a food-entry row and returns the inserted record.
-    # Parameters:
-    # - entry_id (uuid.UUID): UUID for the entry primary key.
-    # - daily_log_id (str): UUID string for the owning daily log.
-    # - user_key (str): User identifier owning the entry.
-    # - entry_group_id (uuid.UUID): UUID for grouping related entries.
-    # - display_name (str): User-facing label for the consumed item.
-    # - quantity_text (str): Original quantity phrase supplied by the user.
-    # - normalized_quantity_value (float | None): Parsed numeric quantity value when available.
-    # - normalized_quantity_unit (str | None): Parsed quantity unit when available.
-    # - usda_fdc_id (int | None): USDA FDC identifier when entry maps to a USDA food.
-    # - usda_description (str | None): USDA description when entry maps to a USDA food.
-    # - custom_food_id (UUID | None): Custom-food identifier when entry maps to a user-defined food.
-    # - calories (int): Calories for this entry.
-    # - protein_g (float): Protein grams for this entry.
-    # - carbs_g (float): Carbohydrate grams for this entry.
-    # - fat_g (float): Fat grams for this entry.
-    # - consumed_at (DateTimeValue): Timestamp when food was consumed.
-    # - meal_id (UUID | None): Optional meal UUID to associate the entry with a meal.
-    # - meal_name (str | None): Optional meal name snapshot at time of entry creation.
-    # Returns:
-    # - dict[str, Any]: Inserted food-entry row as a mapping.
-    # Raises/Throws:
-    # - sqlalchemy.exc.SQLAlchemyError: Raised when SQL execution fails (including the
-    #   exactly-one-of source CHECK constraint).
     async def create_food_entry(
         self,
         entry_id: uuid.UUID,
@@ -131,6 +126,42 @@ class EntriesRepository:
         meal_id: UUID | None = None,
         meal_name: str | None = None,
     ) -> dict[str, Any]:
+        """Insert a food-entry row and return the inserted record.
+
+        **Inputs:**
+        - entry_id (uuid.UUID): UUID for the entry primary key.
+        - daily_log_id (str): UUID string for the owning daily log.
+        - user_key (str): Owning user identifier.
+        - entry_group_id (uuid.UUID): UUID grouping related entries.
+        - display_name (str): User-facing label for the consumed item.
+        - quantity_text (str): Original quantity phrase supplied by the user.
+        - normalized_quantity_value (float | None): Parsed numeric quantity
+          when available.
+        - normalized_quantity_unit (str | None): Parsed quantity unit when
+          available.
+        - usda_fdc_id (int | None): USDA FDC identifier when the entry maps to
+          a USDA food.
+        - usda_description (str | None): USDA description when the entry maps
+          to a USDA food.
+        - custom_food_id (UUID | None): Custom-food identifier when the entry
+          maps to a user-defined food.
+        - calories (int): Calories for this entry.
+        - protein_g (float): Protein grams for this entry.
+        - carbs_g (float): Carbohydrate grams for this entry.
+        - fat_g (float): Fat grams for this entry.
+        - consumed_at (DateTimeValue): Timestamp when the food was consumed.
+        - meal_id (UUID | None): Optional meal UUID to associate the entry
+          with a meal.
+        - meal_name (str | None): Optional meal-name snapshot at entry
+          creation time.
+
+        **Outputs:**
+        - dict[str, Any]: The inserted food-entry row as a mapping.
+
+        **Exceptions:**
+        - sqlalchemy.exc.SQLAlchemyError: Raised when SQL execution fails
+          (including the exactly-one-of source CHECK constraint).
+        """
         stmt = (
             pg_insert(food_entries)
             .values(
@@ -159,14 +190,18 @@ class EntriesRepository:
         row = result.mappings().one()
         return dict(row)
 
-    # Summary: Lists entries for a specific daily log ordered by consumption timestamp.
-    # Parameters:
-    # - daily_log_id (str): UUID string of the daily log to query.
-    # Returns:
-    # - list[dict[str, Any]]: Ordered food-entry rows for the given daily log.
-    # Raises/Throws:
-    # - sqlalchemy.exc.SQLAlchemyError: Raised when SQL execution fails.
     async def list_entries_by_daily_log_id(self, daily_log_id: str) -> list[dict[str, Any]]:
+        """List entries for a daily log ordered by consumption timestamp.
+
+        **Inputs:**
+        - daily_log_id (str): UUID string of the daily log to query.
+
+        **Outputs:**
+        - list[dict[str, Any]]: Ordered food-entry rows for that daily log.
+
+        **Exceptions:**
+        - sqlalchemy.exc.SQLAlchemyError: Raised when SQL execution fails.
+        """
         stmt = (
             select(*_food_entry_response_columns())
             .where(food_entries.c.daily_log_id == daily_log_id)
@@ -175,14 +210,18 @@ class EntriesRepository:
         result = await self._session.execute(stmt)
         return [dict(row) for row in result.mappings().all()]
 
-    # Summary: Deletes a food entry by primary key and reports whether a row was removed.
-    # Parameters:
-    # - entry_id (UUID): UUID of the food-entry row to delete.
-    # Returns:
-    # - bool: True when a row is deleted, otherwise False.
-    # Raises/Throws:
-    # - sqlalchemy.exc.SQLAlchemyError: Raised when SQL execution fails.
     async def delete_entry(self, entry_id: UUID) -> bool:
+        """Delete a food entry by primary key.
+
+        **Inputs:**
+        - entry_id (UUID): UUID of the food-entry row to delete.
+
+        **Outputs:**
+        - bool: ``True`` when a row was deleted, otherwise ``False``.
+
+        **Exceptions:**
+        - sqlalchemy.exc.SQLAlchemyError: Raised when SQL execution fails.
+        """
         stmt = delete(food_entries).where(food_entries.c.id == entry_id).returning(food_entries.c.id)
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none() is not None

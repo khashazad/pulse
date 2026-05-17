@@ -1,3 +1,14 @@
+"""HTTP endpoints for reusable food containers (jars, tupperware, etc.).
+
+Exposes the ``/containers`` router covering full CRUD plus photo upload/fetch/
+delete. Routers handle multipart parsing, byte caps, and HTTP error mapping;
+business logic lives in :mod:`services.container_photos` and SQL in
+:class:`ContainersRepository`.
+
+Containers carry a tare weight and an optional photo (stored full + thumbnail
+as BYTEA). Photo bytes are streamed in 64 KiB chunks and capped at 10 MiB.
+"""
+
 from __future__ import annotations
 
 from datetime import datetime as DateTimeValue
@@ -35,13 +46,21 @@ _UPLOAD_CHUNK_BYTES = 64 * 1024
 
 
 async def _read_capped(file: UploadFile, max_bytes: int) -> bytearray:
-    """Read an UploadFile in chunks, aborting once cumulative bytes exceed max_bytes.
+    """Read an UploadFile in 64 KiB chunks, aborting once cumulative bytes exceed ``max_bytes``.
 
-    Returns a bytearray (not bytes) so the payload is held in a single contiguous
-    buffer — no second copy at the join step. Downstream (Pillow via BytesIO,
-    repo BYTEA insert) accepts bytes-like.
+    Returns a ``bytearray`` (not ``bytes``) so the payload is held in a single
+    contiguous buffer — no second copy at the join step. Downstream (Pillow via
+    ``BytesIO``, repo ``BYTEA`` insert) accepts bytes-like values.
 
-    Raises PhotoTooLargeError when the upload exceeds the cap.
+    **Inputs:**
+    - file (UploadFile): Streaming multipart file handle.
+    - max_bytes (int): Inclusive cap on total payload size in bytes.
+
+    **Outputs:**
+    - bytearray: The fully buffered payload, length ≤ ``max_bytes``.
+
+    **Exceptions:**
+    - PhotoTooLargeError: Raised once the running total would exceed ``max_bytes``.
     """
     buffer = bytearray()
     while True:
@@ -57,6 +76,14 @@ async def _read_capped(file: UploadFile, max_bytes: int) -> bytearray:
 
 
 def _to_response(row: dict) -> ContainerResponse:
+    """Project a raw ``containers`` row mapping into the public response model.
+
+    **Inputs:**
+    - row (dict): Column→value mapping returned by :class:`ContainersRepository`.
+
+    **Outputs:**
+    - ContainerResponse: Pydantic DTO with normalized field types.
+    """
     return ContainerResponse(
         id=row["id"],
         user_key=row["user_key"],
@@ -74,6 +101,15 @@ async def list_containers(
     request: Request,
     session: AsyncSession = Depends(get_session_dependency),
 ) -> ContainersListResponse:
+    """List every container owned by the authenticated user.
+
+    **Inputs:**
+    - request (Request): Active request; ``request.state.user_key`` is the scope.
+    - session (AsyncSession): DB session dependency.
+
+    **Outputs:**
+    - ContainersListResponse: Containers in repository-defined order.
+    """
     user_key = request.state.user_key
     repo = ContainersRepository(session)
     rows = await repo.list_for_user(user_key)
@@ -86,6 +122,19 @@ async def create_container(
     body: ContainerCreate,
     session: AsyncSession = Depends(get_session_dependency),
 ) -> ContainerResponse:
+    """Create a new container scoped to the authenticated user.
+
+    **Inputs:**
+    - request (Request): Active request providing ``user_key``.
+    - body (ContainerCreate): Desired ``name`` and ``tare_weight_g``.
+    - session (AsyncSession): DB session dependency.
+
+    **Outputs:**
+    - ContainerResponse: The newly persisted row.
+
+    **Exceptions:**
+    - HTTPException(409): Raised when the user already owns a container with that name.
+    """
     user_key = request.state.user_key
     repo = ContainersRepository(session)
     now = DateTimeValue.now(tz=TZ)
@@ -109,6 +158,19 @@ async def get_container(
     container_id: UUID,
     session: AsyncSession = Depends(get_session_dependency),
 ) -> ContainerResponse:
+    """Fetch a single container by id, scoped to the authenticated user.
+
+    **Inputs:**
+    - request (Request): Active request providing ``user_key``.
+    - container_id (UUID): Container primary key.
+    - session (AsyncSession): DB session dependency.
+
+    **Outputs:**
+    - ContainerResponse: The requested row.
+
+    **Exceptions:**
+    - HTTPException(404): Raised when no container with that id is owned by the user.
+    """
     user_key = request.state.user_key
     repo = ContainersRepository(session)
     row = await repo.get_by_id(container_id, user_key)
@@ -124,6 +186,23 @@ async def update_container(
     body: ContainerUpdate,
     session: AsyncSession = Depends(get_session_dependency),
 ) -> ContainerResponse:
+    """Partially update a container's fields (name, tare weight) for the authenticated user.
+
+    Recomputes ``normalized_name`` server-side whenever ``name`` is provided.
+
+    **Inputs:**
+    - request (Request): Active request providing ``user_key``.
+    - container_id (UUID): Container primary key.
+    - body (ContainerUpdate): Subset of fields to overwrite.
+    - session (AsyncSession): DB session dependency.
+
+    **Outputs:**
+    - ContainerResponse: The updated row.
+
+    **Exceptions:**
+    - HTTPException(409): Raised when renaming would collide with another container's name.
+    - HTTPException(404): Raised when no container with that id is owned by the user.
+    """
     user_key = request.state.user_key
     fields = body.model_dump(exclude_unset=True)
     if "name" in fields and fields["name"] is not None:
@@ -146,6 +225,16 @@ async def delete_container(
     container_id: UUID,
     session: AsyncSession = Depends(get_session_dependency),
 ) -> None:
+    """Delete a container by id and return HTTP 204 on success.
+
+    **Inputs:**
+    - request (Request): Active request providing ``user_key``.
+    - container_id (UUID): Container primary key.
+    - session (AsyncSession): DB session dependency.
+
+    **Exceptions:**
+    - HTTPException(404): Raised when no container with that id is owned by the user.
+    """
     user_key = request.state.user_key
     repo = ContainersRepository(session)
     async with transaction(session):
@@ -161,6 +250,25 @@ async def upload_container_photo(
     file: UploadFile = File(...),
     session: AsyncSession = Depends(get_session_dependency),
 ) -> ContainerPhotoStatus:
+    """Upload (replace) the photo for a container, persisting full + thumb BYTEA.
+
+    Streams the upload with a 10 MiB cap, converts it via Pillow, and writes the
+    result atomically through :class:`ContainersRepository`.
+
+    **Inputs:**
+    - request (Request): Active request providing ``user_key``.
+    - container_id (UUID): Container primary key.
+    - file (UploadFile): Multipart image upload.
+    - session (AsyncSession): DB session dependency.
+
+    **Outputs:**
+    - ContainerPhotoStatus: ``has_photo=True`` once the upload is stored.
+
+    **Exceptions:**
+    - HTTPException(413): Raised when the upload exceeds the 10 MiB cap.
+    - HTTPException(415): Raised when the payload is not a supported/decodable image.
+    - HTTPException(404): Raised when the container does not exist for this user.
+    """
     user_key = request.state.user_key
 
     try:
@@ -197,6 +305,16 @@ async def delete_container_photo(
     container_id: UUID,
     session: AsyncSession = Depends(get_session_dependency),
 ) -> None:
+    """Clear the stored photo bytes (full + thumb) for a container.
+
+    **Inputs:**
+    - request (Request): Active request providing ``user_key``.
+    - container_id (UUID): Container primary key.
+    - session (AsyncSession): DB session dependency.
+
+    **Exceptions:**
+    - HTTPException(404): Raised when the container does not exist for this user.
+    """
     user_key = request.state.user_key
     repo = ContainersRepository(session)
     now = DateTimeValue.now(tz=TZ)
@@ -213,6 +331,20 @@ async def get_container_photo(
     size: str = Query(default="thumb", pattern="^(thumb|full)$"),
     session: AsyncSession = Depends(get_session_dependency),
 ) -> Response:
+    """Return raw container photo bytes (``thumb`` by default, or ``full``).
+
+    **Inputs:**
+    - request (Request): Active request providing ``user_key``.
+    - container_id (UUID): Container primary key.
+    - size (str): ``"thumb"`` or ``"full"``; default ``"thumb"``.
+    - session (AsyncSession): DB session dependency.
+
+    **Outputs:**
+    - Response: Image bytes with the stored MIME type and a 24 h private cache header.
+
+    **Exceptions:**
+    - HTTPException(404): Raised when the container has no stored photo.
+    """
     user_key = request.state.user_key
     repo = ContainersRepository(session)
     result = await repo.get_photo(container_id, user_key, thumb=(size == "thumb"))

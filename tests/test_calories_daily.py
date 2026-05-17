@@ -1,3 +1,11 @@
+"""HTTP tests for `/calories_daily`.
+
+Exercises the happy path (mocked aggregator returns rows for a date range)
+and the two 400 rejections handled by the range validator: inverted
+``from`` > ``to`` and oversize ranges. Uses a TestClient with DB pool,
+USDA client, and session middleware patched out.
+"""
+
 from __future__ import annotations
 
 import os
@@ -15,11 +23,21 @@ os.environ.setdefault("USDA_API_KEY", "test")
 
 
 def _now() -> DateTimeValue:
+    """Return the current UTC timestamp as an aware ``datetime``.
+
+    **Outputs:**
+    - datetime: ``datetime.now`` in UTC.
+    """
     return DateTimeValue.now(tz=TimezoneValue.utc)
 
 
 @pytest.fixture
 def client() -> TestClient:
+    """TestClient with DB pool, USDA client, and auth middleware mocked.
+
+    **Outputs:**
+    - TestClient: Client whose Bearer-authenticated requests pass auth.
+    """
     fut = _now() + TimeDeltaValue(days=7)
     session_repo = AsyncMock()
     session_repo.get.return_value = {"email": "khashzd@gmail.com", "expires_at": fut}
@@ -44,6 +62,7 @@ def client() -> TestClient:
         from diet_tracker_server.db import get_session_dependency
 
         async def _fake_session_dep():
+            """Yield a `MagicMock` standing in for the real DB session dependency."""
             session = MagicMock()
             yield session
 
@@ -59,6 +78,7 @@ HEADERS = {"Authorization": "Bearer tok"}
 
 
 def test_calories_daily_happy(client: TestClient) -> None:
+    """`/calories_daily` returns the aggregator rows verbatim for a valid range."""
     today = DateValue.today()
     with patch(
         "diet_tracker_server.routers.summary.daily_calorie_totals",
@@ -81,10 +101,12 @@ def test_calories_daily_happy(client: TestClient) -> None:
 
 
 def test_calories_daily_rejects_inverted(client: TestClient) -> None:
+    """`from` > `to` returns 400."""
     resp = client.get("/calories_daily?from=2025-02-01&to=2025-01-01", headers=HEADERS)
     assert resp.status_code == 400
 
 
 def test_calories_daily_rejects_oversize(client: TestClient) -> None:
+    """A date range wider than the allowed window returns 400."""
     resp = client.get("/calories_daily?from=2024-01-01&to=2025-12-31", headers=HEADERS)
     assert resp.status_code == 400

@@ -1,3 +1,11 @@
+"""HTTP endpoints for daily weight entries.
+
+Exposes the ``/weight`` router covering range list, single-day fetch, upsert,
+and delete. Business validation (range bounds, future-date rejection) and
+service plumbing live in :mod:`services.weight_service`; SQL is in
+:class:`WeightRepository`.
+"""
+
 from __future__ import annotations
 
 from datetime import date as DateValue
@@ -32,6 +40,20 @@ async def list_weights(
     to: DateValue = Query(...),
     session: AsyncSession = Depends(get_session_dependency),
 ) -> list[WeightEntryResponse]:
+    """Return every weight entry for the authenticated user within an inclusive date range.
+
+    **Inputs:**
+    - request (Request): Active request providing ``user_key``.
+    - from_ (date): Inclusive start date (query alias ``from``).
+    - to (date): Inclusive end date.
+    - session (AsyncSession): DB session dependency.
+
+    **Outputs:**
+    - list[WeightEntryResponse]: Weight entries ordered by date ascending.
+
+    **Exceptions:**
+    - HTTPException(400): Raised when the date range fails :func:`validate_range`.
+    """
     try:
         validate_range(from_, to)
     except ValueError as exc:
@@ -50,6 +72,19 @@ async def get_weight_endpoint(
     log_date: DateValue,
     session: AsyncSession = Depends(get_session_dependency),
 ) -> WeightEntryResponse:
+    """Fetch the weight entry recorded for one specific date.
+
+    **Inputs:**
+    - request (Request): Active request providing ``user_key``.
+    - log_date (date): Calendar date to look up.
+    - session (AsyncSession): DB session dependency.
+
+    **Outputs:**
+    - WeightEntryResponse: The stored weight entry.
+
+    **Exceptions:**
+    - HTTPException(404): Raised when no weight entry exists for that date.
+    """
     row = await get_weight(
         session=session,
         user_key=request.state.user_key,
@@ -67,6 +102,23 @@ async def put_weight(
     body: WeightEntryUpsert,
     session: AsyncSession = Depends(get_session_dependency),
 ) -> WeightEntryResponse:
+    """Insert or update the weight entry for one date.
+
+    Validates that ``log_date`` is not in the future relative to the server's
+    timezone before delegating to :func:`upsert_weight`.
+
+    **Inputs:**
+    - request (Request): Active request providing ``user_key``.
+    - log_date (date): Calendar date the reading applies to.
+    - body (WeightEntryUpsert): Weight value and original unit (``"lb"`` or ``"kg"``).
+    - session (AsyncSession): DB session dependency.
+
+    **Outputs:**
+    - WeightEntryResponse: The upserted entry.
+
+    **Exceptions:**
+    - HTTPException(400): Raised when ``log_date`` fails :func:`validate_log_date` (e.g. future date).
+    """
     today = DateTimeValue.now(tz=TZ).date()
     try:
         validate_log_date(log_date, today)
@@ -91,6 +143,19 @@ async def delete_weight_endpoint(
     log_date: DateValue,
     session: AsyncSession = Depends(get_session_dependency),
 ) -> Response:
+    """Delete the weight entry for one date and return HTTP 204.
+
+    **Inputs:**
+    - request (Request): Active request providing ``user_key``.
+    - log_date (date): Calendar date whose entry should be removed.
+    - session (AsyncSession): DB session dependency.
+
+    **Outputs:**
+    - Response: Empty 204 response.
+
+    **Exceptions:**
+    - HTTPException(404): Raised when no weight entry exists for that date.
+    """
     async with transaction(session):
         deleted = await delete_weight(
             session=session,

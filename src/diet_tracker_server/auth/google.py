@@ -1,3 +1,14 @@
+"""Google OAuth 2.0 handshake helpers.
+
+Implements the three steps the auth router needs to integrate with Google:
+build the authorize URL the user is redirected to, exchange the returned
+authorization code for an ID token, and verify that ID token's signature and
+claims to extract the authenticated identity.
+
+Consumed by ``routers/auth.py``; depends only on the Google client libraries
+and the app's configuration module. Holds no state.
+"""
+
 from __future__ import annotations
 
 from urllib.parse import urlencode
@@ -17,14 +28,17 @@ class GoogleAuthError(Exception):
     """Raised when the Google OAuth handshake fails for any reason."""
 
 
-# Summary: Builds the Google OAuth 2.0 authorize URL the user is redirected to.
-# Parameters:
-# - state (str): Opaque CSRF token round-tripped via cookie + Google.
-# Returns:
-# - str: Fully-qualified URL with all required query params.
-# Raises/Throws:
-# - None: Pure string assembly using the configured Google client id.
 def build_authorize_url(*, state: str) -> str:
+    """Build the Google OAuth 2.0 authorize URL the user is redirected to.
+
+    Pure string assembly using the configured Google client id.
+
+    **Inputs:**
+    - state (str): Opaque CSRF token round-tripped via cookie + Google.
+
+    **Outputs:**
+    - str: Fully-qualified URL with all required query params.
+    """
     settings = get_settings()
     params = {
         "client_id": settings.google_client_id,
@@ -38,14 +52,18 @@ def build_authorize_url(*, state: str) -> str:
     return f"{GOOGLE_AUTHORIZE_URL}?{urlencode(params)}"
 
 
-# Summary: Exchanges an authorization code with Google for an ID token.
-# Parameters:
-# - code (str): Authorization code returned by Google to the callback URL.
-# Returns:
-# - str: Compact-form JWT ID token string.
-# Raises/Throws:
-# - GoogleAuthError: On HTTP failure or when the response lacks id_token.
 async def exchange_code_for_id_token(*, code: str) -> str:
+    """Exchange an authorization code with Google for an ID token.
+
+    **Inputs:**
+    - code (str): Authorization code returned by Google to the callback URL.
+
+    **Outputs:**
+    - str: Compact-form JWT ID token string.
+
+    **Exceptions:**
+    - GoogleAuthError: On HTTP failure or when the response lacks ``id_token``.
+    """
     settings = get_settings()
     body = {
         "code": code,
@@ -68,14 +86,19 @@ async def exchange_code_for_id_token(*, code: str) -> str:
     return token
 
 
-# Summary: Verifies a Google-issued ID token and returns the authenticated identity.
-# Parameters:
-# - jwt_str (str): Compact-form JWT obtained from the token endpoint.
-# Returns:
-# - tuple[str, str]: (email_lower, sub) extracted from the verified payload.
-# Raises/Throws:
-# - GoogleAuthError: On signature/claim verification failure or missing email/sub.
 def verify_id_token(jwt_str: str) -> tuple[str, str]:
+    """Verify a Google-issued ID token and return the authenticated identity.
+
+    **Inputs:**
+    - jwt_str (str): Compact-form JWT obtained from the token endpoint.
+
+    **Outputs:**
+    - tuple[str, str]: ``(email_lower, sub)`` extracted from the verified payload.
+
+    **Exceptions:**
+    - GoogleAuthError: On signature/claim verification failure or missing
+      ``email``/``sub``.
+    """
     settings = get_settings()
     try:
         payload = id_token.verify_oauth2_token(

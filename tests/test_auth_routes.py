@@ -1,3 +1,12 @@
+"""Tests for the `/auth/google/*`, `/auth/whoami`, and `/auth/logout` HTTP routes.
+
+Covers the OAuth start redirect (with the `oauth_state` cookie), all
+callback error and happy paths (denied consent, missing/mismatched state,
+disallowed email, token-exchange failure, missing code, success), plus
+the protected `/auth/whoami` and `/auth/logout` behaviours. Builds a
+TestClient with DB, USDA, and middleware patched out.
+"""
+
 from __future__ import annotations
 
 import os
@@ -22,6 +31,11 @@ os.environ.setdefault("SESSION_TTL_DAYS", "7")
 
 @pytest.fixture
 def client():
+    """TestClient with DB pool, schema bootstrap, and USDA client mocked.
+
+    **Outputs:**
+    - TestClient: Client bound to the configured app.
+    """
     with patch("diet_tracker_server.db.init_pool", new_callable=AsyncMock), \
          patch("diet_tracker_server.db.bootstrap_schema", new_callable=AsyncMock), \
          patch("diet_tracker_server.db.close_pool", new_callable=AsyncMock), \
@@ -35,6 +49,7 @@ def client():
 
 
 def test_start_redirects_to_google_with_state_cookie(client):
+    """`/auth/google/start` 302s to Google's authorize URL and sets an HttpOnly `oauth_state` cookie."""
     r = client.get("/auth/google/start", follow_redirects=False)
     assert r.status_code == 302
     location = r.headers["location"]
@@ -57,7 +72,11 @@ from diet_tracker_server.auth.google import GoogleAuthError
 
 @pytest.fixture
 def _patch_db_repo():
-    """Patch SessionsRepository so create() succeeds without a real DB."""
+    """Patch SessionsRepository so ``create()`` succeeds without a real DB.
+
+    **Outputs:**
+    - AsyncMock: The repo mock, with ``create`` patched to return ``None``.
+    """
     fake_repo = AsyncMock()
     fake_repo.create.return_value = None
     fake_session = AsyncMock()
@@ -70,6 +89,7 @@ def _patch_db_repo():
 
 
 def test_callback_google_denial_redirects_with_access_denied(client):
+    """Google `error=access_denied` callback redirects back to the app with the same error."""
     r = client.get(
         "/auth/google/callback",
         params={"error": "access_denied"},
@@ -80,6 +100,7 @@ def test_callback_google_denial_redirects_with_access_denied(client):
 
 
 def test_callback_missing_state_cookie_redirects_invalid_state(client):
+    """Callback without the `oauth_state` cookie redirects with `error=invalid_state`."""
     r = client.get(
         "/auth/google/callback",
         params={"code": "x", "state": "abc"},
@@ -90,6 +111,7 @@ def test_callback_missing_state_cookie_redirects_invalid_state(client):
 
 
 def test_callback_state_mismatch_redirects_invalid_state(client):
+    """Callback whose `state` query doesn't match the cookie redirects with `error=invalid_state`."""
     client.cookies.set("oauth_state", "real_state", path="/auth/google")
     r = client.get(
         "/auth/google/callback",
@@ -101,6 +123,7 @@ def test_callback_state_mismatch_redirects_invalid_state(client):
 
 
 def test_callback_disallowed_email_redirects_not_allowed(client, _patch_db_repo):
+    """Verified email outside `ALLOWED_EMAILS` redirects with `error=not_allowed` and skips session creation."""
     client.cookies.set("oauth_state", "s", path="/auth/google")
     with patch(
         "diet_tracker_server.routers.auth.exchange_code_for_id_token",
@@ -120,6 +143,7 @@ def test_callback_disallowed_email_redirects_not_allowed(client, _patch_db_repo)
 
 
 def test_callback_happy_path_creates_session_and_redirects_with_token(client, _patch_db_repo):
+    """Successful callback creates a session and redirects to the app scheme with `token` + `email`."""
     client.cookies.set("oauth_state", "s", path="/auth/google")
     with patch(
         "diet_tracker_server.routers.auth.exchange_code_for_id_token",
@@ -142,6 +166,7 @@ def test_callback_happy_path_creates_session_and_redirects_with_token(client, _p
 
 
 def test_callback_token_exchange_failure_redirects_server_error(client):
+    """`GoogleAuthError` from token exchange redirects with `error=server_error`."""
     client.cookies.set("oauth_state", "s", path="/auth/google")
     with patch(
         "diet_tracker_server.routers.auth.exchange_code_for_id_token",
@@ -157,6 +182,7 @@ def test_callback_token_exchange_failure_redirects_server_error(client):
 
 
 def test_callback_missing_code_redirects_invalid_callback(client):
+    """Callback without the `code` query param redirects with `error=invalid_callback`."""
     client.cookies.set("oauth_state", "s", path="/auth/google")
     r = client.get(
         "/auth/google/callback",
@@ -168,11 +194,13 @@ def test_callback_missing_code_redirects_invalid_callback(client):
 
 
 def test_whoami_unauthenticated_returns_401(client):
+    """`/auth/whoami` without a Bearer token returns 401."""
     r = client.get("/auth/whoami")
     assert r.status_code == 401
 
 
 def test_whoami_returns_email_and_expires_at(client):
+    """`/auth/whoami` with a valid session returns the email and expiry."""
     from datetime import datetime as DT, timezone as TZ, timedelta as TD
     fut = DT.now(TZ.utc) + TD(days=7)
     fake_repo = AsyncMock()
@@ -193,6 +221,7 @@ def test_whoami_returns_email_and_expires_at(client):
 
 
 def test_logout_deletes_session_and_returns_204(client):
+    """`/auth/logout` deletes the session row and returns 204."""
     from datetime import datetime as DT, timezone as TZ, timedelta as TD
     fut = DT.now(TZ.utc) + TD(days=7)
     fake_repo = AsyncMock()

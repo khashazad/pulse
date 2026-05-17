@@ -1,7 +1,10 @@
-"""HTTP tests for /measures/photos.
+"""HTTP tests for `/measures/photos`.
 
-Mirrors the client fixture from tests/test_containers_api.py: mocked DB
-session + middleware so any request with `Authorization: Bearer …` is authed.
+Mirrors the client fixture from `tests/test_containers_api.py`: mocked DB
+session + auth middleware so any request bearing `Authorization: Bearer …`
+is authenticated. Covers the per-slot `PUT/GET/DELETE` endpoints (with
+404, future-date, bad-slot, and non-image rejections), the batch upload,
+and metadata listing.
 """
 
 from __future__ import annotations
@@ -24,6 +27,15 @@ os.environ.setdefault("USDA_API_KEY", "test")
 
 
 def _png_bytes(w: int, h: int) -> bytes:
+    """Render an in-memory PNG of the given dimensions.
+
+    **Inputs:**
+    - w (int): Image width in pixels.
+    - h (int): Image height in pixels.
+
+    **Outputs:**
+    - bytes: PNG-encoded image bytes.
+    """
     img = Image.new("RGB", (w, h), color=(200, 100, 50))
     buf = io.BytesIO()
     img.save(buf, format="PNG")
@@ -31,10 +43,24 @@ def _png_bytes(w: int, h: int) -> bytes:
 
 
 def _now() -> DateTimeValue:
+    """Return the current UTC timestamp.
+
+    **Outputs:**
+    - datetime: Aware ``datetime`` in UTC.
+    """
     return DateTimeValue.now(tz=TimezoneValue.utc)
 
 
 def _row(slot: str = "front", sha: str = "deadbeef") -> dict:
+    """Build a fake `progress_photos` row dict for repository return values.
+
+    **Inputs:**
+    - slot (str): Photo slot identifier (``front``/``side``/``back``).
+    - sha (str): SHA-256 digest hex string the row should report.
+
+    **Outputs:**
+    - dict: Column→value mapping mirroring the ``progress_photos`` table shape.
+    """
     return {
         "id": uuid.uuid4(),
         "user_key": "khash",
@@ -50,6 +76,11 @@ def _row(slot: str = "front", sha: str = "deadbeef") -> dict:
 
 @pytest.fixture
 def client() -> TestClient:
+    """TestClient with DB pool, USDA client, and auth middleware mocked.
+
+    **Outputs:**
+    - TestClient: Client whose Bearer-authenticated requests pass auth.
+    """
     fut = _now() + TimeDeltaValue(days=7)
     session_repo = AsyncMock()
     session_repo.get.return_value = {"email": "khashzd@gmail.com", "expires_at": fut}
@@ -74,6 +105,7 @@ def client() -> TestClient:
         from diet_tracker_server.db import get_session_dependency
 
         async def _fake_session_dep():
+            """Yield a `MagicMock` DB session with a working async `begin()` ctx."""
             session = MagicMock()
             session.begin = MagicMock()
             session.begin.return_value.__aenter__ = AsyncMock(return_value=session)
@@ -92,10 +124,12 @@ HEADERS = {"Authorization": "Bearer tok"}
 
 
 def test_unauthenticated_rejected(client: TestClient) -> None:
+    """Listing `/measures/photos` without a Bearer token returns 401."""
     assert client.get("/measures/photos?from=2026-05-01&to=2026-05-31").status_code == 401
 
 
 def test_put_single_photo_returns_metadata(client: TestClient) -> None:
+    """`PUT /measures/photos/{date}/{slot}` returns the upserted row metadata."""
     src = _png_bytes(800, 600)
     with patch(
         "diet_tracker_server.routers.measures_photos.ProgressPhotoRepository"
@@ -115,6 +149,7 @@ def test_put_single_photo_returns_metadata(client: TestClient) -> None:
 
 
 def test_put_single_photo_rejects_future_date(client: TestClient) -> None:
+    """Single-slot PUT with a future date returns 400."""
     src = _png_bytes(100, 100)
     resp = client.put(
         "/measures/photos/2099-01-01/front",
@@ -125,6 +160,7 @@ def test_put_single_photo_rejects_future_date(client: TestClient) -> None:
 
 
 def test_put_single_photo_rejects_bad_slot(client: TestClient) -> None:
+    """An unknown slot path segment returns 400."""
     src = _png_bytes(100, 100)
     resp = client.put(
         "/measures/photos/2026-05-17/topdown",
@@ -135,6 +171,7 @@ def test_put_single_photo_rejects_bad_slot(client: TestClient) -> None:
 
 
 def test_put_single_photo_rejects_non_image(client: TestClient) -> None:
+    """Non-image content type returns 415."""
     resp = client.put(
         "/measures/photos/2026-05-17/front",
         headers=HEADERS,
@@ -144,6 +181,7 @@ def test_put_single_photo_rejects_non_image(client: TestClient) -> None:
 
 
 def test_get_photo_returns_bytes_with_etag(client: TestClient) -> None:
+    """`GET /measures/photos/{date}/{slot}` returns photo bytes with an ETag header."""
     with patch(
         "diet_tracker_server.routers.measures_photos.ProgressPhotoRepository"
     ) as MockRepo:
@@ -167,6 +205,7 @@ def test_get_photo_returns_bytes_with_etag(client: TestClient) -> None:
 
 
 def test_get_photo_returns_404_when_missing(client: TestClient) -> None:
+    """`GET /measures/photos/{date}/{slot}` returns 404 when no photo exists."""
     with patch(
         "diet_tracker_server.routers.measures_photos.ProgressPhotoRepository"
     ) as MockRepo:
@@ -176,6 +215,7 @@ def test_get_photo_returns_404_when_missing(client: TestClient) -> None:
 
 
 def test_list_returns_metadata_for_range(client: TestClient) -> None:
+    """`GET /measures/photos?from=&to=` returns metadata rows for the range."""
     with patch(
         "diet_tracker_server.routers.measures_photos.ProgressPhotoRepository"
     ) as MockRepo:
@@ -193,6 +233,7 @@ def test_list_returns_metadata_for_range(client: TestClient) -> None:
 
 
 def test_delete_returns_204(client: TestClient) -> None:
+    """`DELETE /measures/photos/{date}/{slot}` returns 204 on success."""
     with patch(
         "diet_tracker_server.routers.measures_photos.ProgressPhotoRepository"
     ) as MockRepo:
@@ -202,6 +243,7 @@ def test_delete_returns_204(client: TestClient) -> None:
 
 
 def test_delete_returns_404_when_missing(client: TestClient) -> None:
+    """`DELETE /measures/photos/{date}/{slot}` returns 404 when nothing was removed."""
     with patch(
         "diet_tracker_server.routers.measures_photos.ProgressPhotoRepository"
     ) as MockRepo:
@@ -211,6 +253,7 @@ def test_delete_returns_404_when_missing(client: TestClient) -> None:
 
 
 def test_put_batch_uploads_multiple_slots(client: TestClient) -> None:
+    """Batch `PUT /measures/photos/{date}` upserts every supplied slot."""
     src1 = _png_bytes(400, 600)
     src2 = _png_bytes(400, 600)
     with patch(
@@ -238,11 +281,13 @@ def test_put_batch_uploads_multiple_slots(client: TestClient) -> None:
 
 
 def test_put_batch_rejects_empty_request(client: TestClient) -> None:
+    """Batch PUT with no files returns 400."""
     resp = client.put("/measures/photos/2026-05-17", headers=HEADERS, files=[])
     assert resp.status_code == 400
 
 
 def test_put_batch_rejects_unknown_slot_field(client: TestClient) -> None:
+    """Batch PUT with an unknown form-field slot name returns 400."""
     src = _png_bytes(100, 100)
     resp = client.put(
         "/measures/photos/2026-05-17",
@@ -253,6 +298,7 @@ def test_put_batch_rejects_unknown_slot_field(client: TestClient) -> None:
 
 
 def test_put_batch_rejects_future_date(client: TestClient) -> None:
+    """Batch PUT with a future date returns 400."""
     src = _png_bytes(100, 100)
     resp = client.put(
         "/measures/photos/2099-01-01",

@@ -1,3 +1,15 @@
+"""Food-entry creation orchestration.
+
+Provides :func:`create_entries_with_side_effects`, the single write-path for
+adding food entries: ensures the owning ``daily_log`` row exists for each
+unique date in the batch, inserts each :class:`FoodEntryCreate`, stamps a
+shared ``entry_group_id`` for the batch, and returns both the freshly
+created rows and the daily-totals row set used by callers to recompute
+day-level macros. Optionally accepts a server-controlled ``meal_id`` /
+``meal_name`` pair used by ``log_meal`` to mark entries as belonging to a
+saved meal. Composes :class:`EntriesRepository` and :func:`daily_log_id`.
+"""
+
 from __future__ import annotations
 
 import uuid
@@ -13,23 +25,6 @@ from diet_tracker_server.repositories.entries import EntriesRepository
 from diet_tracker_server.services.log_ids import daily_log_id
 
 
-# Summary: Creates food entries atomically for a user request.
-# Parameters:
-# - session (AsyncSession): Active SQLAlchemy session used for the transaction.
-# - user_key (str): User identifier owning created rows.
-# - items (Sequence[FoodEntryCreate]): Requested food entries to persist.
-# - now (DateTimeValue): Request-scoped timestamp used for default date/time fields.
-# - manage_transaction (bool): When True (default), opens a new transaction on the session. Set to False
-#   when the caller already holds an active transaction on this session.
-# - meal_id (UUID | None): Server-controlled meal id stamped on every row in the batch. Only set by
-#   `log_meal`; public callers leave this None.
-# - meal_name (str | None): Server-controlled meal name snapshot stamped on every row in the batch.
-#   Mirrors `meal_id`'s contract.
-# Returns:
-# - tuple[list[dict[str, Any]], list[dict[str, Any]]]: Newly created rows and rows used for `daily_totals`
-#   (full daily log when the batch targets exactly one calendar date; otherwise the created rows only).
-# Raises/Throws:
-# - sqlalchemy.exc.SQLAlchemyError: Raised when any SQL operation fails; transaction is rolled back.
 async def create_entries_with_side_effects(
     session: AsyncSession,
     user_key: str,
@@ -39,6 +34,39 @@ async def create_entries_with_side_effects(
     meal_id: UUID | None = None,
     meal_name: str | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Create food entries atomically for a user request.
+
+    Ensures a ``daily_log`` row exists for every unique date in the batch,
+    assigns a single shared ``entry_group_id``, and returns both the
+    inserted rows and the daily-totals row set used to recompute day macros
+    (the full daily log when the batch targets exactly one date, otherwise
+    just the created rows).
+
+    **Inputs:**
+    - session (AsyncSession): Active SQLAlchemy session used for the
+      transaction.
+    - user_key (str): User identifier owning the created rows.
+    - items (Sequence[FoodEntryCreate]): Requested food entries to persist.
+    - now (DateTimeValue): Request-scoped timestamp used for default date and
+      ``consumed_at`` fields when items omit them.
+    - manage_transaction (bool): When ``True`` (default), opens a new
+      transaction on the session. Pass ``False`` when the caller already
+      holds an active transaction on this session.
+    - meal_id (UUID | None): Server-controlled meal id stamped on every row
+      in the batch. Only set by ``log_meal``; public callers leave this
+      ``None``.
+    - meal_name (str | None): Server-controlled meal-name snapshot stamped
+      on every row in the batch. Mirrors ``meal_id``'s contract.
+
+    **Outputs:**
+    - tuple[list[dict[str, Any]], list[dict[str, Any]]]: Newly created rows
+      and rows used for ``daily_totals`` (full daily log when the batch
+      targets exactly one calendar date; otherwise the created rows only).
+
+    **Exceptions:**
+    - sqlalchemy.exc.SQLAlchemyError: Raised when any SQL operation fails;
+      the transaction is rolled back when this function manages it.
+    """
     if manage_transaction:
         async with transaction(session):
             return await _create_entries(session, user_key, items, now, meal_id, meal_name)
@@ -53,6 +81,27 @@ async def _create_entries(
     meal_id: UUID | None,
     meal_name: str | None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Internal worker that performs the actual inserts inside a transaction.
+
+    Assumes the caller (``create_entries_with_side_effects``) has already
+    opened or skipped a transaction as appropriate.
+
+    **Inputs:**
+    - session (AsyncSession): Active SQLAlchemy session.
+    - user_key (str): Owning user's scoping key.
+    - items (Sequence[FoodEntryCreate]): Entries to insert.
+    - now (DateTimeValue): Default date/time when items omit them.
+    - meal_id (UUID | None): Optional meal id stamped on every inserted row.
+    - meal_name (str | None): Optional meal-name snapshot stamped on every
+      inserted row.
+
+    **Outputs:**
+    - tuple[list[dict[str, Any]], list[dict[str, Any]]]: ``(created_rows,
+      totals_rows)`` — see :func:`create_entries_with_side_effects`.
+
+    **Exceptions:**
+    - sqlalchemy.exc.SQLAlchemyError: Raised on any SQL failure.
+    """
     entries_repo = EntriesRepository(session)
     created_rows: list[dict[str, Any]] = []
     batch_entry_group_id = uuid.uuid4()

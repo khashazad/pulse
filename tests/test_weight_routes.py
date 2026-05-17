@@ -1,3 +1,11 @@
+"""HTTP tests for `/weight` and `/weight/{date}` endpoints.
+
+Covers PUT (lb and kg units, future-date rejection, zero-weight 422),
+GET single-day (200 and 404), list-range (happy plus inverted/oversize
+400s), and DELETE (204 and 404). Uses a TestClient with DB and auth
+middleware mocked.
+"""
+
 from __future__ import annotations
 
 import os
@@ -17,10 +25,24 @@ os.environ.setdefault("USDA_API_KEY", "test")
 
 
 def _now() -> DateTimeValue:
+    """Return the current UTC timestamp.
+
+    **Outputs:**
+    - datetime: Aware ``datetime`` in UTC.
+    """
     return DateTimeValue.now(tz=TimezoneValue.utc)
 
 
 def _row(log_date: DateValue, weight_lb: Decimal = Decimal("180.50")) -> dict:
+    """Build a fake `weight_entries` row dict for repository return values.
+
+    **Inputs:**
+    - log_date (date): The row's ``log_date``.
+    - weight_lb (Decimal): Weight in pounds (default ``180.50``).
+
+    **Outputs:**
+    - dict: Column→value mapping mirroring the ``weight_entries`` table shape.
+    """
     return {
         "id": uuid.uuid4(),
         "user_key": "khash",
@@ -34,6 +56,11 @@ def _row(log_date: DateValue, weight_lb: Decimal = Decimal("180.50")) -> dict:
 
 @pytest.fixture
 def client() -> TestClient:
+    """TestClient with DB pool, USDA client, and auth middleware mocked.
+
+    **Outputs:**
+    - TestClient: Client whose Bearer-authenticated requests pass auth.
+    """
     fut = _now() + TimeDeltaValue(days=7)
     session_repo = AsyncMock()
     session_repo.get.return_value = {"email": "khashzd@gmail.com", "expires_at": fut}
@@ -58,6 +85,7 @@ def client() -> TestClient:
         from diet_tracker_server.db import get_session_dependency
 
         async def _fake_session_dep():
+            """Yield a `MagicMock` DB session with a working async `begin()` ctx."""
             session = MagicMock()
             session.begin = MagicMock()
             session.begin.return_value.__aenter__ = AsyncMock(return_value=session)
@@ -76,10 +104,12 @@ HEADERS = {"Authorization": "Bearer tok"}
 
 
 def test_unauthenticated_rejected(client: TestClient) -> None:
+    """`GET /weight` without a Bearer token returns 401."""
     assert client.get("/weight?from=2025-01-01&to=2025-01-02").status_code == 401
 
 
 def test_put_weight_lb(client: TestClient) -> None:
+    """`PUT /weight/{date}` with `lb` payload returns the upserted row."""
     log_date = DateValue.today()
     row = _row(log_date)
     with patch(
@@ -100,6 +130,7 @@ def test_put_weight_lb(client: TestClient) -> None:
 
 
 def test_put_weight_kg(client: TestClient) -> None:
+    """`PUT /weight/{date}` with `kg` payload normalizes to `lb` in the response."""
     log_date = DateValue.today()
     row = _row(log_date, weight_lb=Decimal("154.32"))
     row["source_unit"] = "kg"
@@ -121,6 +152,7 @@ def test_put_weight_kg(client: TestClient) -> None:
 
 
 def test_put_rejects_zero_weight(client: TestClient) -> None:
+    """`PUT /weight/{date}` with zero weight returns 422 via request validation."""
     resp = client.put(
         f"/weight/{DateValue.today().isoformat()}",
         headers=HEADERS,
@@ -130,6 +162,7 @@ def test_put_rejects_zero_weight(client: TestClient) -> None:
 
 
 def test_put_rejects_future_date(client: TestClient) -> None:
+    """`PUT /weight/{date}` with a future date returns 400."""
     future = (DateValue.today() + TimeDeltaValue(days=1)).isoformat()
     resp = client.put(
         f"/weight/{future}",
@@ -140,6 +173,7 @@ def test_put_rejects_future_date(client: TestClient) -> None:
 
 
 def test_get_weight_404(client: TestClient) -> None:
+    """`GET /weight/{date}` returns 404 when no entry exists."""
     with patch(
         "diet_tracker_server.routers.weight.get_weight",
         new_callable=AsyncMock,
@@ -150,6 +184,7 @@ def test_get_weight_404(client: TestClient) -> None:
 
 
 def test_get_weight_200(client: TestClient) -> None:
+    """`GET /weight/{date}` returns 200 when the service yields a row."""
     row = _row(DateValue.today())
     with patch(
         "diet_tracker_server.routers.weight.get_weight",
@@ -162,6 +197,7 @@ def test_get_weight_200(client: TestClient) -> None:
 
 
 def test_list_range(client: TestClient) -> None:
+    """`GET /weight?from=&to=` returns the list of rows from the service."""
     today = DateValue.today()
     rows = [_row(today - TimeDeltaValue(days=2)), _row(today - TimeDeltaValue(days=1))]
     with patch(
@@ -179,16 +215,19 @@ def test_list_range(client: TestClient) -> None:
 
 
 def test_list_range_rejects_inverted(client: TestClient) -> None:
+    """`from` > `to` returns 400."""
     resp = client.get("/weight?from=2025-02-01&to=2025-01-01", headers=HEADERS)
     assert resp.status_code == 400
 
 
 def test_list_range_rejects_oversize(client: TestClient) -> None:
+    """Ranges wider than the allowed window return 400."""
     resp = client.get("/weight?from=2024-01-01&to=2025-12-31", headers=HEADERS)
     assert resp.status_code == 400
 
 
 def test_delete_204(client: TestClient) -> None:
+    """`DELETE /weight/{date}` returns 204 on success."""
     with patch(
         "diet_tracker_server.routers.weight.delete_weight",
         new_callable=AsyncMock,
@@ -199,6 +238,7 @@ def test_delete_204(client: TestClient) -> None:
 
 
 def test_delete_404(client: TestClient) -> None:
+    """`DELETE /weight/{date}` returns 404 when no row was deleted."""
     with patch(
         "diet_tracker_server.routers.weight.delete_weight",
         new_callable=AsyncMock,

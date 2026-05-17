@@ -1,3 +1,11 @@
+"""Smoke tests for the FastAPI app's middleware-gated entry points.
+
+Covers the health endpoint pass-through, unauthenticated rejection on
+protected routes, and the `user_key` query guardrail. Exercises the app
+factory wiring via a TestClient with the DB pool and USDA client patched
+out so no real I/O occurs.
+"""
+
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, patch
 
@@ -5,16 +13,16 @@ import pytest
 from fastapi.testclient import TestClient
 
 
-# Summary: Builds an AsyncMock SessionsRepository + async-context pair the auth
-# middleware can use to short-circuit the DB lookup during unit tests.
-# Parameters:
-# - email (str): Email value the fake session row reports.
-# Returns:
-# - tuple[AsyncMock, AsyncMock]: (repo, ctx) suitable for patching
-#   `SessionsRepository` and `get_session` respectively.
-# Raises/Throws:
-# - None: Pure constructor.
 def _patched_session_repo(email: str = "khashzd@gmail.com") -> tuple[AsyncMock, AsyncMock]:
+    """Build an AsyncMock SessionsRepository + async-context pair for middleware short-circuiting.
+
+    **Inputs:**
+    - email (str): Email value the fake session row reports.
+
+    **Outputs:**
+    - tuple[AsyncMock, AsyncMock]: ``(repo, ctx)`` suitable for patching
+      ``SessionsRepository`` and ``get_session`` respectively.
+    """
     fut = datetime.now(timezone.utc) + timedelta(days=7)
     repo = AsyncMock()
     repo.get.return_value = {"email": email, "expires_at": fut}
@@ -27,15 +35,13 @@ def _patched_session_repo(email: str = "khashzd@gmail.com") -> tuple[AsyncMock, 
     return repo, ctx
 
 
-# Summary: Builds a TestClient with lifespan dependencies mocked for isolated API tests.
-# Parameters:
-# - None: Uses module-level environment defaults and mock patches.
-# Returns:
-# - TestClient: Client bound to the app under test.
-# Raises/Throws:
-# - None: Fixture yields a configured client or fails test setup naturally.
 @pytest.fixture
 def client() -> TestClient:
+    """TestClient with DB pool, schema bootstrap, and USDA client mocked.
+
+    **Outputs:**
+    - TestClient: Client bound to the app under test.
+    """
     with patch("diet_tracker_server.db.init_pool", new_callable=AsyncMock), patch(
         "diet_tracker_server.db.bootstrap_schema", new_callable=AsyncMock
     ), patch("diet_tracker_server.db.close_pool", new_callable=AsyncMock), patch(
@@ -48,40 +54,21 @@ def client() -> TestClient:
             yield test_client
 
 
-# Summary: Verifies the app health endpoint returns success status.
-# Parameters:
-# - client (TestClient): Fixture-provided HTTP client for app requests.
-# Returns:
-# - None: Performs status and payload assertions only.
-# Raises/Throws:
-# - AssertionError: Raised when health response does not match expectations.
 def test_health_check(client: TestClient) -> None:
+    """Health endpoint responds 200 with ``status=ok``."""
     response = client.get("/health")
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
 
 
-# Summary: Verifies protected endpoints reject requests without a Bearer token.
-# Parameters:
-# - client (TestClient): Fixture-provided HTTP client for app requests.
-# Returns:
-# - None: Performs status assertions only.
-# Raises/Throws:
-# - AssertionError: Raised when unauthenticated access is not rejected.
 def test_unauthenticated_request_rejected(client: TestClient) -> None:
+    """Protected route without a Bearer token returns 401."""
     response = client.get("/entries", params={"date": "2026-04-05"})
     assert response.status_code == 401
 
 
-# Summary: Confirms the user_key query guardrail returns 400 on protected routes
-# even when an otherwise-valid Bearer token is supplied.
-# Parameters:
-# - client (TestClient): Fixture-provided HTTP client for app requests.
-# Returns:
-# - None: Performs status and payload assertions only.
-# Raises/Throws:
-# - AssertionError: Raised when guardrail does not return 400.
 def test_user_key_query_rejected_on_protected_route(client: TestClient) -> None:
+    """`user_key` query on a protected route returns 400 even with a valid Bearer token."""
     repo, ctx = _patched_session_repo()
     with patch("diet_tracker_server.auth.middleware.get_session", return_value=ctx), patch(
         "diet_tracker_server.auth.middleware.SessionsRepository", return_value=repo

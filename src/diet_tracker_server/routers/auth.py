@@ -1,3 +1,15 @@
+"""Google-OAuth-backed session endpoints for the iOS client.
+
+Exposes the ``/auth`` router that handles the OAuth handshake start/callback,
+session introspection (``/whoami``), and logout. The callback exchanges the
+Google authorization code for an ID token, validates it against the configured
+allowlist, mints an opaque session token, persists ``sha256(token)`` via
+:class:`SessionsRepository`, and 302s back to the iOS app's custom URL scheme.
+
+Sits at the edge of the request pipeline: every other router relies on
+``SessionAuthMiddleware`` validating tokens that this module issues.
+"""
+
 from __future__ import annotations
 
 import logging
@@ -33,16 +45,17 @@ STATE_COOKIE_PATH = "/auth/google"
 STATE_COOKIE_MAX_AGE = 600  # 10 minutes
 
 
-# Summary: Builds the 302 RedirectResponse to the iOS app's custom-scheme URL.
-# Parameters:
-# - error (str | None): Error code propagated to the iOS client; None on success.
-# - token (str | None): Opaque session token issued on success.
-# - email (str | None): Authenticated email echoed back on success.
-# Returns:
-# - RedirectResponse: 302 to `<scheme>://auth?...` with the state cookie cleared.
-# Raises/Throws:
-# - None: All branches return a response unconditionally.
 def _app_redirect(*, error: str | None = None, token: str | None = None, email: str | None = None) -> RedirectResponse:
+    """Build the 302 RedirectResponse to the iOS app's custom-scheme URL.
+
+    **Inputs:**
+    - error (str | None): Error code propagated to the iOS client; ``None`` on success.
+    - token (str | None): Opaque session token issued on success.
+    - email (str | None): Authenticated email echoed back on success.
+
+    **Outputs:**
+    - RedirectResponse: 302 to ``<scheme>://auth?...`` with the state cookie cleared.
+    """
     settings = get_settings()
     base = f"{settings.app_redirect_scheme}://auth"
     if error is not None:
@@ -55,26 +68,28 @@ def _app_redirect(*, error: str | None = None, token: str | None = None, email: 
     return response
 
 
-# Summary: Detects whether the request reached the server over TLS.
-# Parameters:
-# - request (Request): Incoming HTTP request.
-# Returns:
-# - bool: True when scheme is https or x-forwarded-proto reports https.
-# Raises/Throws:
-# - None: Pure header inspection.
 def _is_secure_request(request: Request) -> bool:
+    """Detect whether the request reached the server over TLS.
+
+    **Inputs:**
+    - request (Request): Incoming HTTP request.
+
+    **Outputs:**
+    - bool: ``True`` when scheme is ``https`` or ``x-forwarded-proto`` reports ``https``.
+    """
     return request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https"
 
 
-# Summary: Begins Google OAuth: sets a state cookie and redirects to Google's authorize URL.
-# Parameters:
-# - request (Request): Incoming HTTP request used to decide cookie Secure flag.
-# Returns:
-# - RedirectResponse: 302 to Google with the state echoed in the query string.
-# Raises/Throws:
-# - None: All work is local random + URL build.
 @router.get("/google/start")
 async def google_start(request: Request) -> RedirectResponse:
+    """Begin Google OAuth: set a CSRF state cookie and redirect to Google's authorize URL.
+
+    **Inputs:**
+    - request (Request): Incoming HTTP request used to decide the cookie ``Secure`` flag.
+
+    **Outputs:**
+    - RedirectResponse: 302 to Google with the state echoed in the query string.
+    """
     state = secrets.token_urlsafe(32)
     location = build_authorize_url(state=state)
     response = RedirectResponse(url=location, status_code=302)
@@ -90,17 +105,6 @@ async def google_start(request: Request) -> RedirectResponse:
     return response
 
 
-# Summary: Completes the Google OAuth handshake and 302s back to the iOS app.
-# Parameters:
-# - request (Request): Incoming HTTP request (used to read the state cookie).
-# - code (str | None): Authorization code from Google on success.
-# - state (str | None): CSRF state echoed by Google.
-# - error (str | None): Error code from Google when the user denies.
-# - oauth_state (str | None): Server-set CSRF cookie scoped to /auth/google.
-# Returns:
-# - RedirectResponse: 302 to the app scheme with token+email or error code.
-# Raises/Throws:
-# - None: All exit paths produce a redirect; failures are surfaced as `?error=...`.
 @router.get("/google/callback")
 async def google_callback(
     request: Request,
@@ -109,6 +113,25 @@ async def google_callback(
     error: str | None = None,
     oauth_state: str | None = Cookie(default=None),
 ) -> RedirectResponse:
+    """Complete the Google OAuth handshake, mint a session, and 302 back to the iOS app.
+
+    Validates the CSRF state cookie, exchanges the authorization code for an ID
+    token, verifies the email is in the allowlist, persists a hashed session
+    token, and redirects to the app's custom scheme with ``token`` and
+    ``email``. Any failure is surfaced as ``?error=<code>`` rather than a
+    non-2xx HTTP response.
+
+    **Inputs:**
+    - request (Request): Incoming HTTP request (used to read the state cookie).
+    - code (str | None): Authorization code from Google on success.
+    - state (str | None): CSRF state echoed by Google.
+    - error (str | None): Error code from Google when the user denies consent.
+    - oauth_state (str | None): Server-set CSRF cookie scoped to ``/auth/google``.
+
+    **Outputs:**
+    - RedirectResponse: 302 to the app scheme with ``token``+``email`` on success,
+      or ``?error=<code>`` on failure.
+    """
     if error:
         logger.info("google denied auth: %s", error)
         return _app_redirect(error="access_denied")
@@ -156,30 +179,35 @@ class WhoamiResponse(BaseModel):
     expires_at: datetime
 
 
-# Summary: Returns the authenticated session's identity and post-slide expiry.
-# Parameters:
-# - request (Request): Active request whose state was populated by the middleware.
-# Returns:
-# - WhoamiResponse: Email and expires_at after the session slide.
-# Raises/Throws:
-# - HTTPException(401): When no session is attached (handled by `require_session`).
 @router.get("/whoami", response_model=WhoamiResponse, dependencies=[Depends(require_session)])
 async def whoami(request: Request) -> WhoamiResponse:
+    """Return the authenticated session's identity and post-slide expiry.
+
+    **Inputs:**
+    - request (Request): Active request whose ``state`` was populated by ``SessionAuthMiddleware``.
+
+    **Outputs:**
+    - WhoamiResponse: ``email`` and ``expires_at`` after the session TTL slide.
+
+    **Exceptions:**
+    - HTTPException(401): Raised by ``require_session`` when no session is attached.
+    """
     return WhoamiResponse(
         email=request.state.email,
         expires_at=request.state.session_expires_at,
     )
 
 
-# Summary: Deletes the current session row and returns 204.
-# Parameters:
-# - request (Request): Active request used to extract the Bearer token.
-# Returns:
-# - None: HTTP 204 with no body.
-# Raises/Throws:
-# - HTTPException(401): When no session is attached (handled by `require_session`).
 @router.post("/logout", status_code=204, dependencies=[Depends(require_session)])
 async def logout(request: Request) -> None:
+    """Delete the current session row server-side and return HTTP 204.
+
+    **Inputs:**
+    - request (Request): Active request used to extract the Bearer token.
+
+    **Exceptions:**
+    - HTTPException(401): Raised by ``require_session`` when no session is attached.
+    """
     header = request.headers.get("authorization", "")
     token = header[7:].strip()
     async with get_session() as db_session:

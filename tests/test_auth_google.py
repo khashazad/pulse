@@ -1,3 +1,12 @@
+"""Unit tests for the Google OAuth helper module.
+
+Covers ``build_authorize_url`` query construction, the
+``exchange_code_for_id_token`` HTTPX call and its error paths (non-2xx,
+missing ``id_token``, malformed JSON), and ``verify_id_token`` payload
+parsing including email normalization and missing/invalid signature
+failures. The Google network and ``id_token`` verifier are stubbed.
+"""
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, patch
@@ -8,6 +17,11 @@ import pytest
 
 @pytest.fixture(autouse=True)
 def _env(monkeypatch):
+    """Populate the env vars required by ``Settings`` for every test in this module.
+
+    **Inputs:**
+    - monkeypatch (pytest.MonkeyPatch): Used to set env vars and reset the settings cache.
+    """
     monkeypatch.setenv("DATABASE_URL", "postgresql://localhost/test")
     monkeypatch.setenv("USDA_API_KEY", "x")
     monkeypatch.setenv("GOOGLE_CLIENT_ID", "cid.apps.googleusercontent.com")
@@ -23,6 +37,7 @@ def _env(monkeypatch):
 
 
 def test_build_authorize_url_includes_required_params():
+    """`build_authorize_url` produces a Google authorize URL with all required OAuth params."""
     from diet_tracker_server.auth.google import build_authorize_url
 
     url = build_authorize_url(state="abc123")
@@ -38,6 +53,7 @@ def test_build_authorize_url_includes_required_params():
 
 @pytest.mark.asyncio
 async def test_exchange_code_for_id_token_calls_google():
+    """`exchange_code_for_id_token` posts the OAuth payload to Google and returns the id_token string."""
     from diet_tracker_server.auth import google as g
 
     mock_client = AsyncMock()
@@ -65,6 +81,7 @@ async def test_exchange_code_for_id_token_calls_google():
 
 @pytest.mark.asyncio
 async def test_exchange_code_raises_on_non_2xx():
+    """`exchange_code_for_id_token` wraps non-2xx Google responses in `GoogleAuthError`."""
     from diet_tracker_server.auth import google as g
 
     mock_client = AsyncMock()
@@ -86,6 +103,7 @@ async def test_exchange_code_raises_on_non_2xx():
 
 @pytest.mark.asyncio
 async def test_exchange_code_raises_when_id_token_missing():
+    """`exchange_code_for_id_token` raises `GoogleAuthError` when the response lacks an id_token."""
     from diet_tracker_server.auth import google as g
 
     mock_client = AsyncMock()
@@ -103,6 +121,7 @@ async def test_exchange_code_raises_when_id_token_missing():
 
 
 def test_verify_id_token_returns_email_and_sub():
+    """`verify_id_token` returns the lowercased email and Google subject from a valid JWT payload."""
     from diet_tracker_server.auth import google as g
 
     payload = {"email": "Khashzd@Gmail.com", "sub": "1234567890", "aud": "cid.apps.googleusercontent.com"}
@@ -113,6 +132,7 @@ def test_verify_id_token_returns_email_and_sub():
 
 
 def test_verify_id_token_raises_on_invalid():
+    """`verify_id_token` raises `GoogleAuthError` when the underlying verifier rejects the JWT."""
     from diet_tracker_server.auth import google as g
 
     with patch(
@@ -124,6 +144,7 @@ def test_verify_id_token_raises_on_invalid():
 
 
 def test_verify_id_token_raises_when_email_missing():
+    """`verify_id_token` raises `GoogleAuthError` when the JWT payload omits the email claim."""
     from diet_tracker_server.auth import google as g
 
     payload = {"sub": "x"}  # no email
@@ -134,12 +155,14 @@ def test_verify_id_token_raises_when_email_missing():
 
 @pytest.mark.asyncio
 async def test_exchange_code_raises_on_invalid_json():
+    """`exchange_code_for_id_token` raises `GoogleAuthError` when Google returns malformed JSON."""
     from diet_tracker_server.auth import google as g
 
     mock_client = AsyncMock()
     mock_response = AsyncMock()
     mock_response.status_code = 200
     def _bad_json():
+        """Inline ``response.json`` substitute that simulates a JSON decode failure."""
         raise ValueError("not json")
     mock_response.json = _bad_json
     mock_response.raise_for_status = lambda: None

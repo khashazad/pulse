@@ -1,3 +1,14 @@
+"""DTOs for the /meals endpoints.
+
+Defines the create/update/response shapes for user-authored "meals"
+(named bundles of food items that can be logged in one shot). Covers
+both per-item structures (:class:`MealItemCreate`,
+:class:`MealItemResponse`) and meal-level structures (:class:`MealCreate`,
+:class:`MealUpdate`, :class:`MealResponse`, :class:`MealSummary`,
+:class:`MealsListResponse`). Consumed by the meals router/service and
+by the MCP nutrition layer's ``log_meal`` flow.
+"""
+
 from __future__ import annotations
 
 from datetime import datetime as DateTimeValue
@@ -7,6 +18,8 @@ from pydantic import BaseModel, Field
 
 
 class MealItemCreate(BaseModel):
+    """Request fragment describing one ingredient in a meal being created."""
+
     display_name: str
     quantity_text: str
     normalized_quantity_value: float | None = None
@@ -21,6 +34,8 @@ class MealItemCreate(BaseModel):
 
 
 class MealItemResponse(BaseModel):
+    """Response fragment representing one persisted meal-item row."""
+
     id: UUID
     meal_id: UUID
     position: int
@@ -39,6 +54,8 @@ class MealItemResponse(BaseModel):
 
 
 class MealCreate(BaseModel):
+    """Request body for ``POST /meals`` — meal header plus initial items and aliases."""
+
     name: str
     notes: str | None = None
     items: list[MealItemCreate] = Field(default_factory=list)
@@ -46,11 +63,15 @@ class MealCreate(BaseModel):
 
 
 class MealUpdate(BaseModel):
+    """Request body for ``PATCH /meals/{id}`` — partial header update (items handled separately)."""
+
     name: str | None = None
     notes: str | None = None
 
 
 class MealResponse(BaseModel):
+    """Response body representing a meal plus its full item list."""
+
     id: UUID
     user_key: str
     name: str
@@ -63,6 +84,8 @@ class MealResponse(BaseModel):
 
 
 class MealSummary(BaseModel):
+    """Response fragment for list views — header info plus precomputed totals."""
+
     id: UUID
     name: str
     normalized_name: str
@@ -76,4 +99,6 @@ class MealSummary(BaseModel):
 
 
 class MealsListResponse(BaseModel):
+    """Response body for ``GET /meals`` — wraps the meal summaries."""
+
     meals: list[MealSummary]

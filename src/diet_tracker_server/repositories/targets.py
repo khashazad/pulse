@@ -1,3 +1,14 @@
+"""Daily-target-profile persistence layer.
+
+Provides :class:`TargetsRepository`, which owns every SQL statement against
+the ``daily_target_profile`` table: per-user fetch and idempotent upsert of
+macro/weight targets.
+
+Sits between the targets service and the underlying Postgres table definition
+(``repositories/tables.py``); it is the only module in the codebase allowed to
+issue ``daily_target_profile`` SQL.
+"""
+
 from __future__ import annotations
 
 from datetime import datetime as DateTimeValue
@@ -11,24 +22,28 @@ from diet_tracker_server.repositories.tables import daily_target_profile
 
 
 class TargetsRepository:
-    # Summary: Initializes a targets repository bound to an active SQLAlchemy session.
-    # Parameters:
-    # - session (AsyncSession): SQLAlchemy async session used for all repository operations.
-    # Returns:
-    # - None: Stores the session for subsequent method calls.
-    # Raises/Throws:
-    # - None: Initialization only stores references and performs no I/O.
     def __init__(self, session: AsyncSession) -> None:
+        """Bind the repository to an open async session.
+
+        **Inputs:**
+        - session (AsyncSession): SQLAlchemy async session used for all queries
+          issued by this repository instance.
+        """
         self._session = session
 
-    # Summary: Fetches the active macro target profile for a user.
-    # Parameters:
-    # - user_key (str): User identifier whose target profile is queried.
-    # Returns:
-    # - dict[str, Any] | None: Target-profile row mapping when found, otherwise None.
-    # Raises/Throws:
-    # - sqlalchemy.exc.SQLAlchemyError: Raised when SQL execution fails.
     async def get_target_profile(self, user_key: str) -> dict[str, Any] | None:
+        """Fetch the active macro target profile for a user.
+
+        **Inputs:**
+        - user_key (str): User identifier whose target profile is queried.
+
+        **Outputs:**
+        - dict[str, Any] | None: Target-profile row mapping when found,
+          otherwise ``None``.
+
+        **Exceptions:**
+        - sqlalchemy.exc.SQLAlchemyError: Raised when SQL execution fails.
+        """
         stmt = select(*daily_target_profile.c).where(daily_target_profile.c.user_key == user_key).limit(1)
         result = await self._session.execute(stmt)
         row = result.mappings().first()
@@ -36,19 +51,6 @@ class TargetsRepository:
             return None
         return dict(row)
 
-    # Summary: Inserts or updates the user's macro target profile.
-    # Parameters:
-    # - user_key (str): User identifier owning the profile.
-    # - calories (int): Target calories.
-    # - protein_g (float): Target protein grams.
-    # - carbs_g (float): Target carbohydrate grams.
-    # - fat_g (float): Target fat grams.
-    # - target_weight_lb (float | None): Optional target body weight in pounds.
-    # - updated_at (DateTimeValue): Timestamp for last-update bookkeeping.
-    # Returns:
-    # - None: Executes insert/upsert side effect only.
-    # Raises/Throws:
-    # - sqlalchemy.exc.SQLAlchemyError: Raised when SQL execution fails.
     async def upsert_targets(
         self,
         user_key: str,
@@ -60,6 +62,23 @@ class TargetsRepository:
         *,
         updated_at: DateTimeValue,
     ) -> None:
+        """Insert or update the user's macro target profile.
+
+        Uses Postgres ``ON CONFLICT`` against the per-user unique index so the
+        call is idempotent.
+
+        **Inputs:**
+        - user_key (str): User identifier owning the profile.
+        - calories (int): Target calories.
+        - protein_g (float): Target protein grams.
+        - carbs_g (float): Target carbohydrate grams.
+        - fat_g (float): Target fat grams.
+        - target_weight_lb (float | None): Optional target body weight in pounds.
+        - updated_at (DateTimeValue): Timestamp for last-update bookkeeping.
+
+        **Exceptions:**
+        - sqlalchemy.exc.SQLAlchemyError: Raised when SQL execution fails.
+        """
         stmt = pg_insert(daily_target_profile).values(
             user_key=user_key,
             calories_target=calories,

@@ -1,3 +1,12 @@
+"""Integration tests for the Google OAuth sign-in flow end-to-end.
+
+Drives the FastAPI app via ``TestClient`` through ``/auth/google/start`` → mocked
+Google ``/callback`` → ``/auth/whoami`` → ``/auth/logout``, verifying redirect
+locations, the issued Bearer token, session validation, and post-logout 401.
+Integration test: hits a real Postgres via ``TEST_DATABASE_URL`` for the
+``sessions`` table.
+"""
+
 from __future__ import annotations
 
 import asyncio
@@ -13,6 +22,11 @@ pytestmark = pytest.mark.integration
 
 @pytest.fixture(autouse=True)
 def _env(monkeypatch):
+    """Configure auth-related environment variables for the duration of each test.
+
+    **Inputs:**
+    - monkeypatch: pytest ``MonkeyPatch`` for scoped env mutation.
+    """
     if not os.environ.get("TEST_DATABASE_URL"):
         pytest.skip("TEST_DATABASE_URL not set")
     monkeypatch.setenv("DATABASE_URL", os.environ["TEST_DATABASE_URL"])
@@ -31,6 +45,11 @@ def _env(monkeypatch):
 
 @pytest.fixture
 def client():
+    """FastAPI ``TestClient`` with USDA stubbed and the ``sessions`` table truncated.
+
+    **Outputs:**
+    - ``TestClient``: client wired against the real app for full request flows.
+    """
     with patch("diet_tracker_server.usda.USDAClient") as mock_usda:
         mock_usda.return_value.close = AsyncMock()
         from diet_tracker_server.app import app
@@ -48,6 +67,7 @@ def client():
 
 
 def test_full_signin_flow(client):
+    """End-to-end OAuth start → callback → whoami → logout exercises the full session lifecycle."""
     # /start
     r = client.get("/auth/google/start", follow_redirects=False)
     assert r.status_code == 302

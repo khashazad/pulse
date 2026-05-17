@@ -1,3 +1,16 @@
+"""Meals persistence layer.
+
+Provides :class:`MealsRepository`, which owns every SQL statement against the
+``meals`` and ``meal_items`` tables: meal CRUD, ordered item insertion with
+position tracking, item updates/deletes, list with aggregate macro totals, and
+alias-array mutation. Meal items store pre-scaled macros at create time so
+logging a meal is a straight copy without re-scaling.
+
+Sits between the meals service and the underlying Postgres table definitions
+(``repositories/tables.py``); it is the only module in the codebase allowed to
+issue ``meals`` / ``meal_items`` SQL.
+"""
+
 from __future__ import annotations
 
 from datetime import datetime as DateTimeValue
@@ -12,6 +25,11 @@ from diet_tracker_server.repositories.tables import meal_items, meals
 
 
 def _meal_columns() -> tuple[Any, ...]:
+    """Return the canonical column projection for ``meals`` rows.
+
+    **Outputs:**
+    - tuple[Any, ...]: Ordered SQLAlchemy column elements ready for ``select()``.
+    """
     return (
         meals.c.id,
         meals.c.user_key,
@@ -25,6 +43,11 @@ def _meal_columns() -> tuple[Any, ...]:
 
 
 def _meal_item_columns() -> tuple[Any, ...]:
+    """Return the canonical column projection for ``meal_items`` rows.
+
+    **Outputs:**
+    - tuple[Any, ...]: Ordered SQLAlchemy column elements ready for ``select()``.
+    """
     return (
         meal_items.c.id,
         meal_items.c.meal_id,
@@ -45,11 +68,15 @@ def _meal_item_columns() -> tuple[Any, ...]:
 
 
 class MealsRepository:
-    # Summary: Initializes a meals repository bound to an active SQLAlchemy session.
     def __init__(self, session: AsyncSession) -> None:
+        """Bind the repository to an open async session.
+
+        **Inputs:**
+        - session (AsyncSession): SQLAlchemy async session used for all queries
+          issued by this repository instance.
+        """
         self._session = session
 
-    # Summary: Creates a new meal row, returning the inserted record.
     async def create_meal(
         self,
         user_key: str,
@@ -59,6 +86,19 @@ class MealsRepository:
         now: DateTimeValue,
         aliases: list[str] | None = None,
     ) -> dict[str, Any]:
+        """Insert a new meal row and return the inserted record.
+
+        **Inputs:**
+        - user_key (str): Owning user.
+        - name (str): Original-cased display name.
+        - normalized_name (str): Lookup key.
+        - notes (str | None): Free-form note.
+        - now (DateTimeValue): Timestamp for ``created_at``/``updated_at``.
+        - aliases (list[str] | None): Optional alias array to seed.
+
+        **Outputs:**
+        - dict[str, Any]: The inserted meal row.
+        """
         values: dict[str, Any] = dict(
             user_key=user_key,
             name=name,
@@ -77,7 +117,6 @@ class MealsRepository:
         result = await self._session.execute(stmt)
         return dict(result.mappings().one())
 
-    # Summary: Inserts a meal item at the given position; macros are pre-scaled at create time.
     async def add_meal_item(
         self,
         meal_id: UUID,
@@ -95,6 +134,28 @@ class MealsRepository:
         fat_g: float,
         now: DateTimeValue,
     ) -> dict[str, Any]:
+        """Insert a meal item at the given position with pre-scaled macros.
+
+        **Inputs:**
+        - meal_id (UUID): Owning meal id.
+        - position (int): Ordinal position within the meal.
+        - display_name (str): User-facing item label.
+        - quantity_text (str): Original quantity phrase.
+        - normalized_quantity_value (float | None): Parsed numeric quantity.
+        - normalized_quantity_unit (str | None): Parsed unit.
+        - usda_fdc_id (int | None): USDA FDC id when the item is a USDA food.
+        - usda_description (str | None): USDA description snapshot.
+        - custom_food_id (UUID | None): Custom-food id when the item is a
+          user-defined food.
+        - calories (int): Pre-scaled calories.
+        - protein_g (float): Pre-scaled protein grams.
+        - carbs_g (float): Pre-scaled carbohydrate grams.
+        - fat_g (float): Pre-scaled fat grams.
+        - now (DateTimeValue): Timestamp for ``created_at``.
+
+        **Outputs:**
+        - dict[str, Any]: The inserted meal-item row.
+        """
         stmt = (
             pg_insert(meal_items)
             .values(
@@ -118,14 +179,29 @@ class MealsRepository:
         result = await self._session.execute(stmt)
         return dict(result.mappings().one())
 
-    # Summary: Returns the next position index for a meal (max+1, or 0 when empty).
     async def next_position(self, meal_id: UUID) -> int:
+        """Return the next free position index for a meal.
+
+        **Inputs:**
+        - meal_id (UUID): Meal whose items to inspect.
+
+        **Outputs:**
+        - int: ``max(position)+1``, or ``0`` when the meal has no items yet.
+        """
         stmt = select(func.coalesce(func.max(meal_items.c.position), -1) + 1).where(meal_items.c.meal_id == meal_id)
         result = await self._session.execute(stmt)
         return int(result.scalar_one())
 
-    # Summary: Fetches a meal by primary key, restricted to the owning user.
     async def get_meal(self, meal_id: UUID, user_key: str) -> dict[str, Any] | None:
+        """Fetch a meal by primary key, restricted to the owning user.
+
+        **Inputs:**
+        - meal_id (UUID): Primary key.
+        - user_key (str): Owner restriction.
+
+        **Outputs:**
+        - dict[str, Any] | None: Meal row when found, else ``None``.
+        """
         stmt = (
             select(*_meal_columns())
             .where(meals.c.id == meal_id)
@@ -135,8 +211,17 @@ class MealsRepository:
         row = result.mappings().first()
         return dict(row) if row else None
 
-    # Summary: Fetches a meal by normalized name or alias for a user.
     async def get_meal_by_name(self, user_key: str, normalized_name: str) -> dict[str, Any] | None:
+        """Fetch a meal by canonical normalized name or alias.
+
+        **Inputs:**
+        - user_key (str): Owner restriction.
+        - normalized_name (str): Lookup key (matches either the canonical
+          ``normalized_name`` or any element of the ``aliases`` array).
+
+        **Outputs:**
+        - dict[str, Any] | None: Meal row when found, else ``None``.
+        """
         stmt = (
             select(*_meal_columns())
             .where(meals.c.user_key == user_key)
@@ -151,8 +236,18 @@ class MealsRepository:
         row = result.mappings().first()
         return dict(row) if row else None
 
-    # Summary: Lists meals owned by the user with item counts and macro totals (single SQL pass).
     async def list_meals(self, user_key: str) -> list[dict[str, Any]]:
+        """List meals for a user with item counts and macro totals.
+
+        Outer-joins ``meal_items`` so meals with no items still appear with
+        zero totals. Computed in a single SQL pass per call.
+
+        **Inputs:**
+        - user_key (str): Owner restriction.
+
+        **Outputs:**
+        - list[dict[str, Any]]: Meal summary rows ordered by ``normalized_name``.
+        """
         stmt = (
             select(
                 meals.c.id,
@@ -174,8 +269,15 @@ class MealsRepository:
         result = await self._session.execute(stmt)
         return [dict(row) for row in result.mappings().all()]
 
-    # Summary: Lists items for a meal in position order.
     async def list_items(self, meal_id: UUID) -> list[dict[str, Any]]:
+        """List items for a meal in stored position order.
+
+        **Inputs:**
+        - meal_id (UUID): Owning meal id.
+
+        **Outputs:**
+        - list[dict[str, Any]]: Meal-item rows ordered by ``(position, id)``.
+        """
         stmt = (
             select(*_meal_item_columns())
             .where(meal_items.c.meal_id == meal_id)
@@ -184,7 +286,6 @@ class MealsRepository:
         result = await self._session.execute(stmt)
         return [dict(row) for row in result.mappings().all()]
 
-    # Summary: Updates meal name/notes (subset of fields).
     async def update_meal(
         self,
         meal_id: UUID,
@@ -192,6 +293,19 @@ class MealsRepository:
         fields: dict[str, Any],
         now: DateTimeValue,
     ) -> dict[str, Any] | None:
+        """Update a subset of a meal's mutable fields (name, notes, etc).
+
+        When ``fields`` is empty the row is fetched and returned unchanged.
+
+        **Inputs:**
+        - meal_id (UUID): Primary key.
+        - user_key (str): Owner restriction.
+        - fields (dict[str, Any]): Column→new-value updates.
+        - now (DateTimeValue): Timestamp for ``updated_at``.
+
+        **Outputs:**
+        - dict[str, Any] | None: Updated meal row, or ``None`` when not found.
+        """
         if not fields:
             return await self.get_meal(meal_id, user_key)
         values = {**fields, "updated_at": now}
@@ -206,13 +320,25 @@ class MealsRepository:
         row = result.mappings().first()
         return dict(row) if row else None
 
-    # Summary: Updates a meal item's mutable fields.
     async def update_meal_item(
         self,
         meal_item_id: UUID,
         meal_id: UUID,
         fields: dict[str, Any],
     ) -> dict[str, Any] | None:
+        """Update a meal item's mutable fields.
+
+        When ``fields`` is empty the existing row is fetched and returned
+        unchanged.
+
+        **Inputs:**
+        - meal_item_id (UUID): Item primary key.
+        - meal_id (UUID): Owning meal id used for safety scoping.
+        - fields (dict[str, Any]): Column→new-value updates.
+
+        **Outputs:**
+        - dict[str, Any] | None: Updated meal-item row, or ``None`` when not found.
+        """
         if not fields:
             stmt = (
                 select(*_meal_item_columns())
@@ -233,8 +359,16 @@ class MealsRepository:
         row = result.mappings().first()
         return dict(row) if row else None
 
-    # Summary: Deletes a meal (cascades to meal_items).
     async def delete_meal(self, meal_id: UUID, user_key: str) -> bool:
+        """Delete a meal (cascades to ``meal_items``).
+
+        **Inputs:**
+        - meal_id (UUID): Primary key.
+        - user_key (str): Owner restriction.
+
+        **Outputs:**
+        - bool: ``True`` when a row was deleted.
+        """
         stmt = (
             delete(meals)
             .where(meals.c.id == meal_id)
@@ -244,8 +378,16 @@ class MealsRepository:
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none() is not None
 
-    # Summary: Deletes one item from a meal.
     async def delete_meal_item(self, meal_item_id: UUID, meal_id: UUID) -> bool:
+        """Delete one item from a meal.
+
+        **Inputs:**
+        - meal_item_id (UUID): Item primary key.
+        - meal_id (UUID): Owning meal id used for safety scoping.
+
+        **Outputs:**
+        - bool: ``True`` when a row was deleted.
+        """
         stmt = (
             delete(meal_items)
             .where(meal_items.c.id == meal_item_id)
@@ -255,7 +397,6 @@ class MealsRepository:
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none() is not None
 
-    # Summary: Appends `alias` to the meal's aliases array if not already present.
     async def add_alias(
         self,
         meal_id: UUID,
@@ -263,6 +404,20 @@ class MealsRepository:
         alias: str,
         now: DateTimeValue,
     ) -> dict[str, Any] | None:
+        """Append ``alias`` to the meal's aliases array, deduplicated.
+
+        Uses ``array_append`` + ``unnest``/``DISTINCT`` so the alias is added
+        only when not already present.
+
+        **Inputs:**
+        - meal_id (UUID): Primary key.
+        - user_key (str): Owner restriction.
+        - alias (str): Already-normalized alias to add.
+        - now (DateTimeValue): Timestamp for ``updated_at``.
+
+        **Outputs:**
+        - dict[str, Any] | None: Updated meal row, or ``None`` when not found.
+        """
         stmt = (
             update(meals)
             .where(meals.c.id == meal_id)
@@ -281,7 +436,6 @@ class MealsRepository:
         row = result.mappings().first()
         return dict(row) if row else None
 
-    # Summary: Removes `alias` from the meal's aliases array. No-op if absent.
     async def remove_alias(
         self,
         meal_id: UUID,
@@ -289,6 +443,17 @@ class MealsRepository:
         alias: str,
         now: DateTimeValue,
     ) -> dict[str, Any] | None:
+        """Remove ``alias`` from the meal's aliases array; no-op when absent.
+
+        **Inputs:**
+        - meal_id (UUID): Primary key.
+        - user_key (str): Owner restriction.
+        - alias (str): Already-normalized alias to remove.
+        - now (DateTimeValue): Timestamp for ``updated_at``.
+
+        **Outputs:**
+        - dict[str, Any] | None: Updated meal row, or ``None`` when not found.
+        """
         stmt = (
             update(meals)
             .where(meals.c.id == meal_id)

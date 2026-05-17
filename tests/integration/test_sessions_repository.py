@@ -1,3 +1,11 @@
+"""Integration tests for ``SessionsRepository``.
+
+Exercises the opaque-Bearer session store: create + lookup-by-hash, sliding TTL
+extension on ``slide``, and idempotent deletion (returns delete count, zero on
+second call). Each test truncates the ``sessions`` table via the module-level
+``db`` pool. Integration test: hits a real Postgres via ``TEST_DATABASE_URL``.
+"""
+
 from __future__ import annotations
 
 import hashlib
@@ -12,6 +20,11 @@ pytestmark = pytest.mark.integration
 
 @pytest.fixture
 async def session():
+    """Bootstrap the module-level DB pool, truncate ``sessions``, and yield a session.
+
+    **Outputs:**
+    - ``AsyncSession``: open async session over the integration database.
+    """
     if not os.environ.get("TEST_DATABASE_URL"):
         pytest.skip("TEST_DATABASE_URL not set")
     from diet_tracker_server import db
@@ -26,10 +39,19 @@ async def session():
 
 
 def _hash(token: str) -> bytes:
+    """Compute the binary ``sha256`` hash used as the session lookup key.
+
+    **Inputs:**
+    - token (str): the opaque session token in clear text.
+
+    **Outputs:**
+    - bytes: 32-byte ``sha256`` digest of the token.
+    """
     return hashlib.sha256(token.encode()).digest()
 
 
 async def test_create_and_lookup(session):
+    """``create`` then ``get`` round-trips the email and expiry for a hashed token."""
     from diet_tracker_server.repositories.sessions import SessionsRepository
 
     repo = SessionsRepository(session)
@@ -45,6 +67,7 @@ async def test_create_and_lookup(session):
 
 
 async def test_slide_extends_expiry(session):
+    """``slide`` advances ``last_used_at`` and ``expires_at`` for an existing token."""
     from diet_tracker_server.repositories.sessions import SessionsRepository
 
     repo = SessionsRepository(session)
@@ -65,6 +88,7 @@ async def test_slide_extends_expiry(session):
 
 
 async def test_delete_returns_count(session):
+    """``delete`` returns 1 for an existing token and 0 on a repeated delete of the same hash."""
     from diet_tracker_server.repositories.sessions import SessionsRepository
 
     repo = SessionsRepository(session)

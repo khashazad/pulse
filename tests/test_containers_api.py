@@ -1,3 +1,11 @@
+"""HTTP tests for `/containers` and `/containers/{id}/photo`.
+
+Covers listing, create (success, validation error, duplicate-name 409),
+get/404, patch, delete, and the photo upload/get/delete endpoints
+including the streaming size cap (413), non-image rejection (415), and
+JPEG retrieval. Uses a TestClient with DB and auth middleware mocked.
+"""
+
 from __future__ import annotations
 
 import io
@@ -17,6 +25,15 @@ os.environ.setdefault("USDA_API_KEY", "test")
 
 
 def _png_bytes(w: int, h: int) -> bytes:
+    """Render an in-memory PNG of the given dimensions.
+
+    **Inputs:**
+    - w (int): Image width in pixels.
+    - h (int): Image height in pixels.
+
+    **Outputs:**
+    - bytes: PNG-encoded image bytes.
+    """
     img = Image.new("RGB", (w, h), color=(10, 20, 30))
     buf = io.BytesIO()
     img.save(buf, format="PNG")
@@ -24,10 +41,24 @@ def _png_bytes(w: int, h: int) -> bytes:
 
 
 def _now() -> DateTimeValue:
+    """Return the current UTC timestamp.
+
+    **Outputs:**
+    - datetime: Aware ``datetime`` in UTC.
+    """
     return DateTimeValue.now(tz=TimezoneValue.utc)
 
 
 def _row(name: str = "A", weight: float = 100.0) -> dict:
+    """Build a fake `containers` row dict for use as a repository return value.
+
+    **Inputs:**
+    - name (str): Container display name.
+    - weight (float): Tare weight in grams.
+
+    **Outputs:**
+    - dict: Column→value mapping mirroring the ``containers`` table shape.
+    """
     return {
         "id": uuid.uuid4(),
         "user_key": "khash",
@@ -42,10 +73,14 @@ def _row(name: str = "A", weight: float = 100.0) -> dict:
 
 @pytest.fixture
 def client() -> TestClient:
-    """Builds a TestClient with the DB pool, USDA client, and session middleware mocked.
+    """TestClient with DB pool, USDA client, and session middleware mocked.
 
-    Any request bearing `Authorization: Bearer <anything>` is treated as authenticated;
-    requests without the header still hit the real middleware and get 401.
+    Any request bearing ``Authorization: Bearer <anything>`` is treated as
+    authenticated; requests without the header still hit the real
+    middleware and get 401.
+
+    **Outputs:**
+    - TestClient: Client bound to the configured app.
     """
     fut = _now() + TimeDeltaValue(days=7)
     session_repo = AsyncMock()
@@ -71,6 +106,7 @@ def client() -> TestClient:
         from diet_tracker_server.db import get_session_dependency
 
         async def _fake_session_dep():
+            """Yield a `MagicMock` DB session with a working async `begin()` ctx."""
             session = MagicMock()
             session.begin = MagicMock()
             session.begin.return_value.__aenter__ = AsyncMock(return_value=session)
@@ -89,10 +125,12 @@ HEADERS = {"Authorization": "Bearer tok"}
 
 
 def test_unauthenticated_rejected(client: TestClient) -> None:
+    """`GET /containers` without a Bearer token returns 401."""
     assert client.get("/containers").status_code == 401
 
 
 def test_list_containers(client: TestClient) -> None:
+    """`GET /containers` returns serialized rows from the repository."""
     rows = [_row("A"), _row("B")]
     with patch(
         "diet_tracker_server.routers.containers.ContainersRepository"
@@ -109,6 +147,7 @@ def test_list_containers(client: TestClient) -> None:
 
 
 def test_create_container(client: TestClient) -> None:
+    """`POST /containers` returns 201 with the newly created row."""
     row = _row("Big Pyrex", 412.0)
     with patch(
         "diet_tracker_server.routers.containers.ContainersRepository"
@@ -125,6 +164,7 @@ def test_create_container(client: TestClient) -> None:
 
 
 def test_create_rejects_zero_weight(client: TestClient) -> None:
+    """`tare_weight_g=0` is rejected with 422 by request validation."""
     resp = client.post(
         "/containers",
         headers=HEADERS,
@@ -134,6 +174,7 @@ def test_create_rejects_zero_weight(client: TestClient) -> None:
 
 
 def test_create_duplicate_name_returns_409(client: TestClient) -> None:
+    """A repository `IntegrityError` from a duplicate name surfaces as 409."""
     from sqlalchemy.exc import IntegrityError
 
     with patch(
@@ -150,6 +191,7 @@ def test_create_duplicate_name_returns_409(client: TestClient) -> None:
 
 
 def test_get_container_404_when_missing(client: TestClient) -> None:
+    """`GET /containers/{id}` returns 404 when the repository returns `None`."""
     with patch(
         "diet_tracker_server.routers.containers.ContainersRepository"
     ) as MockRepo:
@@ -160,6 +202,7 @@ def test_get_container_404_when_missing(client: TestClient) -> None:
 
 
 def test_patch_container(client: TestClient) -> None:
+    """`PATCH /containers/{id}` returns 200 with the updated row."""
     row = _row("Renamed", 99.0)
     with patch(
         "diet_tracker_server.routers.containers.ContainersRepository"
@@ -176,6 +219,7 @@ def test_patch_container(client: TestClient) -> None:
 
 
 def test_delete_container(client: TestClient) -> None:
+    """`DELETE /containers/{id}` returns 204 on a successful delete."""
     with patch(
         "diet_tracker_server.routers.containers.ContainersRepository"
     ) as MockRepo:
@@ -186,6 +230,7 @@ def test_delete_container(client: TestClient) -> None:
 
 
 def test_upload_photo_resizes_and_returns_status(client: TestClient) -> None:
+    """Photo upload succeeds with 200 and reports ``has_photo=True``."""
     container_id = uuid.uuid4()
     src = _png_bytes(2000, 1000)
     with patch(
@@ -206,8 +251,7 @@ def test_upload_photo_rejects_oversize_via_streaming_cap(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Streaming size cap: posting more than MAX_UPLOAD_BYTES must 413 without
-    the full payload being handed to the image processor."""
+    """Uploads exceeding `MAX_UPLOAD_BYTES` 413 without invoking the image processor."""
     from diet_tracker_server.routers import containers as containers_module
 
     monkeypatch.setattr(containers_module, "MAX_UPLOAD_BYTES", 1024)
@@ -233,6 +277,7 @@ def test_upload_photo_rejects_oversize_via_streaming_cap(
 
 
 def test_upload_photo_rejects_non_image(client: TestClient) -> None:
+    """Non-image content type returns 415."""
     container_id = uuid.uuid4()
     with patch(
         "diet_tracker_server.routers.containers.ContainersRepository"
@@ -248,6 +293,7 @@ def test_upload_photo_rejects_non_image(client: TestClient) -> None:
 
 
 def test_get_photo_returns_jpeg(client: TestClient) -> None:
+    """`GET /containers/{id}/photo` returns the JPEG bytes with the correct content type."""
     container_id = uuid.uuid4()
     with patch(
         "diet_tracker_server.routers.containers.ContainersRepository"
@@ -261,6 +307,7 @@ def test_get_photo_returns_jpeg(client: TestClient) -> None:
 
 
 def test_get_photo_404_when_missing(client: TestClient) -> None:
+    """`GET /containers/{id}/photo` returns 404 when no photo is stored."""
     container_id = uuid.uuid4()
     with patch(
         "diet_tracker_server.routers.containers.ContainersRepository"
@@ -272,6 +319,7 @@ def test_get_photo_404_when_missing(client: TestClient) -> None:
 
 
 def test_delete_photo(client: TestClient) -> None:
+    """`DELETE /containers/{id}/photo` returns 204 when the row is cleared."""
     container_id = uuid.uuid4()
     with patch(
         "diet_tracker_server.routers.containers.ContainersRepository"

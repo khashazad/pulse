@@ -1,3 +1,15 @@
+"""Food-memory persistence layer.
+
+Provides :class:`FoodMemoryRepository`, which owns every SQL statement against
+the ``food_memory`` table: upsert of USDA-pointer or custom-food-pointer
+entries, name/alias lookup (with optional left-join to ``custom_foods`` for the
+linked macro snapshot), listing per user, deletion, and alias-array mutation.
+
+Sits between the food-memory service and the underlying Postgres table
+definitions (``repositories/tables.py``); it is the only module in the codebase
+allowed to issue ``food_memory`` SQL.
+"""
+
 from __future__ import annotations
 
 from datetime import datetime as DateTimeValue
@@ -12,6 +24,11 @@ from diet_tracker_server.repositories.tables import custom_foods, food_memory
 
 
 def _row_columns() -> tuple[Any, ...]:
+    """Return the canonical column projection for ``food_memory`` rows.
+
+    **Outputs:**
+    - tuple[Any, ...]: Ordered SQLAlchemy column elements ready for ``select()``.
+    """
     return (
         food_memory.c.id,
         food_memory.c.user_key,
@@ -34,29 +51,15 @@ def _row_columns() -> tuple[Any, ...]:
 
 
 class FoodMemoryRepository:
-    # Summary: Initializes a food-memory repository bound to an active SQLAlchemy session.
-    # Parameters:
-    # - session (AsyncSession): SQLAlchemy async session.
-    # Returns:
-    # - None: Stores the session for subsequent method calls.
     def __init__(self, session: AsyncSession) -> None:
+        """Bind the repository to an open async session.
+
+        **Inputs:**
+        - session (AsyncSession): SQLAlchemy async session used for all queries
+          issued by this repository instance.
+        """
         self._session = session
 
-    # Summary: Upserts a USDA-pointer memory entry, replacing any prior entry on the same name.
-    # Parameters:
-    # - user_key (str): Owning user.
-    # - name (str): Original-cased phrase.
-    # - normalized_name (str): Lookup key.
-    # - usda_fdc_id (int): USDA FDC identifier.
-    # - usda_description (str): USDA description (immutable receipt).
-    # - basis (str): Macro basis (`per_100g`/`per_serving`/`per_unit`).
-    # - serving_size/serving_size_unit: Optional serving info.
-    # - calories/protein_g/carbs_g/fat_g: Macros at the indicated basis.
-    # - now (DateTimeValue): Timestamp.
-    # Returns:
-    # - dict[str, Any]: Upserted row.
-    # Raises/Throws:
-    # - sqlalchemy.exc.SQLAlchemyError: Raised when SQL execution fails.
     async def upsert_usda(
         self,
         user_key: str,
@@ -74,6 +77,33 @@ class FoodMemoryRepository:
         now: DateTimeValue,
         aliases: list[str] | None = None,
     ) -> dict[str, Any]:
+        """Upsert a USDA-pointer memory entry, replacing any prior row on the same name.
+
+        The ``aliases`` argument is only written when explicitly supplied, so
+        callers that don't touch aliases will not clobber an existing list.
+
+        **Inputs:**
+        - user_key (str): Owning user.
+        - name (str): Original-cased phrase.
+        - normalized_name (str): Lookup key.
+        - usda_fdc_id (int): USDA FDC identifier.
+        - usda_description (str): USDA description (immutable receipt).
+        - basis (str): Macro basis (``per_100g``/``per_serving``/``per_unit``).
+        - serving_size (float | None): Optional serving size.
+        - serving_size_unit (str | None): Optional serving size unit.
+        - calories (int): Calories at the indicated basis.
+        - protein_g (float): Protein grams at the indicated basis.
+        - carbs_g (float): Carbohydrate grams at the indicated basis.
+        - fat_g (float): Fat grams at the indicated basis.
+        - now (DateTimeValue): Timestamp for ``created_at``/``updated_at``.
+        - aliases (list[str] | None): Optional alias array to overwrite.
+
+        **Outputs:**
+        - dict[str, Any]: The upserted row.
+
+        **Exceptions:**
+        - sqlalchemy.exc.SQLAlchemyError: Raised when SQL execution fails.
+        """
         values: dict[str, Any] = dict(
             user_key=user_key,
             name=name,
@@ -117,15 +147,6 @@ class FoodMemoryRepository:
         result = await self._session.execute(stmt)
         return dict(result.mappings().one())
 
-    # Summary: Upserts a custom-food-pointer memory entry; macros remain on the linked custom food.
-    # Parameters:
-    # - user_key (str): Owning user.
-    # - name (str): Original-cased phrase.
-    # - normalized_name (str): Lookup key.
-    # - custom_food_id (UUID): Linked custom food.
-    # - now (DateTimeValue): Timestamp.
-    # Returns:
-    # - dict[str, Any]: Upserted row.
     async def upsert_custom(
         self,
         user_key: str,
@@ -134,6 +155,18 @@ class FoodMemoryRepository:
         custom_food_id: UUID,
         now: DateTimeValue,
     ) -> dict[str, Any]:
+        """Upsert a custom-food-pointer memory entry; macros stay on the linked custom food.
+
+        **Inputs:**
+        - user_key (str): Owning user.
+        - name (str): Original-cased phrase.
+        - normalized_name (str): Lookup key.
+        - custom_food_id (UUID): Linked custom food.
+        - now (DateTimeValue): Timestamp for ``created_at``/``updated_at``.
+
+        **Outputs:**
+        - dict[str, Any]: The upserted row.
+        """
         insert_stmt = pg_insert(food_memory).values(
             user_key=user_key,
             name=name,
@@ -171,14 +204,21 @@ class FoodMemoryRepository:
         result = await self._session.execute(stmt)
         return dict(result.mappings().one())
 
-    # Summary: Looks up a memory entry by normalized name. Joins `custom_foods` for the macro snapshot
-    # when the entry points at a custom food.
-    # Parameters:
-    # - user_key (str): Owner.
-    # - normalized_name (str): Lookup key.
-    # Returns:
-    # - dict[str, Any] | None: Combined row including custom-food macros when applicable, or None.
     async def get_by_name(self, user_key: str, normalized_name: str) -> dict[str, Any] | None:
+        """Look up a memory entry by canonical name or alias.
+
+        Outer-joins ``custom_foods`` so callers receive the linked custom-food
+        macro snapshot in the same row when the memory entry points at one.
+
+        **Inputs:**
+        - user_key (str): Owner.
+        - normalized_name (str): Lookup key (matches either the canonical
+          ``normalized_name`` or any element of the ``aliases`` array).
+
+        **Outputs:**
+        - dict[str, Any] | None: Combined row including custom-food macros
+          when applicable, or ``None`` when no match exists.
+        """
         stmt = (
             select(
                 *_row_columns(),
@@ -211,12 +251,15 @@ class FoodMemoryRepository:
         row = result.mappings().first()
         return dict(row) if row else None
 
-    # Summary: Lists all memory entries for a user.
-    # Parameters:
-    # - user_key (str): Owner.
-    # Returns:
-    # - list[dict[str, Any]]: Rows ordered by normalized_name.
     async def list_for_user(self, user_key: str) -> list[dict[str, Any]]:
+        """List every memory entry for a user, ordered by name.
+
+        **Inputs:**
+        - user_key (str): Owner.
+
+        **Outputs:**
+        - list[dict[str, Any]]: Rows ordered by ``normalized_name``.
+        """
         stmt = (
             select(*_row_columns())
             .where(food_memory.c.user_key == user_key)
@@ -225,13 +268,16 @@ class FoodMemoryRepository:
         result = await self._session.execute(stmt)
         return [dict(row) for row in result.mappings().all()]
 
-    # Summary: Deletes a memory entry by normalized name.
-    # Parameters:
-    # - user_key (str): Owner.
-    # - normalized_name (str): Lookup key.
-    # Returns:
-    # - bool: True when a row was deleted.
     async def delete_by_name(self, user_key: str, normalized_name: str) -> bool:
+        """Delete a memory entry by normalized name.
+
+        **Inputs:**
+        - user_key (str): Owner.
+        - normalized_name (str): Lookup key.
+
+        **Outputs:**
+        - bool: ``True`` when a row was deleted.
+        """
         stmt = (
             delete(food_memory)
             .where(food_memory.c.user_key == user_key)
@@ -241,14 +287,6 @@ class FoodMemoryRepository:
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none() is not None
 
-    # Summary: Appends `alias` to the row's aliases array if not already present.
-    # Parameters:
-    # - user_key (str): Owner.
-    # - normalized_name (str): Canonical row identifier.
-    # - alias (str): Already-normalized alias to add.
-    # - now (DateTimeValue): Timestamp for updated_at.
-    # Returns:
-    # - dict[str, Any] | None: Updated row, or None if no such food_memory row exists.
     async def add_alias(
         self,
         user_key: str,
@@ -256,6 +294,21 @@ class FoodMemoryRepository:
         alias: str,
         now: DateTimeValue,
     ) -> dict[str, Any] | None:
+        """Append ``alias`` to the row's aliases array, deduplicated.
+
+        Uses ``array_append`` + ``unnest``/``DISTINCT`` so the alias is added
+        only when not already present.
+
+        **Inputs:**
+        - user_key (str): Owner.
+        - normalized_name (str): Canonical row identifier.
+        - alias (str): Already-normalized alias to add.
+        - now (DateTimeValue): Timestamp for ``updated_at``.
+
+        **Outputs:**
+        - dict[str, Any] | None: Updated row, or ``None`` if no such
+          ``food_memory`` row exists.
+        """
         stmt = (
             update(food_memory)
             .where(food_memory.c.user_key == user_key)
@@ -274,7 +327,6 @@ class FoodMemoryRepository:
         row = result.mappings().first()
         return dict(row) if row else None
 
-    # Summary: Removes `alias` from the row's aliases array. No-op if absent.
     async def remove_alias(
         self,
         user_key: str,
@@ -282,6 +334,18 @@ class FoodMemoryRepository:
         alias: str,
         now: DateTimeValue,
     ) -> dict[str, Any] | None:
+        """Remove ``alias`` from the row's aliases array; no-op when absent.
+
+        **Inputs:**
+        - user_key (str): Owner.
+        - normalized_name (str): Canonical row identifier.
+        - alias (str): Already-normalized alias to remove.
+        - now (DateTimeValue): Timestamp for ``updated_at``.
+
+        **Outputs:**
+        - dict[str, Any] | None: Updated row, or ``None`` if no such
+          ``food_memory`` row exists.
+        """
         stmt = (
             update(food_memory)
             .where(food_memory.c.user_key == user_key)

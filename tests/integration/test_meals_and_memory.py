@@ -1,3 +1,15 @@
+"""Integration tests for meal templates, food-memory, and meal/entry linkage.
+
+Covers ``custom_foods`` + ``food_memory`` round-trip via ``save_custom_food`` and
+``resolve_food_by_name``; the CHECK constraint that bans a ``food_entries`` row
+with both a USDA id and a ``custom_food_id``; meal creation, expansion into
+``food_entries`` with stamped ``meal_id``/``meal_name``, listing with totals;
+historical immutability of stamped meal name across rename and delete; and the
+guarantee that the public entries endpoint ignores client-supplied
+``meal_id``/``meal_name`` keys. Integration test: hits a real Postgres via
+``TEST_DATABASE_URL``.
+"""
+
 from __future__ import annotations
 
 import os
@@ -28,6 +40,14 @@ pytestmark = pytest.mark.integration
 
 
 def _integration_database_url() -> str:
+    """Resolve the SQLAlchemy URL for the integration database, skipping if unset.
+
+    **Outputs:**
+    - str: SQLAlchemy-async URL derived from ``TEST_DATABASE_URL``.
+
+    **Exceptions:**
+    - ``pytest.skip.Exception``: Raised via ``pytest.skip`` when ``TEST_DATABASE_URL`` is not set.
+    """
     raw_url = os.getenv("TEST_DATABASE_URL")
     if raw_url is None:
         pytest.skip("Set TEST_DATABASE_URL to run integration tests")
@@ -35,6 +55,11 @@ def _integration_database_url() -> str:
 
 
 async def _truncate(engine) -> None:
+    """Truncate all entry/meal/memory-related tables, restarting identity sequences.
+
+    **Inputs:**
+    - engine: SQLAlchemy async engine bound to the integration database.
+    """
     table_names = [
         "food_entries",
         "meal_items",
@@ -52,6 +77,11 @@ async def _truncate(engine) -> None:
 
 @pytest_asyncio.fixture(scope="session")
 async def session_factory() -> async_sessionmaker[AsyncSession]:
+    """Session-scoped async session factory bound to the integration engine.
+
+    **Outputs:**
+    - ``async_sessionmaker[AsyncSession]``: factory yielding async sessions.
+    """
     engine = create_async_engine(_integration_database_url(), pool_pre_ping=True)
     factory: async_sessionmaker[AsyncSession] = async_sessionmaker(engine, expire_on_commit=False)
     yield factory
@@ -60,6 +90,11 @@ async def session_factory() -> async_sessionmaker[AsyncSession]:
 
 @pytest_asyncio.fixture(autouse=True)
 async def clean_database(session_factory: async_sessionmaker[AsyncSession]) -> None:
+    """Auto-applied fixture that truncates suite tables before and after each test.
+
+    **Inputs:**
+    - session_factory: session-scoped factory whose bound engine drives truncation.
+    """
     await _truncate(session_factory.kw["bind"])
     yield
     await _truncate(session_factory.kw["bind"])
@@ -67,12 +102,21 @@ async def clean_database(session_factory: async_sessionmaker[AsyncSession]) -> N
 
 @pytest_asyncio.fixture
 async def session(session_factory: async_sessionmaker[AsyncSession]) -> AsyncSession:
+    """Per-test async session opened from the shared factory.
+
+    **Inputs:**
+    - session_factory: shared ``async_sessionmaker`` fixture.
+
+    **Outputs:**
+    - ``AsyncSession``: open session, closed when the test completes.
+    """
     async with session_factory() as db_session:
         yield db_session
 
 
 @pytest.mark.asyncio
 async def test_save_custom_food_writes_memory_pointer(session: AsyncSession) -> None:
+    """``upsert_custom_food_and_remember`` writes a ``food_memory`` row that ``resolve_food_by_name`` returns as ``custom_food``."""
     user_key = f"user-{uuid.uuid4()}"
     now = DateTimeValue.now(tz=TimezoneValue.utc)
 
@@ -101,6 +145,7 @@ async def test_save_custom_food_writes_memory_pointer(session: AsyncSession) -> 
 
 @pytest.mark.asyncio
 async def test_resolve_food_returns_none_when_unknown(session: AsyncSession) -> None:
+    """``resolve_food_by_name`` returns a ``type='none'`` result when no memory exists for the name."""
     user_key = f"user-{uuid.uuid4()}"
     resolved = await resolve_food_by_name(session=session, user_key=user_key, name="missing")
     assert resolved.type == "none"
@@ -108,6 +153,7 @@ async def test_resolve_food_returns_none_when_unknown(session: AsyncSession) -> 
 
 @pytest.mark.asyncio
 async def test_food_memory_usda_round_trip(session: AsyncSession) -> None:
+    """A USDA-backed ``food_memory`` row written via ``upsert_usda`` resolves via ``resolve_food_by_name`` with macros intact and case-insensitive name match."""
     user_key = f"user-{uuid.uuid4()}"
     now = DateTimeValue.now(tz=TimezoneValue.utc)
     repo = FoodMemoryRepository(session)
@@ -136,6 +182,7 @@ async def test_food_memory_usda_round_trip(session: AsyncSession) -> None:
 
 @pytest.mark.asyncio
 async def test_food_entries_check_constraint_blocks_dual_source(session: AsyncSession) -> None:
+    """``food_entries`` CHECK rejects a row that carries both ``usda_fdc_id`` and ``custom_food_id``."""
     user_key = f"user-{uuid.uuid4()}"
     now = DateTimeValue.now(tz=TimezoneValue.utc)
     log_date = now.date()
@@ -185,6 +232,7 @@ async def test_food_entries_check_constraint_blocks_dual_source(session: AsyncSe
 
 @pytest.mark.asyncio
 async def test_log_meal_expands_into_food_entries(session: AsyncSession) -> None:
+    """``log_meal`` expands every meal item into a ``food_entries`` row stamped with the meal id and name and shared ``entry_group_id``."""
     user_key = f"user-{uuid.uuid4()}"
     now = DateTimeValue.now(tz=TimezoneValue.utc)
 
@@ -236,6 +284,7 @@ async def test_log_meal_expands_into_food_entries(session: AsyncSession) -> None
 
 @pytest.mark.asyncio
 async def test_delete_custom_food_blocked_when_referenced(session: AsyncSession) -> None:
+    """Deleting a ``custom_foods`` row that is still referenced by a ``food_entries`` row fails with ``IntegrityError``."""
     user_key = f"user-{uuid.uuid4()}"
     now = DateTimeValue.now(tz=TimezoneValue.utc)
     log_date = now.date()
@@ -286,6 +335,7 @@ async def test_delete_custom_food_blocked_when_referenced(session: AsyncSession)
 
 @pytest.mark.asyncio
 async def test_meal_unique_name_per_user(session: AsyncSession) -> None:
+    """``create_meal_with_items`` enforces unique normalized meal names per user."""
     user_key = f"user-{uuid.uuid4()}"
     now = DateTimeValue.now(tz=TimezoneValue.utc)
     payload = MealCreate(
@@ -315,6 +365,7 @@ async def test_meal_unique_name_per_user(session: AsyncSession) -> None:
 
 @pytest.mark.asyncio
 async def test_list_meals_includes_item_counts(session: AsyncSession) -> None:
+    """``MealsRepository.list_meals`` returns per-meal ``item_count`` and macro totals (including zero for empty meals)."""
     user_key = f"user-{uuid.uuid4()}"
     now = DateTimeValue.now(tz=TimezoneValue.utc)
     repo = MealsRepository(session)
@@ -390,6 +441,7 @@ async def test_list_meals_includes_item_counts(session: AsyncSession) -> None:
 
 @pytest.mark.asyncio
 async def test_manual_entry_has_null_meal_link(session: AsyncSession) -> None:
+    """Ad-hoc ``create_food_entry`` calls store NULL ``meal_id`` and ``meal_name``."""
     user_key = f"user-{uuid.uuid4()}"
     now = DateTimeValue.now(tz=TimezoneValue.utc)
     log_date = now.date()
@@ -423,6 +475,7 @@ async def test_manual_entry_has_null_meal_link(session: AsyncSession) -> None:
 
 @pytest.mark.asyncio
 async def test_meal_rename_does_not_mutate_historical_entries(session: AsyncSession) -> None:
+    """Renaming a meal leaves the stamped ``meal_name`` on already-logged ``food_entries`` rows unchanged."""
     user_key = f"user-{uuid.uuid4()}"
     now = DateTimeValue.now(tz=TimezoneValue.utc)
 
@@ -473,6 +526,7 @@ async def test_meal_rename_does_not_mutate_historical_entries(session: AsyncSess
 
 @pytest.mark.asyncio
 async def test_meal_delete_sets_meal_id_null_keeps_meal_name(session: AsyncSession) -> None:
+    """Deleting a meal nulls ``meal_id`` on its historical entries while preserving the stamped ``meal_name``."""
     user_key = f"user-{uuid.uuid4()}"
     now = DateTimeValue.now(tz=TimezoneValue.utc)
 
@@ -516,7 +570,7 @@ async def test_meal_delete_sets_meal_id_null_keeps_meal_name(session: AsyncSessi
 
 @pytest.mark.asyncio
 async def test_public_entries_path_ignores_client_supplied_meal_link(session: AsyncSession) -> None:
-    """A client posting forged meal_id/meal_name via /entries must not stamp the row."""
+    """``create_entries_with_side_effects`` drops client-supplied ``meal_id``/``meal_name`` fields rather than stamping them on the row."""
     from diet_tracker_server.models import FoodEntryCreate
     from diet_tracker_server.services.entries_service import create_entries_with_side_effects
 
