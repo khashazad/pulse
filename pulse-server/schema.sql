@@ -202,6 +202,23 @@ create table if not exists containers (
 create unique index if not exists idx_containers_user_key_name on containers(user_key, normalized_name);
 create index if not exists idx_containers_user_key on containers(user_key);
 
+create table if not exists progress_photos (
+  id uuid primary key default gen_random_uuid(),
+  user_key text not null,
+  log_date date not null,
+  slot text not null check (slot in ('front','left','right','back')),
+  photo bytea not null,
+  photo_thumb bytea not null,
+  photo_mime text not null default 'image/jpeg',
+  bytes integer not null,
+  sha256 text not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (user_key, log_date, slot)
+);
+create index if not exists idx_progress_photos_user_date
+  on progress_photos (user_key, log_date desc);
+
 alter table food_memory add column if not exists aliases text[] not null default '{}'::text[];
 alter table meals add column if not exists aliases text[] not null default '{}'::text[];
 
