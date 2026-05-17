@@ -1,3 +1,10 @@
+/// Batch capture flow for the progress-photo 2×2 slot grid.
+///
+/// Hosts `PhotoCaptureSession`, which collects photos from the camera and/or
+/// photo library into a horizontal tray, lets the user tap-to-assign each
+/// photo to one of the `ProgressPhotoSlot` slots (front/back/left/right), and
+/// then uploads the whole batch via `ProgressPhotoStore.uploadBatch`. Also
+/// defines the private `CapturedPhoto` value type used for tray identity.
 import PhotosUI
 import SwiftUI
 import UIKit
@@ -8,15 +15,31 @@ import UIKit
 /// but `.draggable(UIImage:)` requires `Transferable` plumbing that adds a lot of
 /// surface area for what's a 4-slot grid on a small screen. Tap-to-assign is the
 /// same number of touches, more discoverable, and trivially testable.
+///
+/// Inputs:
+/// - date: the date the captured photos should be associated with on upload.
 struct PhotoCaptureSession: View {
     @Environment(ProgressPhotoStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     let date: Date
 
+    /// Identity-stable wrapper around a `UIImage` used to track photos in the tray
+    /// and slot assignments through reorderings.
     private struct CapturedPhoto: Identifiable, Hashable {
         let id = UUID()
         let image: UIImage
+        /// Equality compares only the stable id, not the underlying image.
+        ///
+        /// Inputs:
+        /// - lhs: left-hand photo.
+        /// - rhs: right-hand photo.
+        ///
+        /// Outputs: `true` if both wrappers share the same id.
         static func == (lhs: CapturedPhoto, rhs: CapturedPhoto) -> Bool { lhs.id == rhs.id }
+        /// Hashes only the stable id to match the `==` definition.
+        ///
+        /// Inputs:
+        /// - hasher: hasher accumulator.
         func hash(into hasher: inout Hasher) { hasher.combine(id) }
     }
 
@@ -129,6 +152,13 @@ struct PhotoCaptureSession: View {
         }
     }
 
+    /// Renders one slot cell that either shows its assigned photo or a dashed placeholder.
+    /// Tapping either assigns the currently selected tray photo or unassigns the cell.
+    ///
+    /// Inputs:
+    /// - slot: the progress-photo slot being rendered.
+    ///
+    /// Outputs: the slot cell `View`.
     private func slotCell(_ slot: ProgressPhotoSlot) -> some View {
         let photo = assignments[slot]
         return ZStack {
@@ -169,6 +199,12 @@ struct PhotoCaptureSession: View {
         }
     }
 
+    /// Moves a tray photo into a slot, evicting any prior occupant back to the tray
+    /// and removing duplicate assignments of the same photo from other slots.
+    ///
+    /// Inputs:
+    /// - photo: the tray photo being assigned.
+    /// - slot: the destination slot.
     private func assignTrayPhoto(_ photo: CapturedPhoto, to slot: ProgressPhotoSlot) {
         if let prev = assignments[slot] {
             unassigned.append(prev)
@@ -181,6 +217,11 @@ struct PhotoCaptureSession: View {
         selectedTrayID = nil
     }
 
+    /// Removes a slot's assignment and returns its photo to the tray.
+    ///
+    /// Inputs:
+    /// - slot: the slot to clear.
+    /// - photo: the photo to push back into the tray.
     private func unassignSlot(_ slot: ProgressPhotoSlot, photo: CapturedPhoto) {
         assignments[slot] = nil
         unassigned.append(photo)
@@ -206,6 +247,10 @@ struct PhotoCaptureSession: View {
         .disabled(assignments.isEmpty || uploading)
     }
 
+    /// Decodes `PhotosPicker` selections into `UIImage`s and appends them to the tray.
+    ///
+    /// Inputs:
+    /// - items: the items returned by the picker.
     private func loadPickerSelection(_ items: [PhotosPickerItem]) async {
         for item in items {
             if let data = try? await item.loadTransferable(type: Data.self),
@@ -216,6 +261,7 @@ struct PhotoCaptureSession: View {
         pickerItems = []
     }
 
+    /// Encodes every assigned photo as JPEG and hands the batch to the store for upload.
     private func submit() async {
         uploading = true
         defer { uploading = false }

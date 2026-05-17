@@ -1,9 +1,15 @@
+/// Vertical bar chart of per-day kcal totals (used by Week view).
+/// Highlights the most-recent day, labels columns with very-short weekday letters,
+/// and draws an optional daily-target threshold line.
 import SwiftUI
 
+/// Bar chart of `DailyLog.totalCalories` values with last-day highlight + target line.
 struct DailyKcalBars: View {
     let logs: [DailyLog]
     let targetCalories: Int?
 
+    /// Y-axis ceiling: the larger of the max day kcal and the target, floored at 1.
+    /// Outputs: positive integer used as the chart's vertical scale.
     private var ceiling: Int {
         max(logs.map(\.totalCalories).max() ?? 0, targetCalories ?? 0, 1)
     }
@@ -58,6 +64,12 @@ struct DailyKcalBars: View {
         }
     }
 
+    /// One bar column for a single day's log.
+    /// Inputs:
+    ///   - log: the day to render.
+    ///   - isLast: whether this is the most-recent day (triggers highlight styling).
+    ///   - plotHeight: vertical space available for the bar.
+    /// Outputs: composed column view.
     private func barColumn(log: DailyLog, isLast: Bool, plotHeight: CGFloat) -> some View {
         let h = max(2, CGFloat(log.totalCalories) / CGFloat(ceiling) * plotHeight)
         let gradient: LinearGradient = isLast
@@ -76,6 +88,10 @@ struct DailyKcalBars: View {
         .frame(maxWidth: .infinity)
     }
 
+    /// Very-short weekday symbol (e.g. "M", "T") for the given date.
+    /// Inputs:
+    ///   - date: the date to format.
+    /// Outputs: one-letter weekday string from the current calendar.
     private func weekdayLetter(for date: Date) -> String {
         let symbols = Self.cal.veryShortWeekdaySymbols
         let comp = Self.cal.component(.weekday, from: date)

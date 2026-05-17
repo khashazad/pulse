@@ -1,3 +1,6 @@
+/// List row for a saved meal shown in `MealsView`.
+/// Displays the meal's name, an optional notes/ingredient-count subtitle, total kcal,
+/// summed macros, and a trailing chevron indicating drill-down.
 import SwiftUI
 
 /// Variant A row — name + notes + ingredient count, kcal in mauve, P/C/F summary, chevron.
@@ -40,6 +43,8 @@ struct MealRow: View {
         .contentShape(Rectangle())
     }
 
+    /// Subtitle string: notes (if any) joined with the pluralized ingredient count.
+    /// Outputs: formatted subtitle text shown beneath the meal name.
     private var subtitle: String {
         let count = summary.itemCount
         let countText = "\(count) \(count == 1 ? "ingredient" : "ingredients")"
@@ -49,6 +54,8 @@ struct MealRow: View {
         return countText
     }
 
+    /// Compact `P… · C… · F…` macro summary string with rounded grams.
+    /// Outputs: monospaced summary string for the trailing column.
     private var macroSummary: String {
         let p = Int(summary.totalProteinG.rounded())
         let c = Int(summary.totalCarbsG.rounded())

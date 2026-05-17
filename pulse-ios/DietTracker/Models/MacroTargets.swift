@@ -1,5 +1,8 @@
+/// Wire model for the user's daily macro targets plus optional target weight.
+/// Used by the targets-editing UI and by `DailySummary` to compute remaining macros.
 import Foundation
 
+/// User's daily calorie/macro targets and optional goal weight.
 struct MacroTargets: Codable, Equatable {
     let calories: Int
     let proteinG: Double

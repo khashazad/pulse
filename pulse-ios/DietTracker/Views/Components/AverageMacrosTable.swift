@@ -1,5 +1,8 @@
+/// Reusable card displaying average daily macros over a period.
+/// Shows a kcal headline plus per-macro grams rows. Used by Week/Month/Year screens.
 import SwiftUI
 
+/// Card view rendering avg kcal + protein/carbs/fat grams per day.
 struct AverageMacrosTable: View {
     let avgKcal: Int
     let avgProteinG: Int
@@ -39,6 +42,11 @@ struct AverageMacrosTable: View {
         .ctpCard()
     }
 
+    /// One macro row: colored dot + label + grams.
+    /// Inputs:
+    ///   - macro: which macro (protein/carbs/fat) determines color and label.
+    ///   - value: grams to display.
+    /// Outputs: composed row view.
     private func row(_ macro: Theme.Macro, value: Int) -> some View {
         HStack(spacing: 10) {
             Circle()

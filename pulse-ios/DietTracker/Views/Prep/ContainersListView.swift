@@ -1,5 +1,12 @@
+/// Manager screen for the user's saved containers (pots, meal-prep boxes).
+///
+/// Hosts `ContainersListView`, which loads/edits/deletes containers via
+/// `ContainersListModel` and presents `ContainerEditView` for create/edit.
+/// Also defines `ContainerRow`, the shared row used to render a container's
+/// thumbnail, name, and tare weight in this list and in `ContainerPickerSheet`.
 import SwiftUI
 
+/// Full-screen list of containers with add, edit, and delete affordances.
 struct ContainersListView: View {
     @Environment(AuthSession.self) private var auth
     @Environment(\.dismiss) private var dismiss
@@ -94,11 +101,16 @@ struct ContainersListView: View {
         }
     }
 
+    /// Lazily instantiates the `ContainersListModel` on first use.
     private func ensureModel() async {
         if model == nil { model = ContainersListModel(auth: auth) }
     }
 }
 
+/// Reusable row showing a container's thumbnail, name, and tare weight in grams.
+///
+/// Inputs:
+/// - container: the `Container` to render.
 struct ContainerRow: View {
     @Environment(AuthSession.self) private var auth
     let container: Container

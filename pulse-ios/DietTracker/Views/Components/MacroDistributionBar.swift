@@ -1,3 +1,6 @@
+/// Capsule-clipped macro distribution bar.
+/// Splits a horizontal bar into three colored segments sized by kcal contribution
+/// from protein, carbs, and fat. Used on meal detail and similar surfaces.
 import SwiftUI
 
 /// Single horizontal bar split into Protein/Carbs/Fat segments by kcal contribution.
@@ -8,6 +11,8 @@ struct MacroDistributionBar: View {
     let fatG: Double
     var height: CGFloat = 5
 
+    /// Total kcal across the three macros, clamped to at least 1 to avoid divide-by-zero.
+    /// Outputs: positive kcal total used as the segment-width denominator.
     private var totalKcal: Double {
         let total = proteinG * 4 + carbsG * 4 + fatG * 9
         return total > 0 ? total : 1

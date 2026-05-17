@@ -1,3 +1,8 @@
+/// AuthSession: Google-OAuth backed auth state for the iOS client.
+/// Manages the signed-in lifecycle, persists session tokens in Keychain, drives
+/// ASWebAuthenticationSession for sign-in, and produces authenticated clients
+/// (DietTrackerClient, ProgressPhotoClient) used elsewhere in the app.
+/// Role: top-level observable injected into the SwiftUI environment.
 import Foundation
 import Observation
 import AuthenticationServices
@@ -5,8 +10,10 @@ import os.log
 
 private let authDiagLog = Logger(subsystem: "com.khxsh.diettracker", category: "AuthDiag")
 
+/// Observable session manager that owns auth state, token storage, and OAuth orchestration.
 @Observable
 final class AuthSession {
+    /// Discrete states of the sign-in lifecycle.
     enum State: Equatable {
         case signedOut
         case signingIn
@@ -38,6 +45,12 @@ final class AuthSession {
     /// before `start()` and ASWebAuth refuses to present.
     private var activeWebAuthContextProvider: ASWebAuthenticationPresentationContextProviding?
 
+    /// Initializes the session, restoring any token from Keychain and cleaning up legacy API-key items.
+    /// Inputs:
+    ///   - baseURL: backend base URL used for OAuth and API calls.
+    ///   - keychainService: Keychain service name for the session item.
+    ///   - keychainAccount: Keychain account name for the session item.
+    ///   - urlSession: URLSession used for whoami/logout and authenticated clients.
     init(
         baseURL: URL,
         keychainService: String = Constants.Keychain.sessionService,
@@ -62,6 +75,9 @@ final class AuthSession {
         )
     }
 
+    /// Parses an OAuth callback URL and either persists the new session or surfaces an error.
+    /// Inputs:
+    ///   - url: callback URL delivered by ASWebAuthenticationSession.
     func handleSignInCallback(url: URL) {
         switch AuthCallbackParser.parse(url) {
         case .success(let creds):
@@ -76,6 +92,8 @@ final class AuthSession {
         }
     }
 
+    /// Validates a stored token at app launch with a whoami call, clearing it on 401.
+    /// Network/server failures are non-fatal — the optimistic signed-in state is kept.
     func bootstrap() async {
         guard let token = storedToken else { return }
         let client = DietTrackerClient(
@@ -93,6 +111,7 @@ final class AuthSession {
         }
     }
 
+    /// Clears Keychain and per-session caches in response to a 401 from any caller.
     func handleUnauthorized() {
         authDiagLog.notice("handleUnauthorized: clearing Keychain")
         _ = clearStored()
@@ -100,6 +119,7 @@ final class AuthSession {
         onSessionCleared?()
     }
 
+    /// User-initiated sign-out: best-effort server revoke, then clears Keychain and caches.
     func signOut() async {
         authDiagLog.notice("signOut: user-initiated, clearing Keychain")
         if let token = storedToken {
@@ -116,27 +136,39 @@ final class AuthSession {
         onSessionCleared?()
     }
 
+    /// Builds an authenticated DietTrackerClient using the stored session token, or nil if signed out.
+    /// Outputs: authenticated client, or nil when no token is in Keychain.
     func makeClient() -> DietTrackerClient? {
         guard let token = storedToken else { return nil }
         return DietTrackerClient(baseURL: baseURL, sessionToken: token, session: urlSession)
     }
 
+    /// Builds an authenticated ProgressPhotoClient using the stored session token, or nil if signed out.
+    /// Outputs: authenticated photo client, or nil when no token is in Keychain.
     func makeProgressPhotoClient() -> ProgressPhotoClient? {
         guard let token = storedToken else { return nil }
         return ProgressPhotoClient(baseURL: baseURL, sessionToken: token, session: urlSession)
     }
 
+    /// URL to open in ASWebAuthenticationSession to begin the OAuth flow.
+    /// Outputs: fully qualified URL of the server's sign-in entry point.
     func startSignInURL() -> URL {
         baseURL.appendingPathComponent(Constants.Auth.startPath)
     }
 
     // MARK: - storage
 
+    /// Codable record persisted in Keychain to remember the active session.
     private struct StoredSession: Codable {
         let token: String
         let email: String
     }
 
+    /// Reads and decodes the stored session from Keychain.
+    /// Inputs:
+    ///   - service: Keychain service name.
+    ///   - account: Keychain account name.
+    /// Outputs: decoded StoredSession, or nil when missing/corrupt.
     private static func readStored(service: String, account: String) -> StoredSession? {
         guard
             let raw = KeychainStore.read(service: service, account: account),
@@ -146,6 +178,10 @@ final class AuthSession {
         return stored
     }
 
+    /// Encodes and writes a session record to Keychain.
+    /// Inputs:
+    ///   - stored: session record to persist.
+    /// Outputs: true on success, false if encoding or Keychain write fails.
     private func writeStored(_ stored: StoredSession) -> Bool {
         guard
             let data = try? JSONEncoder().encode(stored),
@@ -154,6 +190,8 @@ final class AuthSession {
         return KeychainStore.write(raw, service: keychainService, account: keychainAccount)
     }
 
+    /// Deletes the Keychain-backed session record.
+    /// Outputs: true when the item was removed (or did not exist).
     @discardableResult
     private func clearStored() -> Bool {
         KeychainStore.delete(service: keychainService, account: keychainAccount)
@@ -164,8 +202,12 @@ final class AuthSession {
     }
 }
 
+/// Main-actor extension that owns the ASWebAuthenticationSession lifecycle.
 @MainActor
 extension AuthSession {
+    /// Drives the Google OAuth flow from start to callback handling.
+    /// Inputs:
+    ///   - presentationAnchor: window scene used to host the web-auth UI.
     func signInWithGoogle(presentationAnchor: ASPresentationAnchor) async {
         state = .signingIn
         let url = startSignInURL()
@@ -187,6 +229,15 @@ extension AuthSession {
         }
     }
 
+    /// Wraps ASWebAuthenticationSession in an async/await throwing call, retaining the
+    /// session and its presentation-context provider so neither is deallocated mid-flow.
+    /// Inputs:
+    ///   - url: sign-in entry point URL.
+    ///   - callbackScheme: custom URL scheme used by the callback.
+    ///   - presentationAnchor: window scene used to host the web-auth UI.
+    /// Outputs: the callback URL containing OAuth credentials.
+    /// Exceptions: ASWebAuthenticationSessionError on user cancel or system failure;
+    /// DietTrackerError.signInFailed when the session yields no callback or fails to start.
     private func startWebAuth(
         url: URL,
         callbackScheme: String,
@@ -234,9 +285,17 @@ extension AuthSession {
     }
 }
 
+/// Strongly-retained presentation-context provider for ASWebAuthenticationSession.
 private final class SignInPresentationContextProvider: NSObject, ASWebAuthenticationPresentationContextProviding {
     private let anchor: ASPresentationAnchor
+    /// Initializes the provider with the anchor to vend to ASWebAuth.
+    /// Inputs:
+    ///   - anchor: window scene to host the web-auth UI.
     init(anchor: ASPresentationAnchor) { self.anchor = anchor }
+    /// Returns the stored presentation anchor for the given web-auth session.
+    /// Inputs:
+    ///   - session: the requesting ASWebAuthenticationSession.
+    /// Outputs: the anchor captured at init time.
     func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
         anchor
     }

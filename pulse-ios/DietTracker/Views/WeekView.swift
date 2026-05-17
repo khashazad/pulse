@@ -1,5 +1,9 @@
+/// Intake → Week sub-tab.
+/// Renders the last seven days of intake via `WeekModel`: daily kcal bars,
+/// week total + percent-of-target chip, and average macros table.
 import SwiftUI
 
+/// Week-period summary screen: daily kcal bars + week total + average macros table.
 struct WeekView: View {
     @Environment(AuthSession.self) private var auth
     @State private var model: WeekModel?
@@ -37,6 +41,11 @@ struct WeekView: View {
         .refreshable { await model?.loadLast7Days() }
     }
 
+    /// Body for the loaded state. Computes totals and percent-of-target from `logs`
+    /// then assembles the summary card and averages table.
+    /// Inputs:
+    ///   - logs: daily logs for the last seven days.
+    /// Outputs: composed scrollable view.
     private func loadedBody(_ logs: [DailyLog]) -> some View {
         let chronological = logs.sorted { $0.date < $1.date }
         let total = chronological.map(\.totalCalories).reduce(0, +)
@@ -65,6 +74,13 @@ struct WeekView: View {
         }
     }
 
+    /// Top summary card: week total kcal, percent-of-target chip, and daily kcal bars.
+    /// Inputs:
+    ///   - logs: chronologically sorted daily logs.
+    ///   - total: total kcal across the week.
+    ///   - pct: percent of weekly kcal target reached (nil if no target).
+    ///   - dailyTarget: daily kcal target used for the bar threshold line.
+    /// Outputs: composed card view.
     private func weekSummaryCard(logs: [DailyLog], total: Int, pct: Int?, dailyTarget: Int?) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline) {

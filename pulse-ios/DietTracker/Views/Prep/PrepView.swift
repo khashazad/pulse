@@ -1,5 +1,13 @@
+/// Meal-prep portioning screen.
+///
+/// Hosts `PrepView`, which lets the user pick a container, enter the total
+/// weight reading from the scale, and divide the net food (gross minus tare)
+/// into a configurable number of portions. Also drives the container picker
+/// sheet, the container-manager sheet, and persists "last used container" in
+/// `UserDefaults` for quick re-selection.
 import SwiftUI
 
+/// Top-level screen for portioning a batch of prepped food by container + scale weight.
 struct PrepView: View {
     @Environment(AuthSession.self) private var auth
     @State private var model = PrepModel()
@@ -118,11 +126,17 @@ struct PrepView: View {
         }
     }
 
+    /// Stores the picked container on the model and remembers it as "last used".
+    ///
+    /// Inputs:
+    /// - c: the container the user picked.
     private func applyPick(_ c: Container) {
         model.selectedContainer = c
         UserDefaults.standard.set(c.id.uuidString, forKey: "prep.lastContainerId")
     }
 
+    /// Restores the previously-used container from `UserDefaults` when nothing
+    /// is selected yet and the list has loaded.
     private func applyLastUsedIfNeeded() {
         guard model.selectedContainer == nil,
               let raw = UserDefaults.standard.string(forKey: "prep.lastContainerId"),
@@ -137,6 +151,10 @@ struct PrepView: View {
     /// edits propagate (e.g. tare changed in the manager) and deletions clear
     /// the selection. Without this, `selectedContainer` keeps pointing at a
     /// stale snapshot and the math would silently use an outdated tare.
+    ///
+    /// Replaces the model's `selectedContainer` with the fresh copy when the
+    /// stored container still exists, or clears it (and the saved default)
+    /// when the container has been deleted.
     private func reconcileSelection() {
         guard let current = model.selectedContainer else { return }
         guard case .loaded(let list) = listModel?.state ?? .idle else { return }
@@ -148,6 +166,13 @@ struct PrepView: View {
         }
     }
 
+    /// Wraps a card-styled content block under an uppercase section header.
+    ///
+    /// Inputs:
+    /// - header: section title shown above the card.
+    /// - content: view builder for the card body.
+    ///
+    /// Outputs: a `View` containing the header label and themed card body.
     @ViewBuilder
     private func section<Content: View>(
         header: String,
@@ -166,6 +191,13 @@ struct PrepView: View {
         }
     }
 
+    /// Renders a label/value row used in the Result card.
+    ///
+    /// Inputs:
+    /// - label: left-aligned descriptive label.
+    /// - value: optional gram value; renders an em-dash placeholder when nil.
+    ///
+    /// Outputs: a styled row `View` for the result card.
     private func resultRow(_ label: String, value: Double?) -> some View {
         HStack {
             Text(label)

@@ -1,9 +1,15 @@
+/// Bottom floating-dock tab bar used by `RootView`.
+/// Defines the four top-level tabs (`DockTab`) and renders them as a capsule-shaped
+/// pill of glyph + label buttons that drive the binding back to the parent.
 import SwiftUI
 
+/// Identifies one of the four top-level tabs hosted by `RootView`.
 enum DockTab: Hashable {
     case intake, meals, prep, measures
 }
 
+/// Floating capsule tab bar shown at the bottom of `RootView`.
+/// Renders four `tabButton`s and writes the selected tab back through the `tab` binding.
 struct FloatingDock: View {
     @Binding var tab: DockTab
 
@@ -36,6 +42,12 @@ struct FloatingDock: View {
         )
     }
 
+    /// One tap-target in the dock; selects `target` on tap.
+    /// Inputs:
+    ///   - target: tab this button activates.
+    ///   - system: SF Symbol name to display.
+    ///   - label: text label shown below the glyph.
+    /// Outputs: composed button view.
     private func tabButton(_ target: DockTab, system: String, label: String) -> some View {
         Button {
             tab = target
@@ -45,6 +57,12 @@ struct FloatingDock: View {
         .buttonStyle(.plain)
     }
 
+    /// Visual contents of a tab button: glyph stacked over label, with active-state styling.
+    /// Inputs:
+    ///   - system: SF Symbol name to display.
+    ///   - label: text label shown below the glyph.
+    ///   - isActive: whether this tab is the currently selected one.
+    /// Outputs: composed contents view.
     private func tabContents(system: String, label: String, isActive: Bool) -> some View {
         VStack(spacing: 3) {
             Image(systemName: system)

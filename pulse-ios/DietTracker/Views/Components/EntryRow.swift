@@ -1,5 +1,8 @@
+/// List row for a single `FoodEntry`.
+/// Shows display name, quantity text, kcal in mauve accent, and a per-macro grams line.
 import SwiftUI
 
+/// One row in the day's entries list rendering a `FoodEntry`.
 struct EntryRow: View {
     let entry: FoodEntry
 
@@ -36,6 +39,11 @@ struct EntryRow: View {
         .padding(.vertical, 10)
     }
 
+    /// Inline macro readout: colored dot + short label + grams.
+    /// Inputs:
+    ///   - macro: which macro determines color and short label.
+    ///   - grams: grams to display (rounded for output).
+    /// Outputs: composed inline view.
     private func macroLine(_ macro: Theme.Macro, grams: Double) -> some View {
         HStack(spacing: 4) {
             Circle()

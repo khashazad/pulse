@@ -1,5 +1,12 @@
+/// Weight log sub-tab of the Measures screen.
+///
+/// Hosts `WeightLogView`, which loads entries via `WeightLogModel`, splits them
+/// into a prominent "Today" card and a list of past weigh-ins (with per-row
+/// deltas), and presents `WeightEntrySheet` for add/edit/delete actions.
+/// Also defines the local `SheetState` enum that drives the entry sheet.
 import SwiftUI
 
+/// Main view for viewing and editing the user's daily weight log.
 struct WeightLogView: View {
     @Environment(AuthSession.self) private var auth
     @State private var model: WeightLogModel?
@@ -8,6 +15,7 @@ struct WeightLogView: View {
     @AppStorage(WeightUnit.displayPreferenceKey)
     private var displayUnitRaw: String = WeightUnit.defaultDisplayUnit.rawValue
 
+    /// Drives which variant of `WeightEntrySheet` is presented.
     enum SheetState: Identifiable {
         case add(Date)
         case edit(WeightEntry)
@@ -65,6 +73,12 @@ struct WeightLogView: View {
         }
     }
 
+    /// Renders the loaded list of weight entries split into Today + Past sections.
+    ///
+    /// Inputs:
+    /// - entries: the loaded entries; this method sorts and partitions internally.
+    ///
+    /// Outputs: the composed scroll view.
     @ViewBuilder
     private func loadedBody(_ entries: [WeightEntry]) -> some View {
         let displayUnit = WeightUnit(rawValue: displayUnitRaw) ?? .lb
@@ -84,6 +98,15 @@ struct WeightLogView: View {
         }
     }
 
+    /// Builds the top "Today" card with either the current weigh-in or an add prompt,
+    /// plus a tap-to-toggle lb/kg display unit chip.
+    ///
+    /// Inputs:
+    /// - today: the start-of-day date for today.
+    /// - entry: today's entry if present, else nil.
+    /// - unit: current display unit.
+    ///
+    /// Outputs: the today-card `View`.
     private func todayCard(today: Date, entry: WeightEntry?, unit: WeightUnit) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline) {
@@ -144,6 +167,13 @@ struct WeightLogView: View {
         .ctpCard()
     }
 
+    /// Renders the "Past" section, capped to the 12 most recent prior entries.
+    ///
+    /// Inputs:
+    /// - past: entries from days other than today, sorted newest first.
+    /// - unit: current display unit.
+    ///
+    /// Outputs: the past-section `View`.
     private func pastSection(past: [WeightEntry], unit: WeightUnit) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline) {
@@ -188,6 +218,14 @@ struct WeightLogView: View {
         }
     }
 
+    /// Renders one row of the Past section with date, day-over-day delta, and weight.
+    ///
+    /// Inputs:
+    /// - entry: the entry shown by this row.
+    /// - delta: difference in pounds from the next-older entry, or nil if unknown.
+    /// - unit: current display unit.
+    ///
+    /// Outputs: a tappable past-row `View` that opens the edit sheet.
     private func pastRow(entry: WeightEntry, delta: Double?, unit: WeightUnit) -> some View {
         Button {
             sheetState = .edit(entry)
@@ -217,6 +255,13 @@ struct WeightLogView: View {
         .buttonStyle(.plain)
     }
 
+    /// Picks a foreground color for a delta value: peach for gains, green for losses,
+    /// tertiary gray within the ±0.1 lb noise band.
+    ///
+    /// Inputs:
+    /// - delta: difference in pounds.
+    ///
+    /// Outputs: the color to use for that delta.
     private func deltaColor(_ delta: Double) -> Color {
         if delta > 0.1 { return Theme.CTP.peach }
         if delta < -0.1 { return Theme.CTP.green }

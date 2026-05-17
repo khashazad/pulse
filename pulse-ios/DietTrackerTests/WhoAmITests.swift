@@ -1,7 +1,13 @@
+/// Unit tests for `WhoAmI` decoding.
+/// Confirms the `/auth/whoami` response fixture decodes email and ISO-8601
+/// `expires_at` correctly via the shared `dietTrackerDefault()` decoder.
+/// Part of the iOS app's auth-layer test suite.
 import XCTest
 @testable import DietTracker
 
 final class WhoAmITests: XCTestCase {
+    /// Verifies the fixture decodes with the expected email and that
+    /// `expiresAt` matches the embedded ISO-8601 timestamp within one second.
     func testDecodesFromFixture() throws {
         let bundle = Bundle(for: Self.self)
         let url = bundle.url(forResource: "whoami", withExtension: "json")!

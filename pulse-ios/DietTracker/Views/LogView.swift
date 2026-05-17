@@ -1,9 +1,16 @@
+/// Intake-tab root screen.
+/// Hosts a segmented sub-tab control (Today / Week / Month / Year) that swaps in
+/// `DayMacroView`, `WeekView`, `MonthView`, or `YearView`. Also exposes a calendar
+/// toolbar button that opens `DatePickerSheet` for navigating to an arbitrary day.
 import SwiftUI
 
+/// Sub-tab identifiers used by the segmented control inside `LogView`.
 enum LogSubTab: Hashable {
     case today, week, month, year
 }
 
+/// Intake-tab content: segmented period picker plus a date-picker toolbar action.
+/// Calls `onOpenDate` when the user picks a specific day to drill into.
 struct LogView: View {
     @State private var subTab: LogSubTab = .today
     @State private var showDatePicker = false
@@ -77,6 +84,8 @@ struct LogView: View {
     }
 }
 
+/// Modal date-picker sheet used by `LogView` to jump to an arbitrary past day.
+/// Calls `onOpen` with the chosen date when the user confirms.
 struct DatePickerSheet: View {
     let onOpen: (Date) -> Void
     @Environment(\.dismiss) private var dismiss

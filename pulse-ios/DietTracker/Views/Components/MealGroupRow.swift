@@ -1,5 +1,9 @@
+/// Expandable row for a logged meal in the day's entries list.
+/// Header shows meal name + item count + total kcal + summed macro line; tap toggles
+/// an inline list of each underlying `FoodEntry` rendered via `EntryRow`.
 import SwiftUI
 
+/// Day-entries row representing a `MealGroup`; expands to reveal its `EntryRow`s.
 struct MealGroupRow: View {
     let group: MealGroup
     @State private var isExpanded = false
@@ -79,6 +83,11 @@ struct MealGroupRow: View {
         }
     }
 
+    /// Inline macro readout used in the header summary line.
+    /// Inputs:
+    ///   - macro: which macro determines color and short label.
+    ///   - grams: grams to display (rounded for output).
+    /// Outputs: composed inline view.
     private func macroLine(_ macro: Theme.Macro, grams: Double) -> some View {
         HStack(spacing: 4) {
             Circle()
@@ -111,6 +120,7 @@ struct MealGroupRow: View {
 
     // MARK: - actions
 
+    /// Animates `isExpanded` between collapsed and expanded states.
     private func toggle() {
         withAnimation(.easeInOut(duration: 0.2)) {
             isExpanded.toggle()

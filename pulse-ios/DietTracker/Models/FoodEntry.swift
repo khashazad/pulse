@@ -1,5 +1,10 @@
+/// Wire model for a single logged food entry (one row in the day's food list).
+/// Captures the display name, quantity, normalized USDA/custom-food refs, computed
+/// macros, optional meal grouping, and audit timestamps.
+/// Used throughout the logging, editing, and history flows.
 import Foundation
 
+/// A single logged food item with its macros, source refs, and timestamps.
 struct FoodEntry: Codable, Identifiable, Equatable {
     let id: UUID
     let dailyLogId: UUID

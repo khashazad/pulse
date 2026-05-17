@@ -1,6 +1,15 @@
+/// Trends sub-tab of the Measures screen.
+///
+/// Defines `WeightChartRange` (7d/30d/1y windows for the chart), hosts
+/// `WeightTrendsView` which renders a Swift Charts weight-over-time card
+/// (with regression dashed line and target rule) plus an Analytics card with
+/// estimated maintenance kcal, recent trend, and ETA-to-target derived from
+/// `WeightTrendsModel` + `UserTargetsStore`. Internally uses the private
+/// `RegressionLine` value type for the linear-fit overlay.
 import SwiftUI
 import Charts
 
+/// Selectable time window for the weight-over-time chart.
 enum WeightChartRange: String, CaseIterable, Hashable {
     case d7, d30, y1
 
@@ -21,6 +30,7 @@ enum WeightChartRange: String, CaseIterable, Hashable {
     }
 }
 
+/// Trends screen showing a weight-over-time chart plus analytics derived from logs.
 struct WeightTrendsView: View {
     @Environment(AuthSession.self) private var auth
     @Environment(UserTargetsStore.self) private var targetsStore
@@ -61,6 +71,12 @@ struct WeightTrendsView: View {
         .refreshable { await model?.load() }
     }
 
+    /// Renders the loaded chart + analytics layout.
+    ///
+    /// Inputs:
+    /// - result: precomputed analytics from the model.
+    ///
+    /// Outputs: the composed scroll view.
     @ViewBuilder
     private func loadedBody(_ result: WeightAnalyticsResult) -> some View {
         let displayUnit = WeightUnit(rawValue: displayUnitRaw) ?? .lb
@@ -75,6 +91,12 @@ struct WeightTrendsView: View {
         }
     }
 
+    /// Filters entries to those within the currently selected chart range.
+    ///
+    /// Inputs:
+    /// - entries: all entries from the model.
+    ///
+    /// Outputs: entries whose date is within `weightChartRange.days` of today.
     private func filteredEntries(_ entries: [WeightEntry]) -> [WeightEntry] {
         let cutoff = Calendar.current.date(
             byAdding: .day, value: -(weightChartRange.days - 1), to: Date()
@@ -82,6 +104,14 @@ struct WeightTrendsView: View {
         return entries.filter { $0.date >= Calendar.current.startOfDay(for: cutoff) }
     }
 
+    /// Builds the chart card showing weight points, regression dashes, and target rule.
+    ///
+    /// Inputs:
+    /// - entries: all loaded entries (filtered/sorted internally).
+    /// - target: the user's target weight in pounds, if set.
+    /// - unit: current display unit.
+    ///
+    /// Outputs: the chart card `View`.
     private func weightOverTimeCard(entries: [WeightEntry], target: Double?, unit: WeightUnit) -> some View {
         let visible = filteredEntries(entries).sorted { $0.date < $1.date }
         return VStack(alignment: .leading, spacing: 8) {
@@ -155,6 +185,7 @@ struct WeightTrendsView: View {
         .padding(16).ctpCard()
     }
 
+    /// Endpoints of a linear regression fit through the filtered entries, in display units.
     private struct RegressionLine {
         let startDate: Date
         let endDate: Date
@@ -162,6 +193,14 @@ struct WeightTrendsView: View {
         let endY: Double
     }
 
+    /// Computes a least-squares regression line over the given entries.
+    ///
+    /// Inputs:
+    /// - entries: chronologically ordered weight entries.
+    /// - unit: display unit; y-values are converted before fitting.
+    ///
+    /// Outputs: a `RegressionLine` for chart overlay, or nil if fewer than 8
+    ///   points are present or the fit is degenerate.
     private func regressionLine(for entries: [WeightEntry], unit: WeightUnit) -> RegressionLine? {
         guard entries.count >= 8 else { return nil }
         let ys = entries.map { WeightFormatter.fromLb($0.weightLb, to: unit) }
@@ -183,6 +222,13 @@ struct WeightTrendsView: View {
         )
     }
 
+    /// Renders the maintenance/trend/ETA analytics card.
+    ///
+    /// Inputs:
+    /// - result: precomputed analytics from the model.
+    /// - unit: current display unit.
+    ///
+    /// Outputs: the analytics card `View`.
     private func analyticsCard(result: WeightAnalyticsResult, unit: WeightUnit) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Analytics")
@@ -220,6 +266,13 @@ struct WeightTrendsView: View {
         .padding(16).ctpCard()
     }
 
+    /// Renders the single ETA line under the analytics card based on result and target state.
+    ///
+    /// Inputs:
+    /// - result: precomputed analytics from the model.
+    /// - unit: current display unit.
+    ///
+    /// Outputs: the ETA `View`, or a prompt to set a target when none is configured.
     @ViewBuilder
     private func etaLine(result: WeightAnalyticsResult, unit: WeightUnit) -> some View {
         if model?.targetWeightLb == nil {

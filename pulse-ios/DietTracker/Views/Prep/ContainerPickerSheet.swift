@@ -1,5 +1,15 @@
+/// Modal picker sheet used by the Prep flow to choose an existing container.
+///
+/// Hosts `ContainerPickerSheet`, which loads the user's containers via
+/// `ContainersListModel`, presents loading/empty/failed states, and renders a
+/// list of `ContainerRow`s. Tapping a row invokes the consumer's callback and
+/// dismisses the sheet. Read-only — editing is delegated to `ContainersListView`.
 import SwiftUI
 
+/// Bottom sheet that lets the user select one of their saved containers.
+///
+/// Inputs:
+/// - onPick: callback invoked with the chosen `Container` before dismissal.
 struct ContainerPickerSheet: View {
     @Environment(AuthSession.self) private var auth
     @Environment(\.dismiss) private var dismiss

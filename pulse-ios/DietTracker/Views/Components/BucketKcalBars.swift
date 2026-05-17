@@ -1,10 +1,16 @@
+/// Vertical bar chart for bucketed average kcal/day (e.g., weekly buckets in Month,
+/// monthly buckets in Year). Highlights the current bucket and draws an optional
+/// target threshold line.
 import SwiftUI
 
+/// Bar chart of `PeriodBucket.avgKcalPerDay` values, with active-bucket highlight.
 struct BucketKcalBars: View {
     let buckets: [PeriodBucket]
     let header: String
     let targetCalories: Int?
 
+    /// Y-axis ceiling: the larger of max bucket value and the target, floored at 1.
+    /// Outputs: positive integer used as the chart's vertical scale.
     private var ceiling: Int {
         max(buckets.map(\.avgKcalPerDay).max() ?? 0, targetCalories ?? 0, 1)
     }
@@ -53,6 +59,11 @@ struct BucketKcalBars: View {
         }
     }
 
+    /// One bar column: gradient-filled rounded rect with the bucket label underneath.
+    /// Inputs:
+    ///   - bucket: the period bucket to render.
+    ///   - plotHeight: vertical space available for the bar (excluding label).
+    /// Outputs: composed column view.
     private func barColumn(bucket: PeriodBucket, plotHeight: CGFloat) -> some View {
         let h = max(2, CGFloat(bucket.avgKcalPerDay) / CGFloat(ceiling) * plotHeight)
         let gradient: LinearGradient = bucket.isCurrent

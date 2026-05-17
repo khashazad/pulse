@@ -1,3 +1,7 @@
+/// Wire models for saved meals (named bundles of food items).
+/// Defines the list-row shape (`MealSummary`), list envelope, the full
+/// `Meal` record with its `MealItem`s, and a `totals` extension that sums
+/// the items' macros. Used by the meals browse, detail, and log flows.
 import Foundation
 
 /// Row shape returned by `GET /meals` — includes per-meal aggregate totals.
@@ -23,6 +27,10 @@ struct MealSummary: Codable, Identifiable, Hashable {
         case totalFatG = "total_fat_g"
     }
 
+    /// Decodes a `MealSummary`, defaulting `aliases` to `[]` when the server omits the field.
+    /// - Inputs:
+    ///   - decoder: the decoder positioned at a `MealSummary` JSON object.
+    /// - Exceptions: rethrows any `DecodingError` from missing required keys or type mismatches.
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(UUID.self, forKey: .id)
@@ -72,6 +80,10 @@ struct Meal: Codable, Identifiable, Hashable {
         case updatedAt = "updated_at"
     }
 
+    /// Decodes a `Meal`, defaulting `aliases` to `[]` when the server omits the field.
+    /// - Inputs:
+    ///   - decoder: the decoder positioned at a `Meal` JSON object.
+    /// - Exceptions: rethrows any `DecodingError` from missing required keys or type mismatches.
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(UUID.self, forKey: .id)
@@ -86,6 +98,7 @@ struct Meal: Codable, Identifiable, Hashable {
     }
 }
 
+/// One ingredient row inside a saved `Meal`, with its own macros and source refs.
 struct MealItem: Codable, Identifiable, Hashable {
     let id: UUID
     let mealId: UUID
@@ -120,6 +133,7 @@ struct MealItem: Codable, Identifiable, Hashable {
     }
 }
 
+/// Convenience macro aggregation over a meal's items.
 extension Meal {
     var totals: MacroTotals {
         let cals = items.reduce(0) { $0 + $1.calories }

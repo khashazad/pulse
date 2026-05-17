@@ -1,6 +1,18 @@
+/// Grid cell representing one progress-photo slot for a given date.
+///
+/// Hosts `ProgressPhotoSlotCell`, which lazily fetches a thumbnail from
+/// `ProgressPhotoStore`, renders an empty dashed placeholder if absent,
+/// presents `ProgressPhotoDetailView` on tap, and provides a context menu
+/// for Replace / Delete. Used inside the 2×2 grid on `ProgressPhotosView`.
 import SwiftUI
 import UIKit
 
+/// Single slot tile in the photo grid showing either a cached thumb or a placeholder.
+///
+/// Inputs:
+/// - date: the date being displayed.
+/// - slot: the slot represented by this cell.
+/// - onReplace: callback invoked when the user picks "Replace" in the context menu.
 struct ProgressPhotoSlotCell: View {
     @Environment(ProgressPhotoStore.self) private var store
     let date: Date
@@ -65,6 +77,7 @@ struct ProgressPhotoSlotCell: View {
         return "empty"
     }
 
+    /// Asks the store for the cached thumbnail and assigns it to `thumb`.
     private func loadThumb() async {
         thumb = await store.thumb(date: date, slot: slot)
     }

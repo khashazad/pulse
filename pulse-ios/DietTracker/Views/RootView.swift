@@ -1,5 +1,11 @@
+/// Top-level app screen.
+/// Owns the four-tab `FloatingDock` selection, one `NavigationStack` per tab,
+/// the settings sheet, and the sign-in sheet gating. Also bootstraps `AuthSession`
+/// once on appear.
 import SwiftUI
 
+/// Root container view. Switches between the four top-level tabs and surfaces the
+/// settings + login sheets at app scope.
 struct RootView: View {
     @Environment(AuthSession.self) private var auth
 
@@ -69,6 +75,10 @@ struct RootView: View {
         }
     }
 
+    /// Whether the floating dock should be visible. Hidden when the current tab has
+    /// pushed at least one screen onto its navigation stack so the dock doesn't overlap
+    /// detail screens.
+    /// Outputs: `true` when the active tab's nav stack is at its root.
     private var dockVisible: Bool {
         switch tab {
         case .intake: intakePath.isEmpty
@@ -78,6 +88,8 @@ struct RootView: View {
         }
     }
 
+    /// Shared toolbar item: gear icon that presents the settings sheet.
+    /// Outputs: composed toolbar content.
     @ToolbarContentBuilder
     private var settingsButton: some ToolbarContent {
         ToolbarItem(placement: .topBarTrailing) {

@@ -1,6 +1,16 @@
+/// Full-screen viewer for an individual progress photo.
+///
+/// Hosts `ProgressPhotoDetailView`, which fetches the full-resolution image
+/// for a `(date, slot)` pair from `ProgressPhotoStore`, supports pinch-to-zoom,
+/// and exposes a trash action that deletes the photo and dismisses.
 import SwiftUI
 import UIKit
 
+/// Modal viewer showing one progress photo with zoom + delete affordances.
+///
+/// Inputs:
+/// - date: the date of the photo being viewed.
+/// - slot: the slot (front/back/left/right) of the photo being viewed.
 struct ProgressPhotoDetailView: View {
     @Environment(ProgressPhotoStore.self) private var store
     @Environment(\.dismiss) private var dismiss

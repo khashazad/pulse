@@ -1,5 +1,18 @@
+/// Modal sheet for adding or editing a single day's weight reading.
+///
+/// Hosts `WeightEntrySheet`, which converts between the user's preferred
+/// display unit (lb/kg via `@AppStorage`) and storage in pounds, validates
+/// the numeric input, and reports save/delete actions back via callbacks
+/// so the parent (`WeightLogView`) can drive the persistence layer.
 import SwiftUI
 
+/// Bottom sheet bound to a specific date for entering/editing weight.
+///
+/// Inputs:
+/// - date: the date this entry applies to.
+/// - existing: the entry being edited, or `nil` for a new add.
+/// - onSave: async callback receiving the parsed value and the unit it was entered in.
+/// - onDelete: optional async deletion callback; when nil, the delete button is hidden.
 struct WeightEntrySheet: View {
     let date: Date
     let existing: WeightEntry?

@@ -1,5 +1,9 @@
+/// Intake → Year sub-tab.
+/// Renders the current year's daily logs as monthly buckets via `YearModel`,
+/// plus an `AverageMacrosTable` summary.
 import SwiftUI
 
+/// Year-period summary screen: monthly kcal bars + average macros table.
 struct YearView: View {
     @Environment(AuthSession.self) private var auth
     @State private var model: YearModel?
@@ -37,6 +41,11 @@ struct YearView: View {
         .refreshable { await model?.loadCurrentYear() }
     }
 
+    /// Body for the loaded state. Computes monthly buckets and yearly averages from
+    /// `logs` then assembles the summary card + macros table.
+    /// Inputs:
+    ///   - logs: daily logs for the current year.
+    /// Outputs: composed scrollable view.
     private func loadedBody(_ logs: [DailyLog]) -> some View {
         let chronological = logs.sorted { $0.date < $1.date }
         let buckets = YearModel.monthlyBuckets(chronological)
@@ -71,6 +80,13 @@ struct YearView: View {
         }
     }
 
+    /// Top summary card with year avg/day kcal, percent-of-target chip, and monthly bars.
+    /// Inputs:
+    ///   - avgKcal: average daily kcal over the year.
+    ///   - pct: percent of daily target reached on average (nil if no target).
+    ///   - buckets: monthly buckets for the bar chart.
+    ///   - dailyTarget: daily kcal target used for the bar threshold line.
+    /// Outputs: composed card view.
     private func summaryCard(
         avgKcal: Int,
         pct: Int?,

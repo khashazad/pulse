@@ -1,11 +1,24 @@
+/// OAuth callback URL parsing for the diet-tracker sign-in flow.
+/// Extracts session credentials (token + email) or an error reason from the
+/// deep-link URL the server redirects to after Google sign-in. Used by the
+/// auth layer to convert a raw callback URL into a typed `Result`.
 import Foundation
 
+/// Namespace for parsing the post-sign-in callback URL emitted by the server.
 enum AuthCallbackParser {
+    /// Successfully parsed credentials returned via callback query items.
     struct Credentials: Equatable {
         let token: String
         let email: String
     }
 
+    /// Parses the callback URL's query items into either credentials or a
+    /// `DietTrackerError.signInFailed` with a reason string.
+    /// Inputs:
+    ///   - url: the deep-link URL delivered to the app after server redirect.
+    /// Outputs: `.success(Credentials)` when token and email are both present
+    /// and non-empty; otherwise `.failure(.signInFailed(reason:))` carrying
+    /// the server-provided `error` value or `"invalid_callback"`.
     static func parse(_ url: URL) -> Result<Credentials, DietTrackerError> {
         let comps = URLComponents(url: url, resolvingAgainstBaseURL: false)
         let items = comps?.queryItems ?? []

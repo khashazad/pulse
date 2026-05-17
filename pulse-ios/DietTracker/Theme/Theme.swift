@@ -1,9 +1,17 @@
+/// DietTracker visual theme tokens.
+/// Defines the Catppuccin Macchiato palette (`Theme.CTP`), semantic background
+/// (`BG`) and foreground (`FG`) roles, the macro-channel color/label mapping
+/// (`Macro`), layout metrics (`Layout`), shared separator/tint colors, and a
+/// reusable card-surface `View` modifier (`ctpCard`). Single source of truth
+/// for colors, radii, and spacing used across SwiftUI views.
 import SwiftUI
 
 /// DietTracker · Catppuccin Macchiato re-theme.
 /// Palette: catppuccin/catppuccin (BSD). Dark only.
 enum Theme {
 
+    /// Raw Catppuccin Macchiato palette swatches. Consumers should prefer the
+    /// semantic `BG` / `FG` namespaces; this is the underlying source.
     enum CTP {
         static let rosewater = Color(red: 0.957, green: 0.859, blue: 0.839) // #f4dbd6
         static let flamingo  = Color(red: 0.941, green: 0.776, blue: 0.776) // #f0c6c6
@@ -34,6 +42,7 @@ enum Theme {
         static let crust    = Color(red: 0.094, green: 0.098, blue: 0.149) // #181926
     }
 
+    /// Semantic background roles mapped to palette swatches.
     enum BG {
         static let primary   = CTP.base
         static let secondary = CTP.mantle
@@ -41,6 +50,7 @@ enum Theme {
         static let elevated  = Color(red: 0.173, green: 0.184, blue: 0.267) // #2c2f44
     }
 
+    /// Semantic foreground (text/icon) roles mapped to palette swatches.
     enum FG {
         static let primary    = CTP.text
         static let secondary  = CTP.subtext0
@@ -51,6 +61,8 @@ enum Theme {
     static let separator = CTP.surface2.opacity(0.45)
     static let tint = CTP.mauve
 
+    /// Macro channel identifier (protein / carbs / fat) with associated display
+    /// color, translucent background tint, full label, and one-letter short label.
     enum Macro {
         case protein, carbs, fat
         var color: Color {
@@ -77,6 +89,7 @@ enum Theme {
         }
     }
 
+    /// Layout metrics shared across views — clearances, corner radii, spacing.
     enum Layout {
         static let dockClearance: CGFloat = 96
         static let sectionSpacing: CGFloat = 16
@@ -93,8 +106,16 @@ enum Theme {
     )
 }
 
+/// Adds the Catppuccin card-surface modifier to all SwiftUI `View`s.
 extension View {
     /// Catppuccin "card" surface — bg-tertiary fill, hairline mauve-tinted border, 14pt radius.
+    ///
+    /// Inputs:
+    /// - `radius`: corner radius applied to both fill and border; defaults to
+    ///   `Theme.Layout.cardRadius`.
+    ///
+    /// Outputs: the receiver with a rounded filled background and a hairline
+    /// separator-colored stroke overlay.
     func ctpCard(radius: CGFloat = Theme.Layout.cardRadius) -> some View {
         background(
             RoundedRectangle(cornerRadius: radius, style: .continuous)

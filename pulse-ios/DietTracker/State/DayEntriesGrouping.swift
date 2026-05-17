@@ -1,5 +1,12 @@
+/// DayEntriesGrouping: pure helpers that fold a flat list of FoodEntry into
+/// renderable day rows.
+/// Defines DayRow (single entry or meal group), MealGroup (aggregated items for
+/// a meal), and `groupDayEntries` which buckets entries by group id then merges
+/// repeated saved-meal instances.
+/// Role: shared logic used by day-view UIs.
 import Foundation
 
+/// One renderable row in the day view: either a single entry or an aggregated meal group.
 enum DayRow: Identifiable {
     case single(FoodEntry)
     case meal(MealGroup)
@@ -19,6 +26,7 @@ enum DayRow: Identifiable {
     }
 }
 
+/// Aggregated representation of one or more saved-meal instances grouped under a shared mealId.
 struct MealGroup: Identifiable {
     let id: String
     let mealId: UUID?
@@ -29,6 +37,11 @@ struct MealGroup: Identifiable {
     let sortDate: Date
 }
 
+/// Buckets entries by `entryGroupId`, classifies single vs. meal instances, then merges
+/// meal instances sharing the same `mealId` into one row. Returns a stably sorted list.
+/// Inputs:
+///   - entries: raw food entries for a single day, in arrival order.
+/// Outputs: ordered `DayRow` array ready for SwiftUI rendering.
 func groupDayEntries(_ entries: [FoodEntry]) -> [DayRow] {
     // 1. Bucket entries by entry_group_id, preserving stable arrival order within each bucket.
     var bucketOrder: [UUID] = []

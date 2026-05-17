@@ -1,5 +1,11 @@
+/// Day-detail screen for a single date.
+/// Hosts the kcal hero ring, macro totals, and grouped entries (single foods + meal groups)
+/// for one day, driven by `DayMacroModel`. Also defines the reusable `EmptyStateView`
+/// used by the other intake/meals screens for empty/error states.
 import SwiftUI
 
+/// Renders a single day's summary: hero ring, macro chips, and grouped entries list.
+/// Loads via `DayMacroModel` on appear / date change and on pull-to-refresh.
 struct DayMacroView: View {
     let date: Date
     @Environment(AuthSession.self) private var auth
@@ -32,6 +38,8 @@ struct DayMacroView: View {
         .refreshable { await model?.load() }
     }
 
+    /// Navigation-bar title: "Today" / "Yesterday" / medium-formatted date.
+    /// Outputs: localized title string for the navigation bar.
     private var title: String {
         if Calendar.current.isDateInToday(date) { return "Today" }
         if Calendar.current.isDateInYesterday(date) { return "Yesterday" }
@@ -40,6 +48,10 @@ struct DayMacroView: View {
         return f.string(from: date)
     }
 
+    /// Body for the loaded state: hero ring, totals row, entries header, entries card.
+    /// Inputs:
+    ///   - summary: the loaded `DailySummary` for the date.
+    /// Outputs: composed scrollable view for the day.
     @ViewBuilder
     private func loadedBody(_ summary: DailySummary) -> some View {
         ScrollView {
@@ -72,6 +84,11 @@ struct DayMacroView: View {
         }
     }
 
+    /// Backdrop + centered `MacroRing` used at the top of the day view.
+    /// Inputs:
+    ///   - consumed: kcal consumed today.
+    ///   - target: daily kcal target.
+    /// Outputs: composed hero ring view.
     private func heroRing(consumed: Int, target: Int) -> some View {
         ZStack {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
@@ -88,6 +105,11 @@ struct DayMacroView: View {
         }
     }
 
+    /// Small "Entries" caption row above the entries card with count and kcal total.
+    /// Inputs:
+    ///   - count: number of grouped rows in the entries card.
+    ///   - kcal: total kcal consumed.
+    /// Outputs: composed header view.
     private func entriesHeader(count: Int, kcal: Int) -> some View {
         HStack {
             Text("Entries")
@@ -103,6 +125,10 @@ struct DayMacroView: View {
         }
     }
 
+    /// Card listing entries for the day, grouping multi-item meals into `MealGroupRow`.
+    /// Inputs:
+    ///   - entries: all `FoodEntry`s for the day.
+    /// Outputs: composed card view.
     private func entriesCard(_ entries: [FoodEntry]) -> some View {
         let rows = groupDayEntries(entries)
         return VStack(spacing: 0) {
@@ -124,6 +150,11 @@ struct DayMacroView: View {
         .ctpCard()
     }
 
+    /// Body for the failed state. Renders a "no targets set" hint for `.notFound`,
+    /// otherwise a generic retry-able error placeholder.
+    /// Inputs:
+    ///   - error: the load error.
+    /// Outputs: composed empty-state view with a Retry action.
     @ViewBuilder
     private func errorBody(_ error: DietTrackerError) -> some View {
         VStack {
@@ -149,6 +180,8 @@ struct DayMacroView: View {
     }
 }
 
+/// Reusable empty/error placeholder with an icon glyph, title, description, and optional action button.
+/// Used by every list-style screen for the empty / load-failed states.
 struct EmptyStateView: View {
     let icon: String
     let title: String

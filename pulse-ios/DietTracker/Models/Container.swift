@@ -1,5 +1,10 @@
+/// Wire models for user-defined food containers (tare-weighted vessels).
+/// Defines the `Container` record, list envelope, photo presence flag, and
+/// the photo-size enum used to request thumb vs full container photos.
+/// Used by the containers feature for tare-weight tracking and photo display.
 import Foundation
 
+/// A user-defined container with a tare weight and optional photo.
 struct Container: Codable, Equatable, Identifiable {
     let id: UUID
     let userKey: String
@@ -22,10 +27,12 @@ struct Container: Codable, Equatable, Identifiable {
     }
 }
 
+/// Envelope for `GET /containers` returning the user's container list.
 struct ContainersList: Codable, Equatable {
     let containers: [Container]
 }
 
+/// Response indicating whether a container currently has a photo attached.
 struct ContainerPhotoStatus: Codable, Equatable {
     let hasPhoto: Bool
 
@@ -34,6 +41,7 @@ struct ContainerPhotoStatus: Codable, Equatable {
     }
 }
 
+/// Size variant requested when fetching a container photo from the server.
 enum ContainerPhotoSize: String {
     case thumb
     case full

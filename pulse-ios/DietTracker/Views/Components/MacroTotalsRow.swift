@@ -1,5 +1,8 @@
+/// Row of three macro chips (P/C/F) shown under the kcal ring or meal hero card.
+/// Each chip shows current grams, optional target, and a thin progress capsule.
 import SwiftUI
 
+/// Horizontal row of protein/carbs/fat chips with optional per-macro targets.
 struct MacroTotalsRow: View {
     let totals: MacroTotals
     let targets: MacroTargets?
@@ -12,6 +15,12 @@ struct MacroTotalsRow: View {
         }
     }
 
+    /// One macro chip with grams, optional target, and thin progress capsule.
+    /// Inputs:
+    ///   - macro: which macro determines color and label.
+    ///   - value: current grams.
+    ///   - target: optional target grams; drives the progress fraction and `/N` suffix.
+    /// Outputs: composed chip view.
     private func chip(_ macro: Theme.Macro, value: Double, target: Double?) -> some View {
         let v = Int(value.rounded())
         let pct: Double = {

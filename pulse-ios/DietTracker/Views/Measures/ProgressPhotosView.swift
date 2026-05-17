@@ -1,5 +1,13 @@
+/// Photos sub-tab of the Measures screen.
+///
+/// Hosts `ProgressPhotosView`, which renders a date strip, a 2×2 grid of
+/// `ProgressPhotoSlotCell`s for the currently selected date, an Add button
+/// that presents `PhotoCaptureSession`, and a sync-status footer. Also
+/// triggers `ProgressPhotoStore.reconcile` over a 30-day window when the
+/// selected date changes or on pull-to-refresh.
 import SwiftUI
 
+/// Top-level view for browsing and capturing progress photos by date.
 struct ProgressPhotosView: View {
     @Environment(ProgressPhotoStore.self) private var store
     @State private var selectedDate: Date = Calendar.current.startOfDay(for: Date())
@@ -44,6 +52,13 @@ struct ProgressPhotosView: View {
         }
     }
 
+    /// Renders a small capsule button in the date strip.
+    ///
+    /// Inputs:
+    /// - label: visible text on the chip.
+    /// - action: closure invoked on tap.
+    ///
+    /// Outputs: the styled chip `View`.
     private func chip(_ label: String, action: @escaping () -> Void) -> some View {
         Button(label, action: action)
             .font(.system(size: 12, weight: .semibold))
@@ -53,6 +68,10 @@ struct ProgressPhotosView: View {
             .foregroundStyle(Theme.FG.primary)
     }
 
+    /// Shifts the selected date by the given number of days, snapping to day start.
+    ///
+    /// Inputs:
+    /// - days: positive or negative day offset from the current `selectedDate`.
     private func shift(_ days: Int) {
         if let d = Calendar.current.date(byAdding: .day, value: days, to: selectedDate) {
             selectedDate = Calendar.current.startOfDay(for: d)
@@ -105,6 +124,7 @@ struct ProgressPhotosView: View {
 
     // MARK: range refresh
 
+    /// Reconciles the 30 days leading up to `selectedDate` with the server.
     private func reloadRange() async {
         let from = Calendar.current.date(byAdding: .day, value: -30, to: selectedDate) ?? selectedDate
         await store.reconcile(from: from, to: selectedDate)

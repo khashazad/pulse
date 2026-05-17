@@ -1,6 +1,11 @@
+/// PrepModel: state for the meal-prep portion calculator screen.
+/// Tracks selected container, total weight, and portion count; derives tare,
+/// net, and per-portion grams.
+/// Role: backing view-model for the Prep screen.
 import Foundation
 import Observation
 
+/// Observable view-model that computes net and per-portion weights for the meal-prep screen.
 @Observable
 final class PrepModel {
     /// Source of truth for both UI ("which container is selected") and math

@@ -1,14 +1,21 @@
+/// WeightAnalytics: pure functions that derive trends, maintenance kcal, and ETA
+/// from weight + calorie history.
+/// Contains WeightETA (target outcome), WeightAnalyticsResult (output bundle),
+/// and the WeightAnalytics enum's static `compute` plus private helpers.
+/// Role: shared math used by WeightTrendsModel; no I/O, fully testable.
 import Foundation
 import os.log
 
 private let analyticsDiagLog = Logger(subsystem: "com.khxsh.diettracker", category: "AnalyticsDiag")
 
+/// Outcome of projecting current trend against a target weight.
 enum WeightETA: Hashable {
     case date(Date)
     case stable
     case never
 }
 
+/// Output bundle of analytics derived from weight + calorie history.
 struct WeightAnalyticsResult: Hashable {
     let maintenanceKcal: Int?      // simple energy-balance estimate
     let recentAvgKcal: Int?        // avg daily intake over recent window
@@ -17,6 +24,7 @@ struct WeightAnalyticsResult: Hashable {
     let recentWindowDays: Int?     // length of the consecutive-logged window used above
 }
 
+/// Namespace for pure analytics functions over weight + calorie history.
 enum WeightAnalytics {
 
     static let maxRecentWindowDays = 30
@@ -27,6 +35,13 @@ enum WeightAnalytics {
     static let stableLbPerWeekThreshold = 0.05
     static let atTargetLbThreshold = 0.5
 
+    /// Computes the full analytics bundle (trend, maintenance kcal, ETA) from history.
+    /// Inputs:
+    ///   - entries: all available weight entries.
+    ///   - kcal: daily calorie totals.
+    ///   - targetWeightLb: user's target weight (for ETA), or nil.
+    ///   - today: anchor date for windows (defaults to now).
+    /// Outputs: aggregated analytics; individual fields may be nil when inputs are insufficient.
     static func compute(
         entries: [WeightEntry],
         kcal: [CaloriesDailyRow],
@@ -88,6 +103,12 @@ enum WeightAnalytics {
     // Walks back from `today` and returns the most recent contiguous run of
     // kcal-logged days, capped at `maxRecentWindowDays`. Returns nil if the run
     // is shorter than `minRecentWindowDays`.
+    /// Finds the most recent contiguous run of kcal-logged days.
+    /// Inputs:
+    ///   - kcalByDay: map of day -> calories.
+    ///   - today: anchor date to walk back from.
+    ///   - cal: calendar used for day arithmetic.
+    /// Outputs: tuple of (start, end, days) for the window, or nil when shorter than the minimum.
     private static func recentConsecutiveWindow(
         kcalByDay: [Date: Double],
         today: Date,
@@ -109,6 +130,14 @@ enum WeightAnalytics {
         return (start, end, days)
     }
 
+    /// Estimates maintenance kcal via energy balance: avg intake minus the trend's deficit.
+    /// Inputs:
+    ///   - kcalByDay: map of day -> calories.
+    ///   - start: window start (inclusive).
+    ///   - end: window end (inclusive).
+    ///   - trendLbPerWeek: weight trend slope, or nil to skip maintenance.
+    ///   - cal: calendar (unused but kept for signature symmetry).
+    /// Outputs: tuple of (maintenanceKcal, recentAvgKcal); maintenance is nil when trend missing/non-finite.
     private static func simpleMaintenance(
         kcalByDay: [Date: Double],
         start: Date,
@@ -129,6 +158,13 @@ enum WeightAnalytics {
         return (Int(maintenance.rounded()), avgInt)
     }
 
+    /// OLS slope of weight in lb/week over the window, or nil with insufficient data.
+    /// Inputs:
+    ///   - entries: weight entries to consider.
+    ///   - start: window start (inclusive).
+    ///   - end: window end (inclusive).
+    ///   - cal: calendar used for day arithmetic.
+    /// Outputs: trend in lb/week, or nil when below `minTrendWeightObs` observations.
     private static func trendLbPerWeek(
         entries: [WeightEntry],
         start: Date,
@@ -144,6 +180,14 @@ enum WeightAnalytics {
         return slope * 7.0
     }
 
+    /// Projects when the user will hit `targetWeightLb` given the current trend.
+    /// Inputs:
+    ///   - entries: weight entries to seed the latest mean weight.
+    ///   - trendLbPerWeek: slope in lb/week; nil suppresses the ETA.
+    ///   - targetWeightLb: user target; nil suppresses the ETA.
+    ///   - today: anchor date for projection.
+    ///   - cal: calendar used for day arithmetic.
+    /// Outputs: .date / .stable / .never depending on direction and slope, or nil when inputs missing.
     private static func computeETA(
         entries: [WeightEntry],
         trendLbPerWeek: Double?,
@@ -176,6 +220,11 @@ enum WeightAnalytics {
         return .date(eta)
     }
 
+    /// Ordinary least squares regression for two parallel numeric arrays.
+    /// Inputs:
+    ///   - xs: independent variable samples.
+    ///   - ys: dependent variable samples (same length as xs).
+    /// Outputs: (slope, intercept, r2), or nil when fewer than 2 points or zero x-variance.
     private static func ols(xs: [Double], ys: [Double]) -> (slope: Double, intercept: Double, r2: Double)? {
         guard xs.count == ys.count, xs.count >= 2 else { return nil }
         let n = Double(xs.count)
@@ -196,6 +245,12 @@ enum WeightAnalytics {
         return (slope, intercept, r2)
     }
 
+    /// Whole-day distance from `a` to `b`.
+    /// Inputs:
+    ///   - a: earlier date.
+    ///   - b: later date.
+    ///   - cal: calendar used for day arithmetic.
+    /// Outputs: number of full days between `a` and `b`; 0 when the calendar cannot compute it.
     private static func daysBetween(_ a: Date, _ b: Date, calendar cal: Calendar) -> Int {
         cal.dateComponents([.day], from: a, to: b).day ?? 0
     }

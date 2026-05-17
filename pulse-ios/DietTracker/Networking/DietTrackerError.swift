@@ -1,5 +1,10 @@
+/// Domain error type for all diet-tracker networking and auth failures.
+/// Defines `DietTrackerError`, its `Equatable` conformance, and a
+/// `userMessage` mapping that the UI surfaces to the user. Centralizes
+/// HTTP-status-to-error mapping and sign-in failure reason strings.
 import Foundation
 
+/// Errors emitted by the networking layer, auth flow, and decoding pipeline.
 enum DietTrackerError: Error, Equatable {
     case notSignedIn
     case unauthorized
@@ -11,6 +16,14 @@ enum DietTrackerError: Error, Equatable {
     case signInCancelled
     case signInFailed(reason: String)
 
+    /// Equality comparison that ignores associated-value differences except
+    /// where they carry user-visible information (URL error code, decoding
+    /// description, HTTP status, sign-in reason).
+    /// Inputs:
+    ///   - lhs: left-hand error.
+    ///   - rhs: right-hand error.
+    /// Outputs: `true` when both errors represent the same case and (where
+    /// applicable) the same associated value.
     static func == (lhs: DietTrackerError, rhs: DietTrackerError) -> Bool {
         switch (lhs, rhs) {
         case (.notSignedIn, .notSignedIn),

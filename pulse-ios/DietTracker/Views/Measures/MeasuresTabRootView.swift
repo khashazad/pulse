@@ -1,11 +1,19 @@
+/// Root container for the Measures tab.
+///
+/// Defines the `MeasureSection` segmented-control enum (Log / Photos / Trends),
+/// hosts `MeasuresTabRootView` which switches between the three sub-views, and
+/// provides the reusable `CTPSegmented` Catppuccin-themed segmented control
+/// used both here and in `WeightTrendsView`.
 import SwiftUI
 
+/// Top-level segments displayed in the Measures tab's segmented control.
 enum MeasureSection: String, CaseIterable, Hashable {
     case log = "Log"
     case photos = "Photos"
     case trends = "Trends"
 }
 
+/// Root view that owns the Measures tab section state and renders the active sub-view.
 struct MeasuresTabRootView: View {
     @State private var section: MeasureSection = .log
 
@@ -34,6 +42,12 @@ struct MeasuresTabRootView: View {
     }
 }
 
+/// Generic Catppuccin-styled segmented control bound to a selection of any `Hashable`.
+///
+/// Inputs:
+/// - selection: two-way binding to the currently selected option.
+/// - options: list of available options to render as segments.
+/// - label: closure mapping each option to its visible text label.
 struct CTPSegmented<Option: Hashable>: View {
     @Binding var selection: Option
     let options: [Option]

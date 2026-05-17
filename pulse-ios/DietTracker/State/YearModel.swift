@@ -1,16 +1,27 @@
+/// YearModel: view-model for the current-year macro overview.
+/// Loads year-to-date logs plus targets, and exposes a static helper that
+/// buckets logs into monthly averages.
+/// Role: backing model for the Year tab/chart.
 import Foundation
 import Observation
 
+/// Observable view-model that loads year-to-date logs and groups them into monthly buckets.
 @Observable
 final class YearModel {
     private(set) var state: LoadState<LogsList> = .idle
     private(set) var targets: MacroTargets?
     private weak var auth: AuthSession?
 
+    /// Initializes the year model.
+    /// Inputs:
+    ///   - auth: auth session used to construct an authenticated client.
     init(auth: AuthSession) {
         self.auth = auth
     }
 
+    /// Fetches logs from the start of the current year through `today`, plus today's targets.
+    /// Inputs:
+    ///   - today: anchor date determining the current year (defaults to now).
     func loadCurrentYear(today: Date = Date()) async {
         guard let client = auth?.makeClient() else {
             state = .failed(.notSignedIn)
@@ -40,6 +51,11 @@ final class YearModel {
 
     /// Group logs into monthly buckets within the current year.
     /// Each bucket's value is the average kcal across days that have entries.
+    /// Inputs:
+    ///   - logs: daily log rows for the displayed year.
+    ///   - today: date used to mark the "current" bucket.
+    ///   - calendar: calendar used to derive month components.
+    /// Outputs: ordered monthly buckets with average kcal per logged day.
     static func monthlyBuckets(_ logs: [DailyLog], today: Date = Date(), calendar: Calendar = .current) -> [PeriodBucket] {
         let groups = Dictionary(grouping: logs) { calendar.component(.month, from: $0.date) }
         let symbols = calendar.shortMonthSymbols

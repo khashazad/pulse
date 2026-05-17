@@ -1,3 +1,9 @@
+/// Unit tests for the `WeightAnalytics.compute` pipeline.
+/// Verifies the maintenance-calorie regression's behavior on insufficient
+/// data, on a clean alternating-deficit/surplus signal, on a gap in recent
+/// kcal logging, and the trend / ETA branches (stable, trending away, no
+/// target). Trend reporting must be independent of kcal availability.
+/// Part of the iOS app's analytics test suite.
 import XCTest
 @testable import DietTracker
 
@@ -9,10 +15,19 @@ final class WeightAnalyticsTests: XCTestCase {
         return cal.date(from: DateComponents(year: 2026, month: 5, day: 13))!
     }()
 
+    /// Returns the date that is `n` days from the fixed `today` anchor.
+    /// Inputs:
+    ///   - n: signed day offset.
+    /// Outputs: the offset `Date`.
     private func dayOffset(_ n: Int) -> Date {
         cal.date(byAdding: .day, value: n, to: today)!
     }
 
+    /// Builds a `WeightEntry` at the given offset with the given lb weight.
+    /// Inputs:
+    ///   - offset: signed day offset from `today`.
+    ///   - lb: weight in pounds.
+    /// Outputs: a `WeightEntry`.
     private func entry(_ offset: Int, lb: Double) -> WeightEntry {
         WeightEntry(
             id: UUID(),
@@ -24,10 +39,17 @@ final class WeightAnalyticsTests: XCTestCase {
         )
     }
 
+    /// Builds a daily-calories row at the given offset with the given total.
+    /// Inputs:
+    ///   - offset: signed day offset from `today`.
+    ///   - c: kcal total for that day.
+    /// Outputs: a `CaloriesDailyRow`.
     private func kcal(_ offset: Int, _ c: Int) -> CaloriesDailyRow {
         CaloriesDailyRow(date: dayOffset(offset), calories: c)
     }
 
+    /// Verifies that with too few data points, maintenance and recent
+    /// window are nil.
     func testInsufficientData() {
         let result = WeightAnalytics.compute(
             entries: [entry(-2, lb: 180), entry(-1, lb: 179.5)],
@@ -39,6 +61,8 @@ final class WeightAnalyticsTests: XCTestCase {
         XCTAssertNil(result.recentWindowDays)
     }
 
+    /// Verifies the regression recovers the synthesized true maintenance
+    /// kcal within tolerance from a clean alternating signal.
     func testSimpleMaintenanceRecovers() {
         // 30 days of consecutive logs alternating 1800/2400 kcal, weights
         // matching (c-2500)/3500 lb/day so true maintenance = 2500.
@@ -59,6 +83,8 @@ final class WeightAnalyticsTests: XCTestCase {
         XCTAssertEqual(result.maintenanceKcal ?? 0, 2500, accuracy: 150)
     }
 
+    /// Verifies a gap in recent kcal logging that drops the run below the
+    /// minimum recent-window threshold disables maintenance reporting.
     func testMaintenanceSkippedOnKcalGap() {
         // Recent logging stops short of `minRecentWindowDays` due to a gap.
         var entries: [WeightEntry] = []
@@ -76,6 +102,8 @@ final class WeightAnalyticsTests: XCTestCase {
         XCTAssertNil(result.recentWindowDays)
     }
 
+    /// Verifies trend and ETA are computed from weight data even when no
+    /// kcal data is available.
     func testTrendIndependentOfKcalGap() {
         // No kcal logging at all, but plenty of recent weight data → trend
         // and ETA must still be reported.
@@ -91,6 +119,7 @@ final class WeightAnalyticsTests: XCTestCase {
         XCTAssertNil(result.maintenanceKcal)
     }
 
+    /// Verifies a flat weight series with steady kcal reports `.stable` ETA.
     func testStableTrendETA() {
         var entries: [WeightEntry] = []
         for d in stride(from: -29, through: 0, by: 1) {
@@ -105,6 +134,8 @@ final class WeightAnalyticsTests: XCTestCase {
         XCTAssertEqual(result.etaToTarget, .stable)
     }
 
+    /// Verifies a weight trend moving away from the target reports `.never`
+    /// as the ETA.
     func testTrendingAwayETA() {
         var entries: [WeightEntry] = []
         for d in stride(from: -29, through: 0, by: 1) {
@@ -119,6 +150,7 @@ final class WeightAnalyticsTests: XCTestCase {
         XCTAssertEqual(result.etaToTarget, .never)
     }
 
+    /// Verifies that with no target weight set, ETA is nil regardless of trend.
     func testNoTargetNoETA() {
         var entries: [WeightEntry] = []
         for d in stride(from: -29, through: 0, by: 1) {

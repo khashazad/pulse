@@ -1,7 +1,12 @@
+/// ContainerEditModel: view-model for creating or editing a container preset.
+/// Manages form state (name, tare-weight text, optional photo), validation, and
+/// orchestrates create/update plus photo upload/delete against the server.
+/// Role: backing model for the container create/edit sheet.
 import Foundation
 import Observation
 import UIKit
 
+/// Observable view-model for the container create/edit form, including its photo lifecycle.
 @Observable
 final class ContainerEditModel {
     var name: String
@@ -16,6 +21,10 @@ final class ContainerEditModel {
     private let existing: Container?
     private weak var auth: AuthSession?
 
+    /// Initializes the edit model, seeding form fields from an existing container if provided.
+    /// Inputs:
+    ///   - existing: the container being edited, or nil for create mode.
+    ///   - auth: auth session used to construct an authenticated client.
     init(existing: Container? = nil, auth: AuthSession) {
         self.existing = existing
         self.auth = auth
@@ -39,6 +48,8 @@ final class ContainerEditModel {
         return existing.id
     }
 
+    /// Creates or updates the container and reconciles its photo (upload new, delete cleared, otherwise leave).
+    /// Updates `saving`, `error`, and `savedContainerId` to drive UI feedback.
     func save() async {
         guard let client = auth?.makeClient(), let weight = Double(tareWeightText) else {
             error = .notSignedIn
@@ -67,11 +78,15 @@ final class ContainerEditModel {
         }
     }
 
+    /// Stages a new container photo by JPEG-encoding the provided image.
+    /// Inputs:
+    ///   - uiImage: image chosen by the user.
     func setNewPhoto(uiImage: UIImage) {
         newPhotoJPEG = uiImage.jpegData(compressionQuality: 0.85)
         photoCleared = false
     }
 
+    /// Marks the existing photo for deletion on next save and discards any staged new photo.
     func clearPhoto() {
         newPhotoJPEG = nil
         photoCleared = true

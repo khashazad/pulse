@@ -1,5 +1,11 @@
+/// Saved-meal detail screen.
+/// Loads the full `Meal` via `MealDetailModel` from the summary the user tapped in
+/// `MealsView`, then renders totals (hero card + macro distribution + chips) plus
+/// the ingredients list. Also defines the private `QuantityBadge` pill.
 import SwiftUI
 
+/// Detail screen for a single saved meal: totals card + ingredients list.
+/// Triggers a `MealDetailModel` load on appear and on pull-to-refresh.
 struct MealDetailView: View {
     @Environment(AuthSession.self) private var auth
     let summary: MealSummary
@@ -38,6 +44,10 @@ struct MealDetailView: View {
         .refreshable { await model?.load() }
     }
 
+    /// Body for the loaded state: hero card + ingredients section.
+    /// Inputs:
+    ///   - meal: the fully loaded `Meal`.
+    /// Outputs: composed scrollable view.
     private func loadedBody(meal: Meal) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
@@ -69,6 +79,10 @@ struct MealDetailView: View {
         }
     }
 
+    /// Top card showing meal totals, notes, macro distribution bar, and per-macro chips.
+    /// Inputs:
+    ///   - meal: the loaded `Meal`.
+    /// Outputs: composed hero card view.
     private func heroCard(meal: Meal) -> some View {
         let totals = meal.totals
         return VStack(alignment: .leading, spacing: 12) {
@@ -110,6 +124,10 @@ struct MealDetailView: View {
         .ctpCard()
     }
 
+    /// Card listing the meal's ingredient rows separated by thin dividers.
+    /// Inputs:
+    ///   - items: the meal's `MealItem`s.
+    /// Outputs: composed card view.
     private func ingredientsCard(_ items: [MealItem]) -> some View {
         VStack(spacing: 0) {
             ForEach(Array(items.enumerated()), id: \.element.id) { idx, item in
@@ -123,6 +141,10 @@ struct MealDetailView: View {
         .ctpCard()
     }
 
+    /// One ingredient row: name + per-macro grams + quantity pill + kcal.
+    /// Inputs:
+    ///   - item: the meal's ingredient.
+    /// Outputs: composed row view.
     private func ingredientRow(_ item: MealItem) -> some View {
         HStack(alignment: .center, spacing: 10) {
             VStack(alignment: .leading, spacing: 3) {

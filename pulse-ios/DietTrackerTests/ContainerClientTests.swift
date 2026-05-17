@@ -1,20 +1,36 @@
+/// Unit tests for `DietTrackerClient` container-related endpoints.
+/// Verifies list/create/update/delete requests against `/containers`, the
+/// multipart photo upload, the `payloadTooLarge` mapping for HTTP 413, and
+/// the photo-fetch `URLRequest` builder. Also defines a small `URLRequest`
+/// helper extension to read back a request's body whether it was set as
+/// `httpBody` or `httpBodyStream`.
+/// Part of the iOS app's networking test suite.
 import XCTest
 @testable import DietTracker
 
 final class ContainerClientTests: XCTestCase {
 
+    /// Builds an ephemeral `URLSession` wired to `StubURLProtocol`.
+    /// Outputs: a fresh `URLSession` for stubbed HTTP traffic.
     private func makeSession() -> URLSession {
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [StubURLProtocol.self]
         return URLSession(configuration: config)
     }
 
+    /// Loads a JSON fixture from the test bundle.
+    /// Inputs:
+    ///   - name: fixture file base name (no extension).
+    /// Outputs: raw bytes of `<name>.json` from the bundle.
+    /// Exceptions: rethrows `Data(contentsOf:)` errors.
     private func loadFixture(_ name: String) throws -> Data {
         let bundle = Bundle(for: Self.self)
         let url = bundle.url(forResource: name, withExtension: "json")!
         return try Data(contentsOf: url)
     }
 
+    /// Builds a `DietTrackerClient` pointed at the stub URL with a fixed bearer.
+    /// Outputs: a `DietTrackerClient` ready to make stubbed requests.
     private func makeClient() -> DietTrackerClient {
         DietTrackerClient(
             baseURL: URL(string: "https://example.test")!,
@@ -23,11 +39,14 @@ final class ContainerClientTests: XCTestCase {
         )
     }
 
+    /// Clears the shared `StubURLProtocol` responder between tests.
     override func tearDown() {
         StubURLProtocol.responder = nil
         super.tearDown()
     }
 
+    /// Verifies `listContainers()` hits `/containers` with the bearer header
+    /// and no legacy `user_key` query parameter, and decodes the fixture.
     func testListContainersSendsBearerAndNoUserKey() async throws {
         let json = try loadFixture("containers")
         var captured: URLRequest?
@@ -43,6 +62,8 @@ final class ContainerClientTests: XCTestCase {
         XCTAssertEqual(captured?.value(forHTTPHeaderField: "Authorization"), "Bearer session-k")
     }
 
+    /// Verifies `createContainer` sends a POST with JSON content-type and
+    /// the expected name/tare fields in the body.
     func testCreateContainerPostsJSON() async throws {
         let json = try loadFixture("container")
         var captured: URLRequest?
@@ -62,6 +83,8 @@ final class ContainerClientTests: XCTestCase {
         XCTAssertEqual(parsed?["tare_weight_g"] as? Double, 412.0)
     }
 
+    /// Verifies `updateContainer` sends PATCH and omits keys whose value is
+    /// nil (so `tare_weight_g` is not present when only the name changes).
     func testUpdateContainerPatchesPartialJSON() async throws {
         let json = try loadFixture("container")
         var captured: URLRequest?
@@ -80,6 +103,8 @@ final class ContainerClientTests: XCTestCase {
         XCTAssertNil(parsed?["tare_weight_g"], "tare_weight_g must be omitted when nil")
     }
 
+    /// Verifies `deleteContainer` issues DELETE against the container's id
+    /// path.
     func testDeleteContainerSends204() async throws {
         var captured: URLRequest?
         StubURLProtocol.responder = { req in
@@ -93,6 +118,8 @@ final class ContainerClientTests: XCTestCase {
         XCTAssertTrue(captured?.url?.path.contains(id.uuidString.lowercased()) ?? false)
     }
 
+    /// Verifies `uploadContainerPhoto` sends a PUT with a multipart body
+    /// that includes a file part named `file` typed as `image/jpeg`.
     func testUploadContainerPhotoSendsMultipart() async throws {
         var captured: URLRequest?
         var body: Data?
@@ -117,6 +144,7 @@ final class ContainerClientTests: XCTestCase {
         XCTAssertTrue(s.contains("Content-Type: image/jpeg"))
     }
 
+    /// Verifies an HTTP 413 response maps to `DietTrackerError.payloadTooLarge`.
     func test413MapsToPayloadTooLarge() async throws {
         StubURLProtocol.responder = { req in
             let resp = HTTPURLResponse(url: req.url!, statusCode: 413, httpVersion: nil, headerFields: nil)!
@@ -130,6 +158,9 @@ final class ContainerClientTests: XCTestCase {
         }
     }
 
+    /// Verifies the container-photo `URLRequest` builder embeds the bearer
+    /// token, targets the `/photo` path, includes a `size=` query item, and
+    /// omits the legacy `user_key` parameter.
     func testContainerPhotoRequestIncludesBearer() {
         let id = UUID()
         let req = makeClient().containerPhotoRequest(id: id, size: .thumb)
@@ -140,7 +171,13 @@ final class ContainerClientTests: XCTestCase {
     }
 }
 
+/// Test-only convenience for inspecting a request body whether the caller
+/// set `httpBody` directly or used `httpBodyStream`.
 extension URLRequest {
+    /// Returns the body bytes of the request, draining `httpBodyStream` if
+    /// needed.
+    /// Outputs: the request body, or nil if neither `httpBody` nor a stream
+    /// is present.
     func bodyStreamData() -> Data? {
         if let data = httpBody { return data }
         guard let stream = httpBodyStream else { return nil }

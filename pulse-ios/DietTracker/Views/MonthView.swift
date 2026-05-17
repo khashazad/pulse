@@ -1,5 +1,9 @@
+/// Intake → Month sub-tab.
+/// Renders the current month's daily logs as weekly buckets via `MonthModel`,
+/// plus an `AverageMacrosTable` summary.
 import SwiftUI
 
+/// Month-period summary screen: weekly kcal bars + average macros table.
 struct MonthView: View {
     @Environment(AuthSession.self) private var auth
     @State private var model: MonthModel?
@@ -37,6 +41,11 @@ struct MonthView: View {
         .refreshable { await model?.loadCurrentMonth() }
     }
 
+    /// Body for the loaded state. Computes weekly buckets and averages from `logs`
+    /// and assembles the summary card + macros table.
+    /// Inputs:
+    ///   - logs: daily logs for the current month.
+    /// Outputs: composed scrollable view.
     private func loadedBody(_ logs: [DailyLog]) -> some View {
         let chronological = logs.sorted { $0.date < $1.date }
         let buckets = MonthModel.weeklyBuckets(chronological)
@@ -73,6 +82,15 @@ struct MonthView: View {
         }
     }
 
+    /// Top summary card with title, daily avg kcal, percent-of-target chip, and bucket bars.
+    /// Inputs:
+    ///   - title: card title text.
+    ///   - avgKcal: average daily kcal over the period.
+    ///   - pct: percent of daily kcal target reached on average (nil if no target).
+    ///   - buckets: weekly buckets for the bar chart.
+    ///   - barsHeader: caption for the bars sub-section.
+    ///   - dailyTarget: daily kcal target used for the bar threshold line (nil if unset).
+    /// Outputs: composed card view.
     private func summaryCard(
         title: String,
         avgKcal: Int,

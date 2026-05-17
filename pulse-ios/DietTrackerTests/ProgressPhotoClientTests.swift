@@ -1,14 +1,23 @@
+/// Unit tests for `ProgressPhotoClient`, the dedicated HTTP client for the
+/// `/progress-photos` endpoints.
+/// Covers metadata listing with range parameters, raw byte download,
+/// multipart upload (single + batch), and the 204 delete path.
+/// Part of the iOS app's progress-photo test suite.
 import XCTest
 @testable import DietTracker
 
 final class ProgressPhotoClientTests: XCTestCase {
 
+    /// Builds an ephemeral `URLSession` wired to `StubURLProtocol`.
+    /// Outputs: a fresh `URLSession` for stubbed HTTP traffic.
     private func makeSession() -> URLSession {
         let cfg = URLSessionConfiguration.ephemeral
         cfg.protocolClasses = [StubURLProtocol.self]
         return URLSession(configuration: cfg)
     }
 
+    /// Builds a `ProgressPhotoClient` against the stub URL with a fixed bearer.
+    /// Outputs: a `ProgressPhotoClient`.
     private func makeClient() -> ProgressPhotoClient {
         ProgressPhotoClient(
             baseURL: URL(string: "https://example.test")!,
@@ -17,11 +26,14 @@ final class ProgressPhotoClientTests: XCTestCase {
         )
     }
 
+    /// Clears the shared `StubURLProtocol` responder between tests.
     override func tearDown() {
         super.tearDown()
         StubURLProtocol.responder = nil
     }
 
+    /// Verifies `listMetadata(from:to:)` sends `from=` and `to=` parameters
+    /// and decodes the metadata array.
     func testListMetadataSendsRangeAndDecodes() async throws {
         let json = """
         [{"date":"2026-05-17","slot":"front","mime":"image/jpeg","bytes":100,"sha256":"abc","updated_at":"2026-05-17T00:00:00Z"}]
@@ -41,6 +53,7 @@ final class ProgressPhotoClientTests: XCTestCase {
         XCTAssertTrue(capturedURL?.absoluteString.contains("to=2026-05-31") ?? false)
     }
 
+    /// Verifies `download(date:slot:size:)` returns the raw response bytes.
     func testDownloadReturnsBytes() async throws {
         let bytes = Data(repeating: 0xAB, count: 16)
         StubURLProtocol.responder = { req in
@@ -59,6 +72,8 @@ final class ProgressPhotoClientTests: XCTestCase {
         XCTAssertEqual(data, bytes)
     }
 
+    /// Verifies a single-slot upload sends a multipart body and decodes the
+    /// returned metadata.
     func testUploadSingleSendsMultipart() async throws {
         var capturedContentType: String?
         var capturedBodyEmpty = true
@@ -89,6 +104,8 @@ final class ProgressPhotoClientTests: XCTestCase {
         XCTAssertFalse(capturedBodyEmpty)
     }
 
+    /// Verifies a batch upload of multiple slots returns one metadata entry
+    /// per slot.
     func testUploadBatchSendsAllSlots() async throws {
         StubURLProtocol.responder = { req in
             let json = """
@@ -108,6 +125,7 @@ final class ProgressPhotoClientTests: XCTestCase {
         XCTAssertEqual(Set(result.map(\.slot)), Set([.front, .back]))
     }
 
+    /// Verifies `delete(date:slot:)` succeeds on HTTP 204.
     func testDeleteSucceedsOn204() async throws {
         StubURLProtocol.responder = { req in
             (HTTPURLResponse(url: req.url!, statusCode: 204, httpVersion: nil, headerFields: nil)!, Data())

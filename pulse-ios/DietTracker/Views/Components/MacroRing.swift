@@ -1,14 +1,22 @@
+/// Hero kcal ring for the day view.
+/// Renders a circular gradient progress ring showing consumed vs. target kcal,
+/// with center text for KCAL label, consumed value, target, and a percent pill.
 import SwiftUI
 
+/// Circular consumed-vs-target kcal indicator with animated fill.
 struct MacroRing: View {
     let consumed: Int
     let target: Int
 
+    /// Fill fraction in 0...1. Returns 0 when target is non-positive to avoid division.
+    /// Outputs: clamped progress value used to trim the ring.
     private var progress: Double {
         guard target > 0 else { return 0 }
         return min(1.0, Double(consumed) / Double(target))
     }
 
+    /// Percent of target reached, rounded to nearest integer for display.
+    /// Outputs: integer 0...100.
     private var pct: Int { Int((progress * 100).rounded()) }
 
     private let ringGradient = AngularGradient(

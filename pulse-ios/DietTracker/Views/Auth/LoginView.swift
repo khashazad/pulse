@@ -1,6 +1,10 @@
+/// Sign-in sheet shown when `AuthSession` is not signed in.
+/// Single "Continue with Google" CTA that resolves a UIWindow as the presentation
+/// anchor for ASWebAuthenticationSession and forwards to `AuthSession.signInWithGoogle`.
 import SwiftUI
 import UIKit
 
+/// Login screen with a Google sign-in button and inline error message.
 struct LoginView: View {
     @Environment(AuthSession.self) private var auth
 
@@ -52,10 +56,14 @@ struct LoginView: View {
         .preferredColorScheme(.dark)
     }
 
+    /// Whether `AuthSession` is currently in the `.signingIn` state.
+    /// Outputs: `true` while the OAuth round-trip is in flight.
     private var isSigningIn: Bool {
         if case .signingIn = auth.state { return true } else { return false }
     }
 
+    /// Resolves the foreground key UIWindow and starts a Google OAuth flow through
+    /// `AuthSession`. No-op if no suitable window is found.
     private func signIn() {
         guard
             let scene = UIApplication.shared.connectedScenes

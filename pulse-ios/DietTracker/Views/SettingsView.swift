@@ -1,5 +1,10 @@
+/// Settings sheet.
+/// Account info + sign-out, theme palette display, weight-goal entry (saved to the
+/// server's `MacroTargets.targetWeightLb`), and the display-unit toggle stored in
+/// `@AppStorage`. Reuses the private `section` and `row` helpers for layout.
 import SwiftUI
 
+/// User-facing settings sheet shown over any tab via the gear toolbar button.
 struct SettingsView: View {
     @Environment(AuthSession.self) private var auth
     @Environment(UserTargetsStore.self) private var targetsStore
@@ -10,11 +15,16 @@ struct SettingsView: View {
     @AppStorage(WeightUnit.displayPreferenceKey)
     private var displayUnitRaw: String = WeightUnit.defaultDisplayUnit.rawValue
 
+    /// Whether `targetWeightInput` parses to a positive value under 2000.
+    /// Outputs: `true` when the input is a valid weight in the chosen unit.
     private var isTargetValid: Bool {
         guard let v = Double(targetWeightInput.replacingOccurrences(of: ",", with: ".")) else { return false }
         return v > 0 && v < 2000
     }
 
+    /// Persists the target weight by converting the user's input to lb, fetching the
+    /// current macro targets, and PUTting an updated copy. Updates the in-memory
+    /// `targetsStore` on success; failures are swallowed so the user can retry.
     private func saveTarget() async {
         guard let v = Double(targetWeightInput.replacingOccurrences(of: ",", with: ".")) else { return }
         let lb = WeightFormatter.toLb(v, from: targetUnit)
@@ -168,6 +178,13 @@ struct SettingsView: View {
         .preferredColorScheme(.dark)
     }
 
+    /// Layout helper that wraps `content` in a card with optional uppercase header
+    /// caption and a tertiary footer caption.
+    /// Inputs:
+    ///   - header: optional uppercase caption rendered above the card.
+    ///   - footer: optional caption rendered below the card.
+    ///   - content: rows to embed inside the card.
+    /// Outputs: composed section view.
     @ViewBuilder
     private func section<Content: View>(
         header: String? = nil,
@@ -195,6 +212,11 @@ struct SettingsView: View {
         }
     }
 
+    /// Standard label/trailing-control row used inside settings cards.
+    /// Inputs:
+    ///   - label: primary text on the leading edge.
+    ///   - trailing: control or value rendered on the trailing edge.
+    /// Outputs: composed row view.
     private func row<Trailing: View>(
         label: String,
         @ViewBuilder trailing: () -> Trailing

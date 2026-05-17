@@ -1,5 +1,9 @@
+/// Meals-tab root screen.
+/// Lists the user's saved meals loaded via `MealsModel`. Each row is tappable and
+/// forwards the chosen `MealSummary` to the host (`RootView`) through `onOpen`.
 import SwiftUI
 
+/// Saved-meals list. Loads on appear / pull-to-refresh and dispatches taps via `onOpen`.
 struct MealsView: View {
     @Environment(AuthSession.self) private var auth
     @State private var model: MealsModel?
@@ -46,6 +50,10 @@ struct MealsView: View {
         .refreshable { await model?.load() }
     }
 
+    /// Body for the loaded state: header caption + a card of meal rows.
+    /// Inputs:
+    ///   - meals: saved meals to display.
+    /// Outputs: composed scrollable list view.
     private func loadedBody(_ meals: [MealSummary]) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 8) {

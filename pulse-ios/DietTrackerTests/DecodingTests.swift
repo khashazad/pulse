@@ -1,8 +1,18 @@
+/// Unit tests for the core decoding paths used by Day / Logs screens.
+/// Confirms `DailySummary` (with mixed USDA + custom-food entries and meal
+/// joins), `LogsList`, and the calendar-date parsing for the summary's
+/// `date` field all round-trip through `JSONDecoder.dietTrackerDefault()`.
+/// Part of the iOS app's decoding test suite.
 import XCTest
 @testable import DietTracker
 
 final class DecodingTests: XCTestCase {
 
+    /// Loads a JSON fixture from the test bundle.
+    /// Inputs:
+    ///   - name: fixture file base name.
+    /// Outputs: raw bytes of `<name>.json`.
+    /// Exceptions: throws if the fixture is missing or unreadable.
     private func loadFixture(_ name: String) throws -> Data {
         let bundle = Bundle(for: Self.self)
         guard let url = bundle.url(forResource: name, withExtension: "json") else {
@@ -12,6 +22,9 @@ final class DecodingTests: XCTestCase {
         return try Data(contentsOf: url)
     }
 
+    /// Verifies `DailySummary` decodes target/consumed/remaining totals and
+    /// entries with USDA fdc ids, custom-food ids, optional meal joins, and
+    /// entries that omit meal fields entirely.
     func testDecodeDailySummary() throws {
         let data = try loadFixture("summary")
         let summary = try JSONDecoder.dietTrackerDefault().decode(DailySummary.self, from: data)
@@ -42,6 +55,7 @@ final class DecodingTests: XCTestCase {
         XCTAssertNil(almond.mealName)
     }
 
+    /// Verifies `LogsList` decodes per-day totals and entry counts.
     func testDecodeLogsList() throws {
         let data = try loadFixture("logs")
         let list = try JSONDecoder.dietTrackerDefault().decode(LogsList.self, from: data)
@@ -52,6 +66,8 @@ final class DecodingTests: XCTestCase {
         XCTAssertEqual(list.logs[6].totalCalories, 2300)
     }
 
+    /// Verifies `summary.date` decodes as a calendar day matching the
+    /// `YYYY-MM-DD` string in the fixture.
     func testSummaryDateIsParsedAsCalendarDate() throws {
         let data = try loadFixture("summary")
         let summary = try JSONDecoder.dietTrackerDefault().decode(DailySummary.self, from: data)
