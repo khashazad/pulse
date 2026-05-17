@@ -121,6 +121,11 @@ final class AuthSession {
         return DietTrackerClient(baseURL: baseURL, sessionToken: token, session: urlSession)
     }
 
+    func makeProgressPhotoClient() -> ProgressPhotoClient? {
+        guard let token = storedToken else { return nil }
+        return ProgressPhotoClient(baseURL: baseURL, sessionToken: token, session: urlSession)
+    }
+
     func startSignInURL() -> URL {
         baseURL.appendingPathComponent(Constants.Auth.startPath)
     }

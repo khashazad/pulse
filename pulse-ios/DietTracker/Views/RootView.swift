@@ -7,7 +7,7 @@ struct RootView: View {
     @State private var intakePath = NavigationPath()
     @State private var mealsPath = NavigationPath()
     @State private var prepPath = NavigationPath()
-    @State private var weightPath = NavigationPath()
+    @State private var measuresPath = NavigationPath()
     @State private var showSettings = false
 
     var body: some View {
@@ -43,9 +43,9 @@ struct RootView: View {
                         PrepView()
                             .toolbar { settingsButton }
                     }
-                case .weight:
-                    NavigationStack(path: $weightPath) {
-                        WeightTabRootView()
+                case .measures:
+                    NavigationStack(path: $measuresPath) {
+                        MeasuresTabRootView()
                             .toolbar { settingsButton }
                     }
                 }
@@ -74,7 +74,7 @@ struct RootView: View {
         case .intake: intakePath.isEmpty
         case .meals:  mealsPath.isEmpty
         case .prep:   prepPath.isEmpty
-        case .weight: weightPath.isEmpty
+        case .measures: measuresPath.isEmpty
         }
     }
 

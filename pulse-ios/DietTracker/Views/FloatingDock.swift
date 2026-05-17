@@ -1,7 +1,7 @@
 import SwiftUI
 
 enum DockTab: Hashable {
-    case intake, meals, prep, weight
+    case intake, meals, prep, measures
 }
 
 struct FloatingDock: View {
@@ -12,7 +12,7 @@ struct FloatingDock: View {
             tabButton(.intake, system: "circle.fill",  label: "Intake")
             tabButton(.meals, system: "fork.knife",   label: "Meals")
             tabButton(.prep,  system: "cube.box.fill", label: "Prep")
-            tabButton(.weight, system: "scalemass", label: "Weight")
+            tabButton(.measures, system: "figure.arms.open", label: "Measures")
         }
         .padding(6)
         .background(
