@@ -1,10 +1,10 @@
-"""HTTP tests for `/measures/photos`.
+"""HTTP tests for `/measures/photos` and `/measures/photo-tags`.
 
 Mirrors the client fixture from `tests/test_containers_api.py`: mocked DB
 session + auth middleware so any request bearing `Authorization: Bearer …`
-is authenticated. Covers the per-slot `PUT/GET/DELETE` endpoints (with
-404, future-date, bad-slot, and non-image rejections), the batch upload,
-and metadata listing.
+is authenticated. Covers tag listing (with default seeding), tag create
+and rename, the photo-id-based GET/POST/DELETE endpoints, and metadata
+listing across a date range.
 """
 
 from __future__ import annotations
@@ -43,29 +43,17 @@ def _png_bytes(w: int, h: int) -> bytes:
 
 
 def _now() -> DateTimeValue:
-    """Return the current UTC timestamp.
-
-    **Outputs:**
-    - datetime: Aware ``datetime`` in UTC.
-    """
+    """Return the current UTC timestamp."""
     return DateTimeValue.now(tz=TimezoneValue.utc)
 
 
-def _row(slot: str = "front", sha: str = "deadbeef") -> dict:
-    """Build a fake `progress_photos` row dict for repository return values.
-
-    **Inputs:**
-    - slot (str): Photo slot identifier (``front``/``side``/``back``).
-    - sha (str): SHA-256 digest hex string the row should report.
-
-    **Outputs:**
-    - dict: Column→value mapping mirroring the ``progress_photos`` table shape.
-    """
+def _photo_row(tag_id: uuid.UUID, sha: str = "deadbeef") -> dict:
+    """Build a fake `progress_photos` row dict for repository return values."""
     return {
         "id": uuid.uuid4(),
         "user_key": "khash",
         "log_date": DateValue(2026, 5, 17),
-        "slot": slot,
+        "tag_id": tag_id,
         "photo_mime": "image/jpeg",
         "bytes": 100,
         "sha256": sha,
@@ -74,13 +62,22 @@ def _row(slot: str = "front", sha: str = "deadbeef") -> dict:
     }
 
 
+def _tag_row(name: str = "front", sort_order: int = 0) -> dict:
+    """Build a fake `progress_photo_tags` row dict for repository return values."""
+    return {
+        "id": uuid.uuid4(),
+        "user_key": "khash",
+        "name": name,
+        "normalized_name": name,
+        "sort_order": sort_order,
+        "created_at": _now(),
+        "updated_at": _now(),
+    }
+
+
 @pytest.fixture
 def client() -> TestClient:
-    """TestClient with DB pool, USDA client, and auth middleware mocked.
-
-    **Outputs:**
-    - TestClient: Client whose Bearer-authenticated requests pass auth.
-    """
+    """TestClient with DB pool, USDA client, and auth middleware mocked."""
     fut = _now() + TimeDeltaValue(days=7)
     session_repo = AsyncMock()
     session_repo.get.return_value = {"email": "khashzd@gmail.com", "expires_at": fut}
@@ -105,7 +102,6 @@ def client() -> TestClient:
         from diet_tracker_server.db import get_session_dependency
 
         async def _fake_session_dep():
-            """Yield a `MagicMock` DB session with a working async `begin()` ctx."""
             session = MagicMock()
             session.begin = MagicMock()
             session.begin.return_value.__aenter__ = AsyncMock(return_value=session)
@@ -128,60 +124,192 @@ def test_unauthenticated_rejected(client: TestClient) -> None:
     assert client.get("/measures/photos?from=2026-05-01&to=2026-05-31").status_code == 401
 
 
-def test_put_single_photo_returns_metadata(client: TestClient) -> None:
-    """`PUT /measures/photos/{date}/{slot}` returns the upserted row metadata."""
-    src = _png_bytes(800, 600)
+# ---------------- photo tags ----------------
+
+
+def test_list_tags_seeds_defaults_when_empty(client: TestClient) -> None:
+    """`GET /measures/photo-tags` seeds the four defaults when the user has none."""
+    seeded = [_tag_row(n, i) for i, n in enumerate(["front", "left", "right", "back"])]
     with patch(
-        "diet_tracker_server.routers.measures_photos.ProgressPhotoRepository"
+        "diet_tracker_server.routers.measures_photo_tags.ProgressPhotoTagRepository"
     ) as MockRepo:
         instance = MockRepo.return_value
-        instance.upsert = AsyncMock(return_value=_row(slot="front", sha="deadbeef"))
-        resp = client.put(
-            "/measures/photos/2026-05-17/front",
-            headers=HEADERS,
-            files={"file": ("front.png", src, "image/png")},
-        )
+        instance.list_for_user = AsyncMock(side_effect=[[], seeded])
+        instance.bulk_seed_if_empty = AsyncMock(return_value=None)
+        resp = client.get("/measures/photo-tags", headers=HEADERS)
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    assert body["slot"] == "front"
+    assert [t["name"] for t in body] == ["front", "left", "right", "back"]
+    instance.bulk_seed_if_empty.assert_awaited()
+
+
+def test_list_tags_returns_existing(client: TestClient) -> None:
+    """`GET /measures/photo-tags` skips seeding when rows already exist."""
+    existing = [_tag_row("morning", 0)]
+    with patch(
+        "diet_tracker_server.routers.measures_photo_tags.ProgressPhotoTagRepository"
+    ) as MockRepo:
+        instance = MockRepo.return_value
+        instance.list_for_user = AsyncMock(return_value=existing)
+        instance.bulk_seed_if_empty = AsyncMock(return_value=None)
+        resp = client.get("/measures/photo-tags", headers=HEADERS)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert len(body) == 1
+    assert body[0]["name"] == "morning"
+    instance.bulk_seed_if_empty.assert_not_awaited()
+
+
+def test_create_tag_returns_201(client: TestClient) -> None:
+    """`POST /measures/photo-tags` creates a tag and returns it."""
+    created = _tag_row("flexed", 4)
+    with patch(
+        "diet_tracker_server.routers.measures_photo_tags.ProgressPhotoTagRepository"
+    ) as MockRepo:
+        instance = MockRepo.return_value
+        instance.list_for_user = AsyncMock(return_value=[])
+        instance.create = AsyncMock(return_value=created)
+        resp = client.post(
+            "/measures/photo-tags",
+            headers=HEADERS,
+            json={"name": "Flexed"},
+        )
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["name"] == "flexed"
+
+
+def test_create_tag_rejects_blank(client: TestClient) -> None:
+    """`POST /measures/photo-tags` with a blank name returns 400."""
+    resp = client.post(
+        "/measures/photo-tags",
+        headers=HEADERS,
+        json={"name": "   "},
+    )
+    # FastAPI returns 422 for length validation; service-side blank check returns 400.
+    # min_length=1 stops "" but "   " trims to "" only inside the service, so 400.
+    assert resp.status_code in (400, 422)
+
+
+def test_update_tag_renames(client: TestClient) -> None:
+    """`PATCH /measures/photo-tags/{id}` renames a tag."""
+    renamed = {**_tag_row("morning", 0), "name": "morning", "normalized_name": "morning"}
+    with patch(
+        "diet_tracker_server.routers.measures_photo_tags.ProgressPhotoTagRepository"
+    ) as MockRepo:
+        instance = MockRepo.return_value
+        instance.update_fields = AsyncMock(return_value=renamed)
+        resp = client.patch(
+            f"/measures/photo-tags/{uuid.uuid4()}",
+            headers=HEADERS,
+            json={"name": "Morning"},
+        )
+    assert resp.status_code == 200
+    assert resp.json()["normalized_name"] == "morning"
+
+
+def test_update_tag_404_when_missing(client: TestClient) -> None:
+    """`PATCH /measures/photo-tags/{id}` returns 404 when no row matches."""
+    with patch(
+        "diet_tracker_server.routers.measures_photo_tags.ProgressPhotoTagRepository"
+    ) as MockRepo:
+        instance = MockRepo.return_value
+        instance.update_fields = AsyncMock(return_value=None)
+        resp = client.patch(
+            f"/measures/photo-tags/{uuid.uuid4()}",
+            headers=HEADERS,
+            json={"name": "x"},
+        )
+    assert resp.status_code == 404
+
+
+# ---------------- photos ----------------
+
+
+def test_post_photo_returns_metadata(client: TestClient) -> None:
+    """`POST /measures/photos` inserts a tagged photo and returns metadata."""
+    src = _png_bytes(800, 600)
+    tag_id = uuid.uuid4()
+    photo_repo = MagicMock()
+    photo_repo.insert = AsyncMock(return_value=_photo_row(tag_id, "deadbeef"))
+    tag_repo = MagicMock()
+    tag_repo.get_by_id = AsyncMock(return_value=_tag_row("front", 0))
+    with patch(
+        "diet_tracker_server.routers.measures_photos.ProgressPhotoRepository",
+        return_value=photo_repo,
+    ), patch(
+        "diet_tracker_server.routers.measures_photos.ProgressPhotoTagRepository",
+        return_value=tag_repo,
+    ):
+        resp = client.post(
+            "/measures/photos",
+            headers=HEADERS,
+            data={"log_date": "2026-05-17", "tag_id": str(tag_id)},
+            files={"file": ("front.png", src, "image/png")},
+        )
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+    assert body["tag_id"] == str(tag_id)
     assert body["sha256"] == "deadbeef"
     assert body["date"] == "2026-05-17"
 
 
-def test_put_single_photo_rejects_future_date(client: TestClient) -> None:
-    """Single-slot PUT with a future date returns 400."""
+def test_post_photo_rejects_future_date(client: TestClient) -> None:
+    """`POST /measures/photos` with a future date returns 400."""
     src = _png_bytes(100, 100)
-    resp = client.put(
-        "/measures/photos/2099-01-01/front",
-        headers=HEADERS,
-        files={"file": ("front.png", src, "image/png")},
-    )
+    tag_id = uuid.uuid4()
+    tag_repo = MagicMock()
+    tag_repo.get_by_id = AsyncMock(return_value=_tag_row("front", 0))
+    with patch(
+        "diet_tracker_server.routers.measures_photos.ProgressPhotoTagRepository",
+        return_value=tag_repo,
+    ):
+        resp = client.post(
+            "/measures/photos",
+            headers=HEADERS,
+            data={"log_date": "2099-01-01", "tag_id": str(tag_id)},
+            files={"file": ("x.png", src, "image/png")},
+        )
     assert resp.status_code == 400
 
 
-def test_put_single_photo_rejects_bad_slot(client: TestClient) -> None:
-    """An unknown slot path segment returns 400."""
+def test_post_photo_404_on_unknown_tag(client: TestClient) -> None:
+    """`POST /measures/photos` with an unknown tag_id returns 404."""
     src = _png_bytes(100, 100)
-    resp = client.put(
-        "/measures/photos/2026-05-17/topdown",
-        headers=HEADERS,
-        files={"file": ("x.png", src, "image/png")},
-    )
-    assert resp.status_code == 400
+    tag_repo = MagicMock()
+    tag_repo.get_by_id = AsyncMock(return_value=None)
+    with patch(
+        "diet_tracker_server.routers.measures_photos.ProgressPhotoTagRepository",
+        return_value=tag_repo,
+    ):
+        resp = client.post(
+            "/measures/photos",
+            headers=HEADERS,
+            data={"log_date": "2026-05-17", "tag_id": str(uuid.uuid4())},
+            files={"file": ("x.png", src, "image/png")},
+        )
+    assert resp.status_code == 404
 
 
-def test_put_single_photo_rejects_non_image(client: TestClient) -> None:
-    """Non-image content type returns 415."""
-    resp = client.put(
-        "/measures/photos/2026-05-17/front",
-        headers=HEADERS,
-        files={"file": ("notes.txt", b"hello", "text/plain")},
-    )
+def test_post_photo_rejects_non_image(client: TestClient) -> None:
+    """`POST /measures/photos` with non-image content returns 415."""
+    tag_repo = MagicMock()
+    tag_repo.get_by_id = AsyncMock(return_value=_tag_row("front", 0))
+    with patch(
+        "diet_tracker_server.routers.measures_photos.ProgressPhotoTagRepository",
+        return_value=tag_repo,
+    ):
+        resp = client.post(
+            "/measures/photos",
+            headers=HEADERS,
+            data={"log_date": "2026-05-17", "tag_id": str(uuid.uuid4())},
+            files={"file": ("notes.txt", b"hello", "text/plain")},
+        )
     assert resp.status_code == 415
 
 
 def test_get_photo_returns_bytes_with_etag(client: TestClient) -> None:
-    """`GET /measures/photos/{date}/{slot}` returns photo bytes with an ETag header."""
+    """`GET /measures/photos/{id}` returns photo bytes with an ETag header."""
+    photo_id = uuid.uuid4()
     with patch(
         "diet_tracker_server.routers.measures_photos.ProgressPhotoRepository"
     ) as MockRepo:
@@ -195,7 +323,7 @@ def test_get_photo_returns_bytes_with_etag(client: TestClient) -> None:
             }
         )
         resp = client.get(
-            "/measures/photos/2026-05-17/front?size=full",
+            f"/measures/photos/{photo_id}?size=full",
             headers=HEADERS,
         )
     assert resp.status_code == 200
@@ -205,22 +333,23 @@ def test_get_photo_returns_bytes_with_etag(client: TestClient) -> None:
 
 
 def test_get_photo_returns_404_when_missing(client: TestClient) -> None:
-    """`GET /measures/photos/{date}/{slot}` returns 404 when no photo exists."""
+    """`GET /measures/photos/{id}` returns 404 when no photo exists."""
     with patch(
         "diet_tracker_server.routers.measures_photos.ProgressPhotoRepository"
     ) as MockRepo:
         MockRepo.return_value.get_photo = AsyncMock(return_value=None)
-        resp = client.get("/measures/photos/2026-05-17/front", headers=HEADERS)
+        resp = client.get(f"/measures/photos/{uuid.uuid4()}", headers=HEADERS)
     assert resp.status_code == 404
 
 
 def test_list_returns_metadata_for_range(client: TestClient) -> None:
     """`GET /measures/photos?from=&to=` returns metadata rows for the range."""
+    tag_id = uuid.uuid4()
     with patch(
         "diet_tracker_server.routers.measures_photos.ProgressPhotoRepository"
     ) as MockRepo:
         instance = MockRepo.return_value
-        instance.list_metadata = AsyncMock(return_value=[_row("front", "a")])
+        instance.list_metadata = AsyncMock(return_value=[_photo_row(tag_id, "a")])
         resp = client.get(
             "/measures/photos?from=2026-05-01&to=2026-05-31",
             headers=HEADERS,
@@ -228,81 +357,25 @@ def test_list_returns_metadata_for_range(client: TestClient) -> None:
     assert resp.status_code == 200
     body = resp.json()
     assert isinstance(body, list)
-    assert body[0]["slot"] == "front"
+    assert body[0]["tag_id"] == str(tag_id)
     assert body[0]["date"] == "2026-05-17"
 
 
 def test_delete_returns_204(client: TestClient) -> None:
-    """`DELETE /measures/photos/{date}/{slot}` returns 204 on success."""
+    """`DELETE /measures/photos/{id}` returns 204 on success."""
     with patch(
         "diet_tracker_server.routers.measures_photos.ProgressPhotoRepository"
     ) as MockRepo:
         MockRepo.return_value.delete = AsyncMock(return_value=True)
-        resp = client.delete("/measures/photos/2026-05-17/front", headers=HEADERS)
+        resp = client.delete(f"/measures/photos/{uuid.uuid4()}", headers=HEADERS)
     assert resp.status_code == 204
 
 
 def test_delete_returns_404_when_missing(client: TestClient) -> None:
-    """`DELETE /measures/photos/{date}/{slot}` returns 404 when nothing was removed."""
+    """`DELETE /measures/photos/{id}` returns 404 when nothing was removed."""
     with patch(
         "diet_tracker_server.routers.measures_photos.ProgressPhotoRepository"
     ) as MockRepo:
         MockRepo.return_value.delete = AsyncMock(return_value=False)
-        resp = client.delete("/measures/photos/2026-05-17/front", headers=HEADERS)
+        resp = client.delete(f"/measures/photos/{uuid.uuid4()}", headers=HEADERS)
     assert resp.status_code == 404
-
-
-def test_put_batch_uploads_multiple_slots(client: TestClient) -> None:
-    """Batch `PUT /measures/photos/{date}` upserts every supplied slot."""
-    src1 = _png_bytes(400, 600)
-    src2 = _png_bytes(400, 600)
-    with patch(
-        "diet_tracker_server.routers.measures_photos.ProgressPhotoRepository"
-    ) as MockRepo:
-        instance = MockRepo.return_value
-        instance.upsert = AsyncMock(
-            side_effect=[
-                _row(slot="front", sha="sha-front"),
-                _row(slot="back", sha="sha-back"),
-            ]
-        )
-        resp = client.put(
-            "/measures/photos/2026-05-17",
-            headers=HEADERS,
-            files=[
-                ("front", ("f.png", src1, "image/png")),
-                ("back", ("b.png", src2, "image/png")),
-            ],
-        )
-    assert resp.status_code == 200, resp.text
-    body = resp.json()
-    assert len(body) == 2
-    assert {row["slot"] for row in body} == {"front", "back"}
-
-
-def test_put_batch_rejects_empty_request(client: TestClient) -> None:
-    """Batch PUT with no files returns 400."""
-    resp = client.put("/measures/photos/2026-05-17", headers=HEADERS, files=[])
-    assert resp.status_code == 400
-
-
-def test_put_batch_rejects_unknown_slot_field(client: TestClient) -> None:
-    """Batch PUT with an unknown form-field slot name returns 400."""
-    src = _png_bytes(100, 100)
-    resp = client.put(
-        "/measures/photos/2026-05-17",
-        headers=HEADERS,
-        files=[("topdown", ("t.png", src, "image/png"))],
-    )
-    assert resp.status_code == 400
-
-
-def test_put_batch_rejects_future_date(client: TestClient) -> None:
-    """Batch PUT with a future date returns 400."""
-    src = _png_bytes(100, 100)
-    resp = client.put(
-        "/measures/photos/2099-01-01",
-        headers=HEADERS,
-        files=[("front", ("f.png", src, "image/png"))],
-    )
-    assert resp.status_code == 400

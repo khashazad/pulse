@@ -18,7 +18,8 @@ Tables defined here:
 - ``sessions`` — Bearer-token session store keyed by SHA-256 token hash.
 - ``containers`` — reusable container tares with optional photo blobs.
 - ``weight_entries`` — one weight reading per ``(user_key, log_date)``.
-- ``progress_photos`` — per-day progress-photo blobs keyed by slot.
+- ``progress_photo_tags`` — per-user catalog of progress-photo tag labels.
+- ``progress_photos`` — per-day progress-photo blobs, each tagged via FK.
 
 Every table is scoped by ``user_key`` so the same schema supports the
 multi-user model while the legacy single-user deployment uses one fixed key.
@@ -268,13 +269,32 @@ weight_entries = Table(
     Index("idx_weight_entries_user_key_log_date", "user_key", "log_date"),
 )
 
+progress_photo_tags = Table(
+    "progress_photo_tags",
+    metadata,
+    Column("id", UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")),
+    Column("user_key", Text, nullable=False),
+    Column("name", Text, nullable=False),
+    Column("normalized_name", Text, nullable=False),
+    Column("sort_order", Integer, nullable=False, server_default=text("0")),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    UniqueConstraint("user_key", "normalized_name", name="uq_progress_photo_tags_user_norm"),
+    Index("idx_progress_photo_tags_user_key", "user_key", "sort_order", "normalized_name"),
+)
+
 progress_photos = Table(
     "progress_photos",
     metadata,
     Column("id", UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")),
     Column("user_key", Text, nullable=False),
     Column("log_date", Date, nullable=False),
-    Column("slot", Text, nullable=False),
+    Column(
+        "tag_id",
+        UUID(as_uuid=True),
+        ForeignKey("progress_photo_tags.id", ondelete="RESTRICT", name="fk_progress_photos_tag_id"),
+        nullable=False,
+    ),
     Column("photo", LargeBinary, nullable=False),
     Column("photo_thumb", LargeBinary, nullable=False),
     Column("photo_mime", Text, nullable=False, server_default=text("'image/jpeg'")),
@@ -282,10 +302,5 @@ progress_photos = Table(
     Column("sha256", Text, nullable=False),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
-    CheckConstraint(
-        "slot in ('front','left','right','back')",
-        name="progress_photos_slot_check",
-    ),
-    UniqueConstraint("user_key", "log_date", "slot", name="uq_progress_photos_user_date_slot"),
-    Index("idx_progress_photos_user_date", "user_key", "log_date"),
+    Index("idx_progress_photos_user_date_tag", "user_key", "log_date", "tag_id"),
 )

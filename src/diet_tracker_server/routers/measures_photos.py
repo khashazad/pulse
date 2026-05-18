@@ -1,22 +1,24 @@
 """HTTP endpoints for progress (body-measurement) photos.
 
 Exposes the ``/measures`` router covering ``/photos`` list, single-photo
-fetch (``thumb``/``full``), single-slot PUT, multi-slot batch PUT, and slot
-delete. Each photo is identified by ``(log_date, slot)`` where ``slot`` is one
-of :data:`ALLOWED_SLOTS` (``front``, ``left``, ``right``, ``back``). Uploads
-are streamed with a hard byte cap; storage and transcoding live in
-:mod:`services.progress_photo_service`.
+fetch (``thumb``/``full``), tagged single-photo upload, and photo-id-based
+delete. Each photo is identified by its ``photo_id`` UUID; many photos may
+share a ``(log_date, tag_id)`` since the legacy four-slot uniqueness has
+been removed. Uploads are streamed with a hard byte cap; storage and
+transcoding live in :mod:`services.progress_photo_service`.
 """
 
 from __future__ import annotations
 
 from datetime import date as DateValue
 from typing import Literal
+from uuid import UUID
 
 from fastapi import (
     APIRouter,
     Depends,
     File,
+    Form,
     HTTPException,
     Query,
     Request,
@@ -28,12 +30,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from diet_tracker_server.auth import require_session
 from diet_tracker_server.db import get_session_dependency, transaction
-from diet_tracker_server.models.progress_photo import ALLOWED_SLOTS
 from diet_tracker_server.repositories.progress_photo import ProgressPhotoRepository
+from diet_tracker_server.repositories.progress_photo_tag import (
+    ProgressPhotoTagRepository,
+)
 from diet_tracker_server.services.progress_photo_service import (
     MAX_UPLOAD_BYTES,
-    upsert_batch,
-    upsert_one,
+    insert_one,
 )
 
 router = APIRouter(prefix="/measures", dependencies=[Depends(require_session)])
@@ -75,12 +78,14 @@ def _row_to_metadata(row: dict) -> dict:
     - row (dict): Column→value mapping returned by :class:`ProgressPhotoRepository`.
 
     **Outputs:**
-    - dict: ``{date, slot, mime, bytes, sha256, updated_at}`` with ``date`` as ISO string.
+    - dict: ``{id, date, tag_id, mime, bytes, sha256, updated_at}`` with
+      ``date`` as ISO string.
     """
     log_date = row["log_date"]
     return {
+        "id": str(row["id"]),
         "date": log_date.isoformat() if hasattr(log_date, "isoformat") else log_date,
-        "slot": row["slot"],
+        "tag_id": str(row["tag_id"]),
         "mime": row["photo_mime"],
         "bytes": row["bytes"],
         "sha256": row["sha256"],
@@ -104,7 +109,7 @@ async def list_photos(
     - session (AsyncSession): DB session dependency.
 
     **Outputs:**
-    - list[dict]: One metadata mapping per stored ``(date, slot)`` pair.
+    - list[dict]: One metadata mapping per stored photo.
     """
     user_key = request.state.user_key
     repo = ProgressPhotoRepository(session)
@@ -112,23 +117,21 @@ async def list_photos(
     return [_row_to_metadata(r) for r in rows]
 
 
-@router.get("/photos/{log_date}/{slot}")
+@router.get("/photos/{photo_id}")
 async def get_photo(
     request: Request,
-    log_date: DateValue,
-    slot: str,
+    photo_id: UUID,
     size: Literal["full", "thumb"] = "full",
     session: AsyncSession = Depends(get_session_dependency),
 ) -> Response:
-    """Return raw progress-photo bytes for one ``(log_date, slot)`` pair.
+    """Return raw progress-photo bytes for one ``photo_id``.
 
     Sends a strong ``ETag`` derived from the stored sha256 and a 1-year
     immutable cache header.
 
     **Inputs:**
     - request (Request): Active request providing ``user_key``.
-    - log_date (date): Date the photo was taken.
-    - slot (str): One of :data:`ALLOWED_SLOTS`.
+    - photo_id (UUID): Photo primary key.
     - size (Literal["full","thumb"]): Variant to return; default ``"full"``.
     - session (AsyncSession): DB session dependency.
 
@@ -136,17 +139,13 @@ async def get_photo(
     - Response: Image bytes with the stored MIME type plus caching headers.
 
     **Exceptions:**
-    - HTTPException(400): Raised when ``slot`` is not in :data:`ALLOWED_SLOTS`.
-    - HTTPException(404): Raised when no photo exists for that ``(date, slot)``.
+    - HTTPException(404): Raised when no photo exists with that id.
     """
-    if slot not in ALLOWED_SLOTS:
-        raise HTTPException(status_code=400, detail="invalid slot")
     user_key = request.state.user_key
     repo = ProgressPhotoRepository(session)
     row = await repo.get_photo(
+        photo_id=photo_id,
         user_key=user_key,
-        log_date=log_date,
-        slot=slot,
         thumb=(size == "thumb"),
     )
     if not row:
@@ -162,126 +161,75 @@ async def get_photo(
     )
 
 
-@router.put("/photos/{log_date}/{slot}")
-async def put_photo(
+@router.post("/photos", status_code=201)
+async def create_photo(
     request: Request,
-    log_date: DateValue,
-    slot: str,
+    log_date: DateValue = Form(..., alias="log_date"),
+    tag_id: UUID = Form(..., alias="tag_id"),
     file: UploadFile = File(...),
     session: AsyncSession = Depends(get_session_dependency),
 ) -> dict:
-    """Upsert a single progress photo at ``(log_date, slot)``.
+    """Insert a new progress photo tagged with ``tag_id`` for ``log_date``.
 
     Streams the upload under :data:`MAX_UPLOAD_BYTES`, hands off to
-    :func:`upsert_one` for image validation/transcoding and persistence.
+    :func:`insert_one` for image validation/transcoding and persistence.
+    Multiple photos may share the same ``(log_date, tag_id)``.
 
     **Inputs:**
     - request (Request): Active request providing ``user_key``.
-    - log_date (date): Date the photo was taken.
-    - slot (str): One of :data:`ALLOWED_SLOTS`.
+    - log_date (date): Date the photo was taken (multipart form field).
+    - tag_id (UUID): Tag to attach (multipart form field).
     - file (UploadFile): Multipart image upload.
     - session (AsyncSession): DB session dependency.
 
     **Outputs:**
-    - dict: Metadata for the upserted row (date, slot, mime, bytes, sha256, updated_at).
+    - dict: Metadata for the inserted row.
 
     **Exceptions:**
+    - HTTPException(400): Raised for future dates.
+    - HTTPException(404): Raised when ``tag_id`` does not belong to the user.
     - HTTPException(413): Raised when the upload exceeds the byte cap.
-    - HTTPException(415): Raised by the service layer when the image is unsupported.
-    - HTTPException(400): Raised by the service layer when ``slot`` is invalid.
+    - HTTPException(415): Raised when the image is unsupported.
     """
     user_key = request.state.user_key
     raw = await _read_capped(file, MAX_UPLOAD_BYTES)
     repo = ProgressPhotoRepository(session)
+    tag_repo = ProgressPhotoTagRepository(session)
     async with transaction(session):
-        row = await upsert_one(
+        row = await insert_one(
             repo=repo,
+            tag_repo=tag_repo,
             user_key=user_key,
             log_date=log_date,
-            slot=slot,
+            tag_id=tag_id,
             raw=raw,
         )
     return _row_to_metadata(row)
 
 
-@router.put("/photos/{log_date}")
-async def put_photos_batch(
-    request: Request,
-    log_date: DateValue,
-    session: AsyncSession = Depends(get_session_dependency),
-) -> list[dict]:
-    """Upsert multiple slots for the same date in a single multipart request.
-
-    Each named file field maps to a slot (``front``, ``left``, ``right``,
-    ``back``). All upserts run inside one transaction so the batch is
-    all-or-nothing.
-
-    **Inputs:**
-    - request (Request): Active request; reads the multipart form directly.
-    - log_date (date): Date the photos were taken.
-    - session (AsyncSession): DB session dependency.
-
-    **Outputs:**
-    - list[dict]: Metadata for every upserted row.
-
-    **Exceptions:**
-    - HTTPException(400): Raised when a form field uses an unknown slot name or is not a file.
-    - HTTPException(413): Raised when any single upload exceeds the byte cap.
-    - HTTPException(415): Raised by the service layer when an image is unsupported.
-    """
-    form = await request.form()
-    assignments: dict[str, bytes] = {}
-    for key in form:
-        if key not in ALLOWED_SLOTS:
-            raise HTTPException(
-                status_code=400, detail=f"unknown slot field: {key}"
-            )
-        upload = form[key]
-        if not hasattr(upload, "read"):
-            raise HTTPException(
-                status_code=400, detail=f"field {key} must be a file"
-            )
-        assignments[key] = await _read_capped(upload, MAX_UPLOAD_BYTES)
-    user_key = request.state.user_key
-    repo = ProgressPhotoRepository(session)
-    async with transaction(session):
-        rows = await upsert_batch(
-            repo=repo,
-            user_key=user_key,
-            log_date=log_date,
-            assignments=assignments,
-        )
-    return [_row_to_metadata(r) for r in rows]
-
-
-@router.delete("/photos/{log_date}/{slot}", status_code=204)
+@router.delete("/photos/{photo_id}", status_code=204)
 async def delete_photo(
     request: Request,
-    log_date: DateValue,
-    slot: str,
+    photo_id: UUID,
     session: AsyncSession = Depends(get_session_dependency),
 ) -> Response:
-    """Delete a progress photo at ``(log_date, slot)`` and return HTTP 204.
+    """Delete a progress photo by id and return HTTP 204.
 
     **Inputs:**
     - request (Request): Active request providing ``user_key``.
-    - log_date (date): Date the photo was taken.
-    - slot (str): One of :data:`ALLOWED_SLOTS`.
+    - photo_id (UUID): Photo primary key.
     - session (AsyncSession): DB session dependency.
 
     **Outputs:**
     - Response: Empty 204 response.
 
     **Exceptions:**
-    - HTTPException(400): Raised when ``slot`` is not in :data:`ALLOWED_SLOTS`.
-    - HTTPException(404): Raised when no photo exists for that ``(date, slot)``.
+    - HTTPException(404): Raised when no photo exists with that id.
     """
-    if slot not in ALLOWED_SLOTS:
-        raise HTTPException(status_code=400, detail="invalid slot")
     user_key = request.state.user_key
     repo = ProgressPhotoRepository(session)
     async with transaction(session):
-        ok = await repo.delete(user_key=user_key, log_date=log_date, slot=slot)
+        ok = await repo.delete(photo_id=photo_id, user_key=user_key)
     if not ok:
         raise HTTPException(status_code=404, detail="not found")
     return Response(status_code=204)
