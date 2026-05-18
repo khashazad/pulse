@@ -11,6 +11,7 @@ struct DietTrackerApp: App {
     @State private var settings = AppSettings()
     @State private var auth: AuthSession
     @State private var photoStore: ProgressPhotoStore
+    @State private var photoTagStore: ProgressPhotoTagStore
     @State private var targetsStore: UserTargetsStore
 
     /// Constructs the shared stores and wires session-clear to targets reset so
@@ -21,6 +22,7 @@ struct DietTrackerApp: App {
         authInit.onSessionCleared = { [weak targets] in targets?.clear() }
         _auth = State(initialValue: authInit)
         _photoStore = State(initialValue: ProgressPhotoStore(auth: authInit))
+        _photoTagStore = State(initialValue: ProgressPhotoTagStore(auth: authInit))
         _targetsStore = State(initialValue: targets)
     }
 
@@ -30,6 +32,7 @@ struct DietTrackerApp: App {
                 .environment(settings)
                 .environment(auth)
                 .environment(photoStore)
+                .environment(photoTagStore)
                 .environment(targetsStore)
                 .preferredColorScheme(.dark)
                 .tint(Theme.tint)

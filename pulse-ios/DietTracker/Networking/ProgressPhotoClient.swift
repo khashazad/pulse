@@ -1,8 +1,10 @@
-/// HTTP client for the progress-photos feature (`/measures/photos`).
-/// `ProgressPhotoClient` is an actor that lists metadata, downloads slot
-/// images at full or thumb size, and uploads single or batched JPEGs as
-/// multipart bodies. Mirrors the auth + error-mapping conventions of
-/// `DietTrackerClient`. Used by the Progress Photos view and capture flow.
+/// HTTP client for the progress-photos feature (`/measures/photos`,
+/// `/measures/photo-tags`).
+/// `ProgressPhotoClient` is an actor that lists tag and photo metadata,
+/// downloads photo bytes at full or thumb size, uploads a tagged photo as a
+/// multipart body, deletes a photo by id, and creates / renames tags.
+/// Mirrors the auth + error-mapping conventions of `DietTrackerClient`.
+/// Used by the Progress Photos view, tag store, and capture flow.
 import Foundation
 
 /// Thread-safe HTTP client scoped to the progress-photos endpoints.
@@ -14,6 +16,7 @@ actor ProgressPhotoClient {
     private let sessionToken: String
     private let session: URLSession
     private let decoder: JSONDecoder
+    private let encoder: JSONEncoder
 
     /// Builds a client bound to the backend URL and session token.
     /// Inputs:
@@ -25,14 +28,14 @@ actor ProgressPhotoClient {
         self.sessionToken = sessionToken
         self.session = session
         self.decoder = JSONDecoder.dietTrackerDefault()
+        let enc = JSONEncoder()
+        enc.dateEncodingStrategy = .iso8601
+        self.encoder = enc
     }
 
-    /// Lists progress photo metadata for a date range inclusive.
-    /// Inputs:
-    ///   - frm: start date.
-    ///   - to: end date.
-    /// Outputs: array of `ProgressPhotoMetadata`, one per (date, slot).
-    /// Exceptions: `DietTrackerError` on transport, status, or decoding failure.
+    // MARK: photo metadata
+
+    /// Lists progress-photo metadata for an inclusive date range.
     func listMetadata(from frm: Date, to: Date) async throws -> [ProgressPhotoMetadata] {
         let url = try makeURL(
             path: "/measures/photos",
@@ -53,16 +56,10 @@ actor ProgressPhotoClient {
         }
     }
 
-    /// Downloads the raw JPEG bytes for a slot/date at the requested size.
-    /// Inputs:
-    ///   - date: calendar date.
-    ///   - slot: photo slot (front/side/back).
-    ///   - size: `.full` or `.thumb`.
-    /// Outputs: the JPEG payload bytes.
-    /// Exceptions: `DietTrackerError` on transport, status, or auth failure.
-    func download(date: Date, slot: ProgressPhotoSlot, size: Size) async throws -> Data {
+    /// Downloads raw JPEG bytes for a photo at the requested size.
+    func download(photoId: UUID, size: Size) async throws -> Data {
         let url = try makeURL(
-            path: "/measures/photos/\(DateOnly.string(from: date))/\(slot.rawValue)",
+            path: "/measures/photos/\(photoId.uuidString.lowercased())",
             query: [URLQueryItem(name: "size", value: size.rawValue)]
         )
         var req = URLRequest(url: url)
@@ -72,27 +69,25 @@ actor ProgressPhotoClient {
         return data
     }
 
-    /// Uploads a single JPEG to a specific slot/date.
-    /// Inputs:
-    ///   - date: calendar date.
-    ///   - slot: target photo slot.
-    ///   - jpeg: encoded JPEG bytes.
-    /// Outputs: persisted `ProgressPhotoMetadata` for the slot.
-    /// Exceptions: `DietTrackerError` on transport, auth, `.payloadTooLarge`,
-    /// or decoding failure.
-    func upload(date: Date, slot: ProgressPhotoSlot, jpeg: Data) async throws -> ProgressPhotoMetadata {
-        let url = try makeURL(
-            path: "/measures/photos/\(DateOnly.string(from: date))/\(slot.rawValue)",
-            query: []
-        )
+    /// Uploads a JPEG tagged with `tagId` for `date` and returns the persisted metadata.
+    func upload(
+        date: Date,
+        tagId: UUID,
+        jpeg: Data
+    ) async throws -> ProgressPhotoMetadata {
+        let url = try makeURL(path: "/measures/photos", query: [])
         let boundary = "----DietTrackerBoundary\(UUID().uuidString)"
         var req = URLRequest(url: url)
-        req.httpMethod = "PUT"
+        req.httpMethod = "POST"
         applyAuth(&req)
         req.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
         req.httpBody = Self.multipartBody(
             boundary: boundary,
-            parts: [(fieldName: "file", filename: "photo.jpg", mime: "image/jpeg", data: jpeg)]
+            fields: [
+                ("log_date", DateOnly.string(from: date)),
+                ("tag_id", tagId.uuidString.lowercased()),
+            ],
+            file: (fieldName: "file", filename: "photo.jpg", mime: "image/jpeg", data: jpeg)
         )
         let (data, http) = try await raw(request: req)
         try mapStatus(http.statusCode)
@@ -103,49 +98,10 @@ actor ProgressPhotoClient {
         }
     }
 
-    /// Uploads multiple JPEGs to distinct slots on the same date in one request.
-    /// Inputs:
-    ///   - date: calendar date for all photos.
-    ///   - assignments: map of slot -> JPEG bytes; each entry becomes one
-    ///     multipart part whose field name is the slot raw value.
-    /// Outputs: metadata for every persisted slot.
-    /// Exceptions: `DietTrackerError` on transport, auth, `.payloadTooLarge`,
-    /// or decoding failure.
-    func uploadBatch(
-        date: Date,
-        assignments: [ProgressPhotoSlot: Data]
-    ) async throws -> [ProgressPhotoMetadata] {
+    /// Deletes a photo by id.
+    func delete(photoId: UUID) async throws {
         let url = try makeURL(
-            path: "/measures/photos/\(DateOnly.string(from: date))",
-            query: []
-        )
-        let boundary = "----DietTrackerBoundary\(UUID().uuidString)"
-        var req = URLRequest(url: url)
-        req.httpMethod = "PUT"
-        applyAuth(&req)
-        req.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-        let parts: [(fieldName: String, filename: String, mime: String, data: Data)] =
-            assignments.map { slot, data in
-                (fieldName: slot.rawValue, filename: "\(slot.rawValue).jpg", mime: "image/jpeg", data: data)
-            }
-        req.httpBody = Self.multipartBody(boundary: boundary, parts: parts)
-        let (data, http) = try await raw(request: req)
-        try mapStatus(http.statusCode)
-        do {
-            return try decoder.decode([ProgressPhotoMetadata].self, from: data)
-        } catch {
-            throw DietTrackerError.decoding(String(describing: error))
-        }
-    }
-
-    /// Deletes the photo at a given slot/date.
-    /// Inputs:
-    ///   - date: calendar date.
-    ///   - slot: photo slot to delete.
-    /// Exceptions: `DietTrackerError` on transport, status, or auth failure.
-    func delete(date: Date, slot: ProgressPhotoSlot) async throws {
-        let url = try makeURL(
-            path: "/measures/photos/\(DateOnly.string(from: date))/\(slot.rawValue)",
+            path: "/measures/photos/\(photoId.uuidString.lowercased())",
             query: []
         )
         var req = URLRequest(url: url)
@@ -155,14 +111,72 @@ actor ProgressPhotoClient {
         try mapStatus(http.statusCode)
     }
 
+    // MARK: tags
+
+    /// Lists the user's progress-photo tags (server auto-seeds defaults on first call).
+    func listTags() async throws -> [ProgressPhotoTag] {
+        let url = try makeURL(path: "/measures/photo-tags", query: [])
+        var req = URLRequest(url: url)
+        applyAuth(&req)
+        req.setValue("application/json", forHTTPHeaderField: "Accept")
+        let (data, http) = try await raw(request: req)
+        try mapStatus(http.statusCode)
+        do {
+            return try decoder.decode([ProgressPhotoTag].self, from: data)
+        } catch {
+            throw DietTrackerError.decoding(String(describing: error))
+        }
+    }
+
+    /// Creates a new tag with the supplied display name.
+    func createTag(name: String) async throws -> ProgressPhotoTag {
+        let url = try makeURL(path: "/measures/photo-tags", query: [])
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        applyAuth(&req)
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue("application/json", forHTTPHeaderField: "Accept")
+        req.httpBody = try encoder.encode(["name": name])
+        let (data, http) = try await raw(request: req)
+        try mapStatus(http.statusCode)
+        do {
+            return try decoder.decode(ProgressPhotoTag.self, from: data)
+        } catch {
+            throw DietTrackerError.decoding(String(describing: error))
+        }
+    }
+
+    /// Renames and/or reorders an existing tag. At least one of the fields must be non-nil.
+    func updateTag(
+        id: UUID,
+        name: String? = nil,
+        sortOrder: Int? = nil
+    ) async throws -> ProgressPhotoTag {
+        let url = try makeURL(
+            path: "/measures/photo-tags/\(id.uuidString.lowercased())",
+            query: []
+        )
+        var req = URLRequest(url: url)
+        req.httpMethod = "PATCH"
+        applyAuth(&req)
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue("application/json", forHTTPHeaderField: "Accept")
+        var payload: [String: Any] = [:]
+        if let name { payload["name"] = name }
+        if let sortOrder { payload["sort_order"] = sortOrder }
+        req.httpBody = try JSONSerialization.data(withJSONObject: payload)
+        let (data, http) = try await raw(request: req)
+        try mapStatus(http.statusCode)
+        do {
+            return try decoder.decode(ProgressPhotoTag.self, from: data)
+        } catch {
+            throw DietTrackerError.decoding(String(describing: error))
+        }
+    }
+
     // MARK: helpers
 
     /// Composes a URL from the base, a path, and optional query items.
-    /// Inputs:
-    ///   - path: server path, leading slash included.
-    ///   - query: query items; empty array produces a URL without `?`.
-    /// Outputs: the resolved `URL`.
-    /// Exceptions: `DietTrackerError.notSignedIn` when URL composition fails.
     private func makeURL(path: String, query: [URLQueryItem]) throws -> URL {
         guard var comps = URLComponents(
             url: baseURL.appendingPathComponent(path),
@@ -174,18 +188,11 @@ actor ProgressPhotoClient {
     }
 
     /// Attaches the bearer session token to a request's `Authorization` header.
-    /// Inputs:
-    ///   - req: request to mutate in place.
     private func applyAuth(_ req: inout URLRequest) {
         req.setValue("Bearer \(sessionToken)", forHTTPHeaderField: "Authorization")
     }
 
     /// Executes a request and returns the raw data plus `HTTPURLResponse`.
-    /// Inputs:
-    ///   - request: prepared `URLRequest`.
-    /// Outputs: tuple of response body bytes and the `HTTPURLResponse`.
-    /// Exceptions: `DietTrackerError.network` wrapping a `URLError`, or
-    /// `DietTrackerError.server(status: -1)` if the response isn't HTTP.
     private func raw(request: URLRequest) async throws -> (Data, HTTPURLResponse) {
         do {
             let (data, response) = try await session.data(for: request)
@@ -199,42 +206,42 @@ actor ProgressPhotoClient {
     }
 
     /// Maps an HTTP status code to a `DietTrackerError` or returns on 2xx.
-    /// Inputs:
-    ///   - status: HTTP status code.
-    /// Exceptions: `.unauthorized` (401/403), `.notFound` (404),
-    /// `.payloadTooLarge` (413), or `.server(status:)` for any other non-2xx.
     private func mapStatus(_ status: Int) throws {
         switch status {
         case 200..<300: return
         case 401, 403: throw DietTrackerError.unauthorized
         case 404:      throw DietTrackerError.notFound
+        case 409:      throw DietTrackerError.server(status: 409)
         case 413:      throw DietTrackerError.payloadTooLarge
         default:       throw DietTrackerError.server(status: status)
         }
     }
 
-    /// Builds a multi-part `multipart/form-data` body.
-    /// Inputs:
-    ///   - boundary: multipart boundary string (without leading dashes).
-    ///   - parts: array of (field name, filename, MIME type, payload bytes)
-    ///     describing each part to include.
-    /// Outputs: encoded multipart body data with trailing closing boundary.
+    /// Builds a multipart body containing text fields and a single file part.
     private static func multipartBody(
         boundary: String,
-        parts: [(fieldName: String, filename: String, mime: String, data: Data)]
+        fields: [(name: String, value: String)],
+        file: (fieldName: String, filename: String, mime: String, data: Data)
     ) -> Data {
         var body = Data()
         let crlf = "\r\n"
-        for part in parts {
+        for field in fields {
             body.append("--\(boundary)\(crlf)".data(using: .utf8)!)
             body.append(
-                "Content-Disposition: form-data; name=\"\(part.fieldName)\"; filename=\"\(part.filename)\"\(crlf)"
+                "Content-Disposition: form-data; name=\"\(field.name)\"\(crlf)\(crlf)"
                     .data(using: .utf8)!
             )
-            body.append("Content-Type: \(part.mime)\(crlf)\(crlf)".data(using: .utf8)!)
-            body.append(part.data)
+            body.append(field.value.data(using: .utf8)!)
             body.append(crlf.data(using: .utf8)!)
         }
+        body.append("--\(boundary)\(crlf)".data(using: .utf8)!)
+        body.append(
+            "Content-Disposition: form-data; name=\"\(file.fieldName)\"; filename=\"\(file.filename)\"\(crlf)"
+                .data(using: .utf8)!
+        )
+        body.append("Content-Type: \(file.mime)\(crlf)\(crlf)".data(using: .utf8)!)
+        body.append(file.data)
+        body.append(crlf.data(using: .utf8)!)
         body.append("--\(boundary)--\(crlf)".data(using: .utf8)!)
         return body
     }

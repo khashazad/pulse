@@ -1,21 +1,18 @@
 /// Full-screen viewer for an individual progress photo.
 ///
 /// Hosts `ProgressPhotoDetailView`, which fetches the full-resolution image
-/// for a `(date, slot)` pair from `ProgressPhotoStore`, supports pinch-to-zoom,
-/// and exposes a trash action that deletes the photo and dismisses.
+/// for a `ProgressPhotoMetadata` row from `ProgressPhotoStore`, supports
+/// pinch-to-zoom, and exposes a trash action that deletes the photo and
+/// dismisses.
 import SwiftUI
 import UIKit
 
 /// Modal viewer showing one progress photo with zoom + delete affordances.
-///
-/// Inputs:
-/// - date: the date of the photo being viewed.
-/// - slot: the slot (front/back/left/right) of the photo being viewed.
 struct ProgressPhotoDetailView: View {
     @Environment(ProgressPhotoStore.self) private var store
+    @Environment(ProgressPhotoTagStore.self) private var tagStore
     @Environment(\.dismiss) private var dismiss
-    let date: Date
-    let slot: ProgressPhotoSlot
+    let meta: ProgressPhotoMetadata
 
     @State private var image: UIImage?
     @State private var scale: CGFloat = 1.0
@@ -38,7 +35,7 @@ struct ProgressPhotoDetailView: View {
                     ProgressView().tint(.white)
                 }
             }
-            .navigationTitle("\(slot.displayName) · \(date.formatted(.dateTime.month(.abbreviated).day().year()))")
+            .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -47,13 +44,19 @@ struct ProgressPhotoDetailView: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button(role: .destructive) {
                         Task {
-                            await store.delete(date: date, slot: slot)
+                            await store.delete(meta)
                             dismiss()
                         }
                     } label: { Image(systemName: "trash") }
                 }
             }
-            .task { image = await store.full(date: date, slot: slot) }
+            .task { image = await store.full(meta) }
         }
+    }
+
+    private var title: String {
+        let tagName = tagStore.tag(id: meta.tagId)?.name ?? "Photo"
+        let dateStr = meta.date.formatted(.dateTime.month(.abbreviated).day().year())
+        return "\(tagName) · \(dateStr)"
     }
 }

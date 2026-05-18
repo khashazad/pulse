@@ -1,23 +1,19 @@
 /// Unit tests for `ProgressPhotoClient`, the dedicated HTTP client for the
-/// `/progress-photos` endpoints.
-/// Covers metadata listing with range parameters, raw byte download,
-/// multipart upload (single + batch), and the 204 delete path.
+/// `/measures/photos` and `/measures/photo-tags` endpoints.
+/// Covers metadata listing with range parameters, raw byte download, tagged
+/// upload, the 204 delete path, and tag CRUD.
 /// Part of the iOS app's progress-photo test suite.
 import XCTest
 @testable import DietTracker
 
 final class ProgressPhotoClientTests: XCTestCase {
 
-    /// Builds an ephemeral `URLSession` wired to `StubURLProtocol`.
-    /// Outputs: a fresh `URLSession` for stubbed HTTP traffic.
     private func makeSession() -> URLSession {
         let cfg = URLSessionConfiguration.ephemeral
         cfg.protocolClasses = [StubURLProtocol.self]
         return URLSession(configuration: cfg)
     }
 
-    /// Builds a `ProgressPhotoClient` against the stub URL with a fixed bearer.
-    /// Outputs: a `ProgressPhotoClient`.
     private func makeClient() -> ProgressPhotoClient {
         ProgressPhotoClient(
             baseURL: URL(string: "https://example.test")!,
@@ -26,17 +22,24 @@ final class ProgressPhotoClientTests: XCTestCase {
         )
     }
 
-    /// Clears the shared `StubURLProtocol` responder between tests.
     override func tearDown() {
         super.tearDown()
         StubURLProtocol.responder = nil
     }
 
-    /// Verifies `listMetadata(from:to:)` sends `from=` and `to=` parameters
-    /// and decodes the metadata array.
     func testListMetadataSendsRangeAndDecodes() async throws {
+        let tagId = UUID()
+        let photoId = UUID()
         let json = """
-        [{"date":"2026-05-17","slot":"front","mime":"image/jpeg","bytes":100,"sha256":"abc","updated_at":"2026-05-17T00:00:00Z"}]
+        [{
+          "id":"\(photoId.uuidString.lowercased())",
+          "date":"2026-05-17",
+          "tag_id":"\(tagId.uuidString.lowercased())",
+          "mime":"image/jpeg",
+          "bytes":100,
+          "sha256":"abc",
+          "updated_at":"2026-05-17T00:00:00Z"
+        }]
         """.data(using: .utf8)!
         var capturedURL: URL?
         StubURLProtocol.responder = { req in
@@ -47,13 +50,13 @@ final class ProgressPhotoClientTests: XCTestCase {
         let to  = DateOnly.formatter.date(from: "2026-05-31")!
         let result = try await makeClient().listMetadata(from: frm, to: to)
         XCTAssertEqual(result.count, 1)
-        XCTAssertEqual(result[0].slot, .front)
+        XCTAssertEqual(result[0].tagId, tagId)
+        XCTAssertEqual(result[0].id, photoId)
         XCTAssertEqual(result[0].sha256, "abc")
         XCTAssertTrue(capturedURL?.absoluteString.contains("from=2026-05-01") ?? false)
         XCTAssertTrue(capturedURL?.absoluteString.contains("to=2026-05-31") ?? false)
     }
 
-    /// Verifies `download(date:slot:size:)` returns the raw response bytes.
     func testDownloadReturnsBytes() async throws {
         let bytes = Data(repeating: 0xAB, count: 16)
         StubURLProtocol.responder = { req in
@@ -67,20 +70,19 @@ final class ProgressPhotoClientTests: XCTestCase {
                 bytes
             )
         }
-        let d = DateOnly.formatter.date(from: "2026-05-17")!
-        let data = try await makeClient().download(date: d, slot: .front, size: .thumb)
+        let data = try await makeClient().download(photoId: UUID(), size: .thumb)
         XCTAssertEqual(data, bytes)
     }
 
-    /// Verifies a single-slot upload sends a multipart body and decodes the
-    /// returned metadata.
-    func testUploadSingleSendsMultipart() async throws {
+    func testUploadSendsMultipartWithTagAndDate() async throws {
+        let tagId = UUID()
+        let photoId = UUID()
         var capturedContentType: String?
-        var capturedBodyEmpty = true
+        var capturedBody = Data()
         StubURLProtocol.responder = { req in
             capturedContentType = req.value(forHTTPHeaderField: "Content-Type")
-            if let body = req.httpBody, !body.isEmpty {
-                capturedBodyEmpty = false
+            if let body = req.httpBody {
+                capturedBody = body
             } else if let stream = req.httpBodyStream {
                 stream.open()
                 defer { stream.close() }
@@ -89,48 +91,113 @@ final class ProgressPhotoClientTests: XCTestCase {
                 while stream.hasBytesAvailable {
                     let n = stream.read(buf, maxLength: 1024)
                     if n <= 0 { break }
-                    if n > 0 { capturedBodyEmpty = false }
+                    capturedBody.append(buf, count: n)
                 }
             }
             let json = """
-            {"date":"2026-05-17","slot":"front","mime":"image/jpeg","bytes":3,"sha256":"sha","updated_at":"2026-05-17T00:00:00Z"}
+            {
+              "id":"\(photoId.uuidString.lowercased())",
+              "date":"2026-05-17",
+              "tag_id":"\(tagId.uuidString.lowercased())",
+              "mime":"image/jpeg",
+              "bytes":3,
+              "sha256":"sha",
+              "updated_at":"2026-05-17T00:00:00Z"
+            }
             """.data(using: .utf8)!
-            return (HTTPURLResponse(url: req.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, json)
+            return (HTTPURLResponse(url: req.url!, statusCode: 201, httpVersion: nil, headerFields: nil)!, json)
         }
         let d = DateOnly.formatter.date(from: "2026-05-17")!
-        let meta = try await makeClient().upload(date: d, slot: .front, jpeg: Data([0xFF, 0xD8, 0xFF]))
-        XCTAssertEqual(meta.slot, .front)
+        let meta = try await makeClient().upload(date: d, tagId: tagId, jpeg: Data([0xFF, 0xD8, 0xFF]))
+        XCTAssertEqual(meta.tagId, tagId)
+        XCTAssertEqual(meta.id, photoId)
         XCTAssertTrue(capturedContentType?.contains("multipart/form-data") ?? false)
-        XCTAssertFalse(capturedBodyEmpty)
+        let bodyStr = String(data: capturedBody, encoding: .utf8) ?? ""
+        XCTAssertTrue(bodyStr.contains("name=\"log_date\""))
+        XCTAssertTrue(bodyStr.contains("2026-05-17"))
+        XCTAssertTrue(bodyStr.contains("name=\"tag_id\""))
+        XCTAssertTrue(bodyStr.contains(tagId.uuidString.lowercased()))
     }
 
-    /// Verifies a batch upload of multiple slots returns one metadata entry
-    /// per slot.
-    func testUploadBatchSendsAllSlots() async throws {
-        StubURLProtocol.responder = { req in
-            let json = """
-            [
-              {"date":"2026-05-17","slot":"front","mime":"image/jpeg","bytes":3,"sha256":"f","updated_at":"2026-05-17T00:00:00Z"},
-              {"date":"2026-05-17","slot":"back","mime":"image/jpeg","bytes":3,"sha256":"b","updated_at":"2026-05-17T00:00:00Z"}
-            ]
-            """.data(using: .utf8)!
-            return (HTTPURLResponse(url: req.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, json)
-        }
-        let d = DateOnly.formatter.date(from: "2026-05-17")!
-        let result = try await makeClient().uploadBatch(
-            date: d,
-            assignments: [.front: Data([1]), .back: Data([2])]
-        )
-        XCTAssertEqual(result.count, 2)
-        XCTAssertEqual(Set(result.map(\.slot)), Set([.front, .back]))
-    }
-
-    /// Verifies `delete(date:slot:)` succeeds on HTTP 204.
     func testDeleteSucceedsOn204() async throws {
         StubURLProtocol.responder = { req in
             (HTTPURLResponse(url: req.url!, statusCode: 204, httpVersion: nil, headerFields: nil)!, Data())
         }
-        let d = DateOnly.formatter.date(from: "2026-05-17")!
-        try await makeClient().delete(date: d, slot: .front)
+        try await makeClient().delete(photoId: UUID())
+    }
+
+    func testListTagsDecodes() async throws {
+        let tagId = UUID()
+        let json = """
+        [{
+          "id":"\(tagId.uuidString.lowercased())",
+          "name":"front",
+          "normalized_name":"front",
+          "sort_order":0,
+          "created_at":"2026-05-17T00:00:00Z",
+          "updated_at":"2026-05-17T00:00:00Z"
+        }]
+        """.data(using: .utf8)!
+        StubURLProtocol.responder = { req in
+            (HTTPURLResponse(url: req.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, json)
+        }
+        let tags = try await makeClient().listTags()
+        XCTAssertEqual(tags.count, 1)
+        XCTAssertEqual(tags[0].id, tagId)
+        XCTAssertEqual(tags[0].name, "front")
+    }
+
+    func testCreateTagSendsName() async throws {
+        let tagId = UUID()
+        var capturedBody = Data()
+        StubURLProtocol.responder = { req in
+            if let body = req.httpBody { capturedBody = body }
+            else if let stream = req.httpBodyStream {
+                stream.open()
+                defer { stream.close() }
+                let buf = UnsafeMutablePointer<UInt8>.allocate(capacity: 1024)
+                defer { buf.deallocate() }
+                while stream.hasBytesAvailable {
+                    let n = stream.read(buf, maxLength: 1024)
+                    if n <= 0 { break }
+                    capturedBody.append(buf, count: n)
+                }
+            }
+            let json = """
+            {
+              "id":"\(tagId.uuidString.lowercased())",
+              "name":"morning",
+              "normalized_name":"morning",
+              "sort_order":4,
+              "created_at":"2026-05-17T00:00:00Z",
+              "updated_at":"2026-05-17T00:00:00Z"
+            }
+            """.data(using: .utf8)!
+            return (HTTPURLResponse(url: req.url!, statusCode: 201, httpVersion: nil, headerFields: nil)!, json)
+        }
+        let tag = try await makeClient().createTag(name: "morning")
+        XCTAssertEqual(tag.id, tagId)
+        XCTAssertTrue(
+            (String(data: capturedBody, encoding: .utf8) ?? "").contains("\"morning\"")
+        )
+    }
+
+    func testUpdateTagRenames() async throws {
+        let tagId = UUID()
+        StubURLProtocol.responder = { req in
+            let json = """
+            {
+              "id":"\(tagId.uuidString.lowercased())",
+              "name":"AM",
+              "normalized_name":"am",
+              "sort_order":0,
+              "created_at":"2026-05-17T00:00:00Z",
+              "updated_at":"2026-05-17T00:00:00Z"
+            }
+            """.data(using: .utf8)!
+            return (HTTPURLResponse(url: req.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, json)
+        }
+        let tag = try await makeClient().updateTag(id: tagId, name: "AM")
+        XCTAssertEqual(tag.normalizedName, "am")
     }
 }
