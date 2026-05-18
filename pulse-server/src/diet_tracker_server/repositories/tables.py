@@ -302,5 +302,13 @@ progress_photos = Table(
     Column("sha256", Text, nullable=False),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("idempotency_key", UUID(as_uuid=True), nullable=True),
     Index("idx_progress_photos_user_date_tag", "user_key", "log_date", "tag_id"),
+    Index(
+        "uq_progress_photos_user_idem",
+        "user_key",
+        "idempotency_key",
+        unique=True,
+        postgresql_where=text("idempotency_key IS NOT NULL"),
+    ),
 )

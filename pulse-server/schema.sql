@@ -219,7 +219,7 @@ create table if not exists progress_photos (
   id uuid primary key default gen_random_uuid(),
   user_key text not null,
   log_date date not null,
-  tag_id uuid references progress_photo_tags(id) on delete restrict,
+  tag_id uuid not null references progress_photo_tags(id) on delete restrict,
   photo bytea not null,
   photo_thumb bytea not null,
   photo_mime text not null default 'image/jpeg',
@@ -276,6 +276,11 @@ $body$;
 drop index if exists idx_progress_photos_user_date;
 create index if not exists idx_progress_photos_user_date_tag
   on progress_photos (user_key, log_date desc, tag_id);
+
+alter table progress_photos add column if not exists idempotency_key uuid;
+create unique index if not exists uq_progress_photos_user_idem
+  on progress_photos (user_key, idempotency_key)
+  where idempotency_key is not null;
 
 alter table food_memory add column if not exists aliases text[] not null default '{}'::text[];
 alter table meals add column if not exists aliases text[] not null default '{}'::text[];

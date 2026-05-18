@@ -68,11 +68,16 @@ class ProgressPhotoRepository:
         bytes_: int,
         sha256: str,
         now: DateTimeValue,
+        idempotency_key: UUID | None = None,
     ) -> dict[str, Any]:
         """Insert a new progress-photo row, returning its summary projection.
 
         Unlike the previous slot-based model there is no per-day uniqueness:
         a user may persist many photos for the same ``(log_date, tag_id)``.
+        When ``idempotency_key`` is supplied, the row is deduped against the
+        partial unique index ``uq_progress_photos_user_idem`` so retries by
+        the offline upload queue return the previously-inserted row instead
+        of creating a duplicate.
 
         **Inputs:**
         - user_key (str): Owning user's scoping key.
@@ -84,26 +89,38 @@ class ProgressPhotoRepository:
         - bytes_ (int): Byte length of ``photo`` for metadata reporting.
         - sha256 (str): Hex digest of the photo content for client cache keys.
         - now (DateTimeValue): Timestamp for ``created_at``/``updated_at``.
+        - idempotency_key (UUID | None): Optional client-supplied dedup key.
+          When set, a second call with the same ``(user_key, idempotency_key)``
+          returns the existing row instead of inserting a duplicate.
 
         **Outputs:**
-        - dict[str, Any]: Summary row of the inserted record (no blob columns).
+        - dict[str, Any]: Summary row of the inserted (or pre-existing) record.
         """
-        stmt = (
-            pg_insert(progress_photos)
-            .values(
-                user_key=user_key,
-                log_date=log_date,
-                tag_id=tag_id,
-                photo=photo,
-                photo_thumb=photo_thumb,
-                photo_mime=photo_mime,
-                bytes=bytes_,
-                sha256=sha256,
-                created_at=now,
-                updated_at=now,
+        values = {
+            "user_key": user_key,
+            "log_date": log_date,
+            "tag_id": tag_id,
+            "photo": photo,
+            "photo_thumb": photo_thumb,
+            "photo_mime": photo_mime,
+            "bytes": bytes_,
+            "sha256": sha256,
+            "created_at": now,
+            "updated_at": now,
+            "idempotency_key": idempotency_key,
+        }
+        stmt = pg_insert(progress_photos).values(**values)
+        if idempotency_key is not None:
+            # No-op SET so RETURNING fires on conflict and gives us the existing row.
+            stmt = stmt.on_conflict_do_update(
+                index_elements=[
+                    progress_photos.c.user_key,
+                    progress_photos.c.idempotency_key,
+                ],
+                index_where=progress_photos.c.idempotency_key.isnot(None),
+                set_={"updated_at": progress_photos.c.updated_at},
             )
-            .returning(*_summary_columns())
-        )
+        stmt = stmt.returning(*_summary_columns())
         result = await self._session.execute(stmt)
         return dict(result.mappings().one())
 

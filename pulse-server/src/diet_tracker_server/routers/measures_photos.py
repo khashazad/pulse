@@ -166,6 +166,7 @@ async def create_photo(
     request: Request,
     log_date: DateValue = Form(..., alias="log_date"),
     tag_id: UUID = Form(..., alias="tag_id"),
+    idempotency_key: UUID | None = Form(default=None, alias="idempotency_key"),
     file: UploadFile = File(...),
     session: AsyncSession = Depends(get_session_dependency),
 ) -> dict:
@@ -173,17 +174,21 @@ async def create_photo(
 
     Streams the upload under :data:`MAX_UPLOAD_BYTES`, hands off to
     :func:`insert_one` for image validation/transcoding and persistence.
-    Multiple photos may share the same ``(log_date, tag_id)``.
+    Multiple photos may share the same ``(log_date, tag_id)``. When the
+    client supplies an ``idempotency_key`` (a stable UUID it reuses across
+    retries of the same logical upload), a duplicate POST returns the
+    previously-inserted row instead of creating another one.
 
     **Inputs:**
     - request (Request): Active request providing ``user_key``.
     - log_date (date): Date the photo was taken (multipart form field).
     - tag_id (UUID): Tag to attach (multipart form field).
+    - idempotency_key (UUID | None): Optional client-supplied dedup key.
     - file (UploadFile): Multipart image upload.
     - session (AsyncSession): DB session dependency.
 
     **Outputs:**
-    - dict: Metadata for the inserted row.
+    - dict: Metadata for the inserted (or pre-existing) row.
 
     **Exceptions:**
     - HTTPException(400): Raised for future dates.
@@ -203,6 +208,7 @@ async def create_photo(
             log_date=log_date,
             tag_id=tag_id,
             raw=raw,
+            idempotency_key=idempotency_key,
         )
     return _row_to_metadata(row)
 

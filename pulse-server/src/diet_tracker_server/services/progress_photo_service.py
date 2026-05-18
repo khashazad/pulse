@@ -83,6 +83,7 @@ async def insert_one(
     log_date: DateValue,
     tag_id: UUID,
     raw: bytes,
+    idempotency_key: UUID | None = None,
 ) -> dict[str, Any]:
     """Validate, process, and insert a single tagged progress photo.
 
@@ -98,9 +99,12 @@ async def insert_one(
     - log_date (DateValue): Date the photo is filed under.
     - tag_id (UUID): Tag to attach to the photo (must belong to ``user_key``).
     - raw (bytes): Raw upload bytes.
+    - idempotency_key (UUID | None): Optional client-supplied dedup key; a
+      second call with the same ``(user_key, idempotency_key)`` returns the
+      previously-inserted row instead of creating a duplicate.
 
     **Outputs:**
-    - dict[str, Any]: The inserted progress-photo row.
+    - dict[str, Any]: The inserted (or pre-existing) progress-photo row.
 
     **Exceptions:**
     - fastapi.HTTPException: Raised with 400 for future dates, 404 when
@@ -125,4 +129,5 @@ async def insert_one(
         bytes_=len(full),
         sha256=sha,
         now=DateTimeValue.now(tz=TimezoneValue.utc),
+        idempotency_key=idempotency_key,
     )

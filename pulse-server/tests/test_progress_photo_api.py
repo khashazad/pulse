@@ -253,6 +253,38 @@ def test_post_photo_returns_metadata(client: TestClient) -> None:
     assert body["date"] == "2026-05-17"
 
 
+def test_post_photo_forwards_idempotency_key(client: TestClient) -> None:
+    """`POST /measures/photos` passes ``idempotency_key`` through to the repository."""
+    src = _png_bytes(400, 400)
+    tag_id = uuid.uuid4()
+    idem = uuid.uuid4()
+    photo_repo = MagicMock()
+    photo_repo.insert = AsyncMock(return_value=_photo_row(tag_id, "sha"))
+    tag_repo = MagicMock()
+    tag_repo.get_by_id = AsyncMock(return_value=_tag_row("front", 0))
+    with patch(
+        "diet_tracker_server.routers.measures_photos.ProgressPhotoRepository",
+        return_value=photo_repo,
+    ), patch(
+        "diet_tracker_server.routers.measures_photos.ProgressPhotoTagRepository",
+        return_value=tag_repo,
+    ):
+        resp = client.post(
+            "/measures/photos",
+            headers=HEADERS,
+            data={
+                "log_date": "2026-05-17",
+                "tag_id": str(tag_id),
+                "idempotency_key": str(idem),
+            },
+            files={"file": ("x.png", src, "image/png")},
+        )
+    assert resp.status_code == 201, resp.text
+    photo_repo.insert.assert_awaited_once()
+    kwargs = photo_repo.insert.await_args.kwargs
+    assert kwargs["idempotency_key"] == idem
+
+
 def test_post_photo_rejects_future_date(client: TestClient) -> None:
     """`POST /measures/photos` with a future date returns 400."""
     src = _png_bytes(100, 100)

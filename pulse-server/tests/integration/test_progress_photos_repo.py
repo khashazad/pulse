@@ -120,6 +120,62 @@ async def test_insert_then_get_round_trip(session: AsyncSession) -> None:
 
 
 @pytest.mark.asyncio
+async def test_idempotency_key_dedupes_repeat_insert(session: AsyncSession) -> None:
+    """A second insert with the same ``(user_key, idempotency_key)`` returns the existing row.
+
+    Guards against duplicate progress photos when the iOS upload queue
+    retries a POST after a partial local failure (e.g. cache rename / queue
+    persistence error after the network request already succeeded).
+    """
+    user_key = f"test-{uuid.uuid4().hex}"
+    tag_id = await _seed_tag(session, user_key=user_key)
+    repo = ProgressPhotoRepository(session)
+    idem = uuid.uuid4()
+    async with transaction(session):
+        first = await repo.insert(
+            user_key=user_key, log_date=DateValue(2026, 5, 17), tag_id=tag_id,
+            photo=b"v1bytes", photo_thumb=_thumb(), photo_mime="image/jpeg",
+            bytes_=7, sha256="sha-v1", now=_now(), idempotency_key=idem,
+        )
+    async with transaction(session):
+        second = await repo.insert(
+            user_key=user_key, log_date=DateValue(2026, 5, 17), tag_id=tag_id,
+            photo=b"v2bytes", photo_thumb=_thumb(), photo_mime="image/jpeg",
+            bytes_=7, sha256="sha-v2", now=_now(), idempotency_key=idem,
+        )
+    assert second["id"] == first["id"]
+    assert second["sha256"] == "sha-v1"  # pre-existing row returned, not overwritten
+    rows = await repo.list_metadata(
+        user_key=user_key, frm=DateValue(2026, 5, 1), to=DateValue(2026, 5, 31)
+    )
+    assert len(rows) == 1
+
+
+@pytest.mark.asyncio
+async def test_null_idempotency_keys_dont_collide(session: AsyncSession) -> None:
+    """Inserts without ``idempotency_key`` always create a new row (NULLs distinct)."""
+    user_key = f"test-{uuid.uuid4().hex}"
+    tag_id = await _seed_tag(session, user_key=user_key)
+    repo = ProgressPhotoRepository(session)
+    async with transaction(session):
+        await repo.insert(
+            user_key=user_key, log_date=DateValue(2026, 5, 17), tag_id=tag_id,
+            photo=b"a", photo_thumb=_thumb(), photo_mime="image/jpeg",
+            bytes_=1, sha256="sha-a", now=_now(),
+        )
+    async with transaction(session):
+        await repo.insert(
+            user_key=user_key, log_date=DateValue(2026, 5, 17), tag_id=tag_id,
+            photo=b"b", photo_thumb=_thumb(), photo_mime="image/jpeg",
+            bytes_=1, sha256="sha-b", now=_now(),
+        )
+    rows = await repo.list_metadata(
+        user_key=user_key, frm=DateValue(2026, 5, 1), to=DateValue(2026, 5, 31)
+    )
+    assert len(rows) == 2
+
+
+@pytest.mark.asyncio
 async def test_multiple_photos_per_date_and_tag(session: AsyncSession) -> None:
     """Two ``insert`` calls for the same ``(user_key, log_date, tag_id)`` both persist."""
     user_key = f"test-{uuid.uuid4().hex}"
