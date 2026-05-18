@@ -202,22 +202,80 @@ create table if not exists containers (
 create unique index if not exists idx_containers_user_key_name on containers(user_key, normalized_name);
 create index if not exists idx_containers_user_key on containers(user_key);
 
+create table if not exists progress_photo_tags (
+  id uuid primary key default gen_random_uuid(),
+  user_key text not null,
+  name text not null,
+  normalized_name text not null,
+  sort_order integer not null default 0,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (user_key, normalized_name)
+);
+create index if not exists idx_progress_photo_tags_user_key
+  on progress_photo_tags(user_key, sort_order, normalized_name);
+
 create table if not exists progress_photos (
   id uuid primary key default gen_random_uuid(),
   user_key text not null,
   log_date date not null,
-  slot text not null check (slot in ('front','left','right','back')),
+  tag_id uuid references progress_photo_tags(id) on delete restrict,
   photo bytea not null,
   photo_thumb bytea not null,
   photo_mime text not null default 'image/jpeg',
   bytes integer not null,
   sha256 text not null,
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-  unique (user_key, log_date, slot)
+  updated_at timestamptz not null default now()
 );
-create index if not exists idx_progress_photos_user_date
-  on progress_photos (user_key, log_date desc);
+
+-- One-time migration from the legacy fixed-slot model to per-user tags.
+-- Safe to run repeatedly: the column / constraint guards skip on already-migrated
+-- deployments.
+do $body$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_name = 'progress_photos' and column_name = 'slot'
+  ) then
+    insert into progress_photo_tags (user_key, name, normalized_name, sort_order)
+    select user_key, slot, slot,
+           case slot when 'front' then 0
+                    when 'left'  then 1
+                    when 'right' then 2
+                    when 'back'  then 3
+                    else 4 end
+      from progress_photos
+     where slot is not null
+     group by user_key, slot
+    on conflict (user_key, normalized_name) do nothing;
+
+    update progress_photos pp
+       set tag_id = t.id
+      from progress_photo_tags t
+     where pp.tag_id is null
+       and pp.user_key = t.user_key
+       and pp.slot = t.normalized_name;
+
+    alter table progress_photos drop constraint if exists progress_photos_slot_check;
+    alter table progress_photos drop constraint if exists uq_progress_photos_user_date_slot;
+    alter table progress_photos drop column slot;
+    alter table progress_photos alter column tag_id set not null;
+  end if;
+
+  if not exists (
+    select 1 from pg_constraint where conname = 'fk_progress_photos_tag_id'
+  ) then
+    alter table progress_photos
+      add constraint fk_progress_photos_tag_id
+      foreign key (tag_id) references progress_photo_tags(id) on delete restrict;
+  end if;
+end
+$body$;
+
+drop index if exists idx_progress_photos_user_date;
+create index if not exists idx_progress_photos_user_date_tag
+  on progress_photos (user_key, log_date desc, tag_id);
 
 alter table food_memory add column if not exists aliases text[] not null default '{}'::text[];
 alter table meals add column if not exists aliases text[] not null default '{}'::text[];

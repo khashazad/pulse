@@ -1,9 +1,10 @@
 """Progress-photo persistence layer.
 
 Provides :class:`ProgressPhotoRepository`, which owns every SQL statement
-against the ``progress_photos`` table: upsert keyed by
-``(user_key, log_date, slot)``, metadata listing across a date range, photo /
-thumbnail blob fetch, and deletion.
+against the ``progress_photos`` table: insert keyed by ``photo_id`` (one row
+per photo — multiple per ``(user_key, log_date, tag_id)`` are allowed),
+metadata listing across a date range, photo / thumbnail blob fetch, and
+deletion by photo id.
 
 Sits between the progress-photo service and the underlying Postgres table
 definition (``repositories/tables.py``); it is the only module in the codebase
@@ -14,6 +15,7 @@ from __future__ import annotations
 
 from datetime import date as DateValue, datetime as DateTimeValue
 from typing import Any
+from uuid import UUID
 
 from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -23,7 +25,7 @@ from diet_tracker_server.repositories.tables import progress_photos
 
 
 def _summary_columns() -> tuple[Any, ...]:
-    """Return the projection used for list / upsert responses.
+    """Return the projection used for list / insert responses.
 
     Excludes the ``photo`` / ``photo_thumb`` blob columns so summary endpoints
     never accidentally stream binary data.
@@ -35,7 +37,7 @@ def _summary_columns() -> tuple[Any, ...]:
         progress_photos.c.id,
         progress_photos.c.user_key,
         progress_photos.c.log_date,
-        progress_photos.c.slot,
+        progress_photos.c.tag_id,
         progress_photos.c.photo_mime,
         progress_photos.c.bytes,
         progress_photos.c.sha256,
@@ -54,12 +56,12 @@ class ProgressPhotoRepository:
         """
         self._session = session
 
-    async def upsert(
+    async def insert(
         self,
         *,
         user_key: str,
         log_date: DateValue,
-        slot: str,
+        tag_id: UUID,
         photo: bytes,
         photo_thumb: bytes,
         photo_mime: str,
@@ -67,16 +69,15 @@ class ProgressPhotoRepository:
         sha256: str,
         now: DateTimeValue,
     ) -> dict[str, Any]:
-        """Insert or replace the progress-photo row for ``(user_key, log_date, slot)``.
+        """Insert a new progress-photo row, returning its summary projection.
 
-        Uses Postgres ``ON CONFLICT`` against the
-        ``(user_key, log_date, slot)`` unique index so the call is idempotent
-        per slot per day.
+        Unlike the previous slot-based model there is no per-day uniqueness:
+        a user may persist many photos for the same ``(log_date, tag_id)``.
 
         **Inputs:**
         - user_key (str): Owning user's scoping key.
         - log_date (DateValue): Calendar date the photo belongs to.
-        - slot (str): Slot identifier (``front``/``left``/``right``/``back``).
+        - tag_id (UUID): FK into ``progress_photo_tags``.
         - photo (bytes): Full-resolution photo bytes.
         - photo_thumb (bytes): Thumbnail bytes.
         - photo_mime (str): MIME type for the stored image.
@@ -85,15 +86,14 @@ class ProgressPhotoRepository:
         - now (DateTimeValue): Timestamp for ``created_at``/``updated_at``.
 
         **Outputs:**
-        - dict[str, Any]: Summary row of the inserted/updated record (no blob
-          columns).
+        - dict[str, Any]: Summary row of the inserted record (no blob columns).
         """
         stmt = (
             pg_insert(progress_photos)
             .values(
                 user_key=user_key,
                 log_date=log_date,
-                slot=slot,
+                tag_id=tag_id,
                 photo=photo,
                 photo_thumb=photo_thumb,
                 photo_mime=photo_mime,
@@ -102,22 +102,8 @@ class ProgressPhotoRepository:
                 created_at=now,
                 updated_at=now,
             )
+            .returning(*_summary_columns())
         )
-        stmt = stmt.on_conflict_do_update(
-            index_elements=[
-                progress_photos.c.user_key,
-                progress_photos.c.log_date,
-                progress_photos.c.slot,
-            ],
-            set_={
-                "photo": stmt.excluded.photo,
-                "photo_thumb": stmt.excluded.photo_thumb,
-                "photo_mime": stmt.excluded.photo_mime,
-                "bytes": stmt.excluded.bytes,
-                "sha256": stmt.excluded.sha256,
-                "updated_at": stmt.excluded.updated_at,
-            },
-        ).returning(*_summary_columns())
         result = await self._session.execute(stmt)
         return dict(result.mappings().one())
 
@@ -126,8 +112,8 @@ class ProgressPhotoRepository:
     ) -> list[dict[str, Any]]:
         """List progress-photo metadata for a user across an inclusive date range.
 
-        Ordered by date descending then slot ascending. Blob columns are
-        excluded.
+        Ordered by ``(log_date desc, tag_id asc, created_at asc)`` so callers
+        receive a stable grouping by date then tag.
 
         **Inputs:**
         - user_key (str): Owning user's scoping key.
@@ -135,28 +121,30 @@ class ProgressPhotoRepository:
         - to (DateValue): Inclusive upper bound on ``log_date``.
 
         **Outputs:**
-        - list[dict[str, Any]]: Summary rows ordered by
-          ``(log_date desc, slot asc)``.
+        - list[dict[str, Any]]: Summary rows.
         """
         stmt = (
             select(*_summary_columns())
             .where(progress_photos.c.user_key == user_key)
             .where(progress_photos.c.log_date >= frm)
             .where(progress_photos.c.log_date <= to)
-            .order_by(progress_photos.c.log_date.desc(), progress_photos.c.slot.asc())
+            .order_by(
+                progress_photos.c.log_date.desc(),
+                progress_photos.c.tag_id.asc(),
+                progress_photos.c.created_at.asc(),
+            )
         )
         result = await self._session.execute(stmt)
         return [dict(row) for row in result.mappings().all()]
 
     async def get_photo(
-        self, *, user_key: str, log_date: DateValue, slot: str, thumb: bool
+        self, *, photo_id: UUID, user_key: str, thumb: bool
     ) -> dict[str, Any] | None:
         """Fetch the stored photo (or thumbnail) bytes plus cache headers.
 
         **Inputs:**
+        - photo_id (UUID): Photo primary key.
         - user_key (str): Owning user's scoping key.
-        - log_date (DateValue): Calendar date the photo belongs to.
-        - slot (str): Slot identifier.
         - thumb (bool): When ``True`` returns the thumbnail column; otherwise
           the full photo column.
 
@@ -172,23 +160,19 @@ class ProgressPhotoRepository:
                 progress_photos.c.sha256,
                 progress_photos.c.updated_at,
             )
+            .where(progress_photos.c.id == photo_id)
             .where(progress_photos.c.user_key == user_key)
-            .where(progress_photos.c.log_date == log_date)
-            .where(progress_photos.c.slot == slot)
         )
         result = await self._session.execute(stmt)
         row = result.mappings().first()
         return dict(row) if row else None
 
-    async def delete(
-        self, *, user_key: str, log_date: DateValue, slot: str
-    ) -> bool:
-        """Remove the progress-photo row for ``(user_key, log_date, slot)``.
+    async def delete(self, *, photo_id: UUID, user_key: str) -> bool:
+        """Remove a progress-photo row by id (scoped to its owner).
 
         **Inputs:**
+        - photo_id (UUID): Photo primary key.
         - user_key (str): Owning user's scoping key.
-        - log_date (DateValue): Calendar date the photo belongs to.
-        - slot (str): Slot identifier.
 
         **Outputs:**
         - bool: ``True`` when a row was removed, ``False`` when no matching
@@ -196,9 +180,8 @@ class ProgressPhotoRepository:
         """
         stmt = (
             delete(progress_photos)
+            .where(progress_photos.c.id == photo_id)
             .where(progress_photos.c.user_key == user_key)
-            .where(progress_photos.c.log_date == log_date)
-            .where(progress_photos.c.slot == slot)
             .returning(progress_photos.c.id)
         )
         result = await self._session.execute(stmt)

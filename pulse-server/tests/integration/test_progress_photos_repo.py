@@ -1,10 +1,10 @@
-"""Integration tests for ``ProgressPhotoRepository``.
+"""Integration tests for ``ProgressPhotoRepository`` and ``ProgressPhotoTagRepository``.
 
-Covers the ``progress_photos`` upsert + slot semantics: write a JPEG plus
-thumbnail per ``(user_key, log_date, slot)``, replace an existing slot in place,
-filter list-by-metadata results to an inclusive date range, retrieve full vs.
-thumb bytes by flag, and delete a slot. Integration test: hits a real Postgres
-via ``TEST_DATABASE_URL``.
+Covers the per-user tag catalog (seed + list + create + rename) and the
+photo-id-based progress-photo persistence (insert one or many per
+``(user_key, log_date, tag_id)``, range filtering, full vs. thumb retrieval,
+and deletion). Integration test: hits a real Postgres via
+``TEST_DATABASE_URL``.
 """
 
 from __future__ import annotations
@@ -22,19 +22,15 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from diet_tracker_server.db import to_sqlalchemy_url, transaction
 from diet_tracker_server.repositories.progress_photo import ProgressPhotoRepository
+from diet_tracker_server.repositories.progress_photo_tag import (
+    ProgressPhotoTagRepository,
+)
 
 pytestmark = pytest.mark.integration
 
 
 def _integration_database_url() -> str:
-    """Resolve the SQLAlchemy URL for the integration database, skipping if unset.
-
-    **Outputs:**
-    - str: SQLAlchemy-async URL derived from ``TEST_DATABASE_URL``.
-
-    **Exceptions:**
-    - ``pytest.skip.Exception``: Raised via ``pytest.skip`` when ``TEST_DATABASE_URL`` is not set.
-    """
+    """Resolve the SQLAlchemy URL for the integration database, skipping if unset."""
     raw_url = os.getenv("TEST_DATABASE_URL")
     if raw_url is None:
         pytest.skip("Set TEST_DATABASE_URL to run integration tests")
@@ -42,22 +38,16 @@ def _integration_database_url() -> str:
 
 
 async def _truncate(engine) -> None:
-    """Truncate the ``progress_photos`` table, restarting identity sequences.
-
-    **Inputs:**
-    - engine: SQLAlchemy async engine bound to the integration database.
-    """
+    """Truncate progress-photo tables, restarting identity sequences."""
     async with engine.begin() as conn:
-        await conn.exec_driver_sql("TRUNCATE TABLE progress_photos RESTART IDENTITY CASCADE")
+        await conn.exec_driver_sql(
+            "TRUNCATE TABLE progress_photos, progress_photo_tags RESTART IDENTITY CASCADE"
+        )
 
 
 @pytest_asyncio.fixture
 async def session() -> AsyncSession:
-    """Per-test async session with a freshly-truncated ``progress_photos`` table.
-
-    **Outputs:**
-    - ``AsyncSession``: open session, disposed of with the engine on teardown.
-    """
+    """Per-test async session with freshly-truncated progress-photo tables."""
     engine = create_async_engine(_integration_database_url())
     await _truncate(engine)
     factory = async_sessionmaker(engine, expire_on_commit=False)
@@ -67,43 +57,46 @@ async def session() -> AsyncSession:
 
 
 def _now() -> DateTimeValue:
-    """Return the current UTC timestamp for ``created_at`` / ``updated_at`` fields.
-
-    **Outputs:**
-    - datetime: timezone-aware UTC ``datetime``.
-    """
+    """Return the current UTC timestamp."""
     return DateTimeValue.now(tz=TimezoneValue.utc)
 
 
 def _jpeg() -> bytes:
-    """Return a fixed byte payload representing a full-size JPEG body.
-
-    **Outputs:**
-    - bytes: deterministic fake JPEG bytes used as the ``photo`` argument.
-    """
+    """Return a fixed byte payload representing a full-size JPEG body."""
     return b"\xff\xd8\xff\xe0fake-jpeg-bytes"
 
 
 def _thumb() -> bytes:
-    """Return a fixed byte payload representing a thumbnail JPEG body.
-
-    **Outputs:**
-    - bytes: deterministic fake JPEG bytes used as the ``photo_thumb`` argument.
-    """
+    """Return a fixed byte payload representing a thumbnail JPEG body."""
     return b"\xff\xd8\xff\xe0fake-thumb"
 
 
+async def _seed_tag(session: AsyncSession, *, user_key: str, name: str = "front", order: int = 0):
+    """Insert a single tag row and return its id, transactionally."""
+    repo = ProgressPhotoTagRepository(session)
+    async with transaction(session):
+        row = await repo.create(
+            user_key=user_key,
+            name=name,
+            normalized_name=name,
+            sort_order=order,
+            now=_now(),
+        )
+    return row["id"]
+
+
 @pytest.mark.asyncio
-async def test_upsert_then_get_round_trip(session: AsyncSession) -> None:
-    """``upsert`` persists slot metadata and ``get_photo`` returns the matching full and thumbnail bytes."""
-    repo = ProgressPhotoRepository(session)
+async def test_insert_then_get_round_trip(session: AsyncSession) -> None:
+    """``insert`` persists photo bytes and ``get_photo`` returns full + thumbnail bytes by id."""
     user_key = f"test-{uuid.uuid4().hex}"
+    tag_id = await _seed_tag(session, user_key=user_key, name="front")
+    repo = ProgressPhotoRepository(session)
     sha = hashlib.sha256(_jpeg()).hexdigest()
     async with transaction(session):
-        row = await repo.upsert(
+        row = await repo.insert(
             user_key=user_key,
             log_date=DateValue(2026, 5, 17),
-            slot="front",
+            tag_id=tag_id,
             photo=_jpeg(),
             photo_thumb=_thumb(),
             photo_mime="image/jpeg",
@@ -111,93 +104,123 @@ async def test_upsert_then_get_round_trip(session: AsyncSession) -> None:
             sha256=sha,
             now=_now(),
         )
-    assert row["slot"] == "front"
+    photo_id = row["id"]
+    assert row["tag_id"] == tag_id
     assert row["sha256"] == sha
     assert row["bytes"] == len(_jpeg())
 
-    got = await repo.get_photo(
-        user_key=user_key, log_date=DateValue(2026, 5, 17), slot="front", thumb=False
-    )
+    got = await repo.get_photo(photo_id=photo_id, user_key=user_key, thumb=False)
     assert got is not None
     assert got["photo"] == _jpeg()
     assert got["photo_mime"] == "image/jpeg"
 
-    got_thumb = await repo.get_photo(
-        user_key=user_key, log_date=DateValue(2026, 5, 17), slot="front", thumb=True
-    )
+    got_thumb = await repo.get_photo(photo_id=photo_id, user_key=user_key, thumb=True)
     assert got_thumb is not None
     assert got_thumb["photo"] == _thumb()
 
 
 @pytest.mark.asyncio
-async def test_upsert_replaces_existing_slot(session: AsyncSession) -> None:
-    """A second ``upsert`` for the same ``(user_key, log_date, slot)`` replaces the prior row in place."""
-    repo = ProgressPhotoRepository(session)
+async def test_multiple_photos_per_date_and_tag(session: AsyncSession) -> None:
+    """Two ``insert`` calls for the same ``(user_key, log_date, tag_id)`` both persist."""
     user_key = f"test-{uuid.uuid4().hex}"
+    tag_id = await _seed_tag(session, user_key=user_key)
+    repo = ProgressPhotoRepository(session)
     async with transaction(session):
-        await repo.upsert(
-            user_key=user_key, log_date=DateValue(2026, 5, 17), slot="front",
+        await repo.insert(
+            user_key=user_key, log_date=DateValue(2026, 5, 17), tag_id=tag_id,
             photo=b"v1bytes", photo_thumb=_thumb(), photo_mime="image/jpeg",
             bytes_=7, sha256="sha-v1", now=_now(),
         )
     async with transaction(session):
-        row = await repo.upsert(
-            user_key=user_key, log_date=DateValue(2026, 5, 17), slot="front",
+        await repo.insert(
+            user_key=user_key, log_date=DateValue(2026, 5, 17), tag_id=tag_id,
             photo=b"v2bytes", photo_thumb=_thumb(), photo_mime="image/jpeg",
             bytes_=7, sha256="sha-v2", now=_now(),
         )
-    assert row["sha256"] == "sha-v2"
     rows = await repo.list_metadata(
         user_key=user_key, frm=DateValue(2026, 5, 1), to=DateValue(2026, 5, 31)
     )
-    assert len(rows) == 1
-    assert rows[0]["sha256"] == "sha-v2"
+    assert len(rows) == 2
+    assert {r["sha256"] for r in rows} == {"sha-v1", "sha-v2"}
 
 
 @pytest.mark.asyncio
 async def test_list_metadata_filters_by_range(session: AsyncSession) -> None:
-    """``list_metadata`` returns only rows whose ``log_date`` falls within the inclusive ``[frm, to]`` window."""
-    repo = ProgressPhotoRepository(session)
+    """``list_metadata`` returns only rows whose ``log_date`` falls within ``[frm, to]``."""
     user_key = f"test-{uuid.uuid4().hex}"
+    tag_id = await _seed_tag(session, user_key=user_key)
+    repo = ProgressPhotoRepository(session)
     async with transaction(session):
-        for d, slot in [
-            (DateValue(2026, 5, 1), "front"),
-            (DateValue(2026, 5, 15), "left"),
-            (DateValue(2026, 6, 1), "back"),
-        ]:
-            await repo.upsert(
-                user_key=user_key, log_date=d, slot=slot,
+        for d in [DateValue(2026, 5, 1), DateValue(2026, 5, 15), DateValue(2026, 6, 1)]:
+            await repo.insert(
+                user_key=user_key, log_date=d, tag_id=tag_id,
                 photo=_jpeg(), photo_thumb=_thumb(), photo_mime="image/jpeg",
-                bytes_=len(_jpeg()), sha256=f"sha-{slot}", now=_now(),
+                bytes_=len(_jpeg()), sha256=f"sha-{d.isoformat()}", now=_now(),
             )
     rows = await repo.list_metadata(
         user_key=user_key, frm=DateValue(2026, 5, 1), to=DateValue(2026, 5, 31)
     )
-    assert {r["slot"] for r in rows} == {"front", "left"}
+    assert {r["log_date"] for r in rows} == {DateValue(2026, 5, 1), DateValue(2026, 5, 15)}
 
 
 @pytest.mark.asyncio
-async def test_delete_removes_slot(session: AsyncSession) -> None:
-    """``delete`` removes a single slot row so subsequent ``get_photo`` returns ``None``."""
-    repo = ProgressPhotoRepository(session)
+async def test_delete_removes_photo(session: AsyncSession) -> None:
+    """``delete`` removes a single photo by id so ``get_photo`` returns ``None``."""
     user_key = f"test-{uuid.uuid4().hex}"
+    tag_id = await _seed_tag(session, user_key=user_key)
+    repo = ProgressPhotoRepository(session)
     async with transaction(session):
-        await repo.upsert(
-            user_key=user_key, log_date=DateValue(2026, 5, 17), slot="front",
+        row = await repo.insert(
+            user_key=user_key, log_date=DateValue(2026, 5, 17), tag_id=tag_id,
             photo=_jpeg(), photo_thumb=_thumb(), photo_mime="image/jpeg",
             bytes_=len(_jpeg()), sha256="sha", now=_now(),
         )
+    photo_id = row["id"]
     async with transaction(session):
-        ok = await repo.delete(
-            user_key=user_key, log_date=DateValue(2026, 5, 17), slot="front"
-        )
+        ok = await repo.delete(photo_id=photo_id, user_key=user_key)
     assert ok is True
     assert (
-        await repo.get_photo(
-            user_key=user_key,
-            log_date=DateValue(2026, 5, 17),
-            slot="front",
-            thumb=False,
-        )
+        await repo.get_photo(photo_id=photo_id, user_key=user_key, thumb=False)
         is None
     )
+
+
+@pytest.mark.asyncio
+async def test_tag_create_list_rename(session: AsyncSession) -> None:
+    """`ProgressPhotoTagRepository` supports create, list, and rename via update_fields."""
+    user_key = f"test-{uuid.uuid4().hex}"
+    repo = ProgressPhotoTagRepository(session)
+    async with transaction(session):
+        await repo.create(
+            user_key=user_key, name="Morning", normalized_name="morning",
+            sort_order=0, now=_now(),
+        )
+        await repo.create(
+            user_key=user_key, name="Evening", normalized_name="evening",
+            sort_order=1, now=_now(),
+        )
+    rows = await repo.list_for_user(user_key)
+    assert [r["normalized_name"] for r in rows] == ["morning", "evening"]
+
+    morning_id = rows[0]["id"]
+    async with transaction(session):
+        updated = await repo.update_fields(
+            tag_id=morning_id, user_key=user_key,
+            fields={"name": "AM", "normalized_name": "am"}, now=_now(),
+        )
+    assert updated is not None
+    assert updated["normalized_name"] == "am"
+
+
+@pytest.mark.asyncio
+async def test_bulk_seed_if_empty_is_idempotent(session: AsyncSession) -> None:
+    """Re-running ``bulk_seed_if_empty`` does not duplicate rows."""
+    user_key = f"test-{uuid.uuid4().hex}"
+    repo = ProgressPhotoTagRepository(session)
+    defaults = [("front", "front", 0), ("back", "back", 1)]
+    async with transaction(session):
+        await repo.bulk_seed_if_empty(user_key=user_key, defaults=defaults, now=_now())
+    async with transaction(session):
+        await repo.bulk_seed_if_empty(user_key=user_key, defaults=defaults, now=_now())
+    rows = await repo.list_for_user(user_key)
+    assert len(rows) == 2
