@@ -33,8 +33,8 @@ targets:
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
         ITSAppUsesNonExemptEncryption: false
-        NSCameraUsageDescription: To take photos of meal-prep containers.
-        NSPhotoLibraryUsageDescription: To pick photos of meal-prep containers from your library.
+        NSCameraUsageDescription: To take progress photos and meal-prep container photos.
+        NSPhotoLibraryUsageDescription: To pick progress and meal-prep container photos from your library.
         BaseURL: $(DIET_TRACKER_BASE_URL)
     preBuildScripts:
       - name: Verify BaseURL

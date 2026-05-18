@@ -27,7 +27,7 @@
 	<key>NSCameraUsageDescription</key>
 	<string>To take progress photos and meal-prep container photos.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>To pick photos of meal-prep containers from your library.</string>
+	<string>To pick progress and meal-prep container photos from your library.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

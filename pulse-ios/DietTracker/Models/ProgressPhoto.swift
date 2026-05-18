@@ -1,37 +1,42 @@
 /// Models for the progress-photos feature.
-/// Defines the four-slot enum, server metadata DTO, single- and batch-pending
-/// upload records used by the offline retry queue, a unified `QueuedUpload`
-/// wrapper, and a `DateOnlyFormatter` helper for `YYYY-MM-DD` IDs/keys.
-/// Consumed by the progress-photo views, capture session, and upload queue.
+/// Defines `ProgressPhotoTag` (user-defined tag rows), `ProgressPhotoMetadata`
+/// (server metadata for one stored photo, keyed by photo id), the pending-
+/// upload record persisted by the offline retry queue, and a `DateOnlyFormatter`
+/// helper for `YYYY-MM-DD` IDs/keys. Consumed by the progress-photo views,
+/// capture session, stores, and upload queue.
 import Foundation
 
-/// The four photo orientations captured per session.
-enum ProgressPhotoSlot: String, CaseIterable, Codable, Hashable {
-    case front, left, right, back
+/// A user-defined progress-photo tag (e.g. "front", "morning", "flexed").
+struct ProgressPhotoTag: Codable, Hashable, Identifiable {
+    let id: UUID
+    let name: String
+    let normalizedName: String
+    let sortOrder: Int
+    let createdAt: Date
+    let updatedAt: Date
 
-    var displayName: String {
-        switch self {
-        case .front: return "Front"
-        case .left:  return "Left"
-        case .right: return "Right"
-        case .back:  return "Back"
-        }
+    enum CodingKeys: String, CodingKey {
+        case id, name
+        case normalizedName = "normalized_name"
+        case sortOrder = "sort_order"
+        case createdAt = "created_at"
+        case updatedAt = "updated_at"
     }
 }
 
-/// Server-side metadata for one stored progress photo (date+slot uniquely identifies it).
+/// Server-side metadata for one stored progress photo.
 struct ProgressPhotoMetadata: Codable, Hashable, Identifiable {
+    let id: UUID
     let date: Date
-    let slot: ProgressPhotoSlot
+    let tagId: UUID
     let mime: String
     let bytes: Int
     let sha256: String
     let updatedAt: Date
 
-    var id: String { "\(DateOnlyFormatter.string(from: date))-\(slot.rawValue)" }
-
     enum CodingKeys: String, CodingKey {
-        case date, slot, mime, bytes, sha256
+        case id, date, mime, bytes, sha256
+        case tagId = "tag_id"
         case updatedAt = "updated_at"
     }
 }
@@ -40,42 +45,26 @@ struct ProgressPhotoMetadata: Codable, Hashable, Identifiable {
 struct PendingUpload: Codable, Identifiable, Hashable {
     let id: UUID
     let date: Date
-    let slot: ProgressPhotoSlot
+    let tagId: UUID
     let localPath: String
     var attemptCount: Int
     var nextAttemptAt: Date
 }
 
-/// A queued multi-slot batch upload (one date, multiple slots) awaiting retry.
-struct PendingBatchUpload: Codable, Identifiable, Hashable {
-    /// One slot+path pair inside a batch upload.
-    struct Item: Codable, Hashable {
-        let slot: ProgressPhotoSlot
-        let localPath: String
-    }
-    let id: UUID
-    let date: Date
-    let items: [Item]
-    var attemptCount: Int
-    var nextAttemptAt: Date
-}
-
-/// Tagged union of the two pending-upload shapes the queue can hold.
+/// Tagged union wrapper for the queue. Kept around so the on-disk JSON schema
+/// can evolve in the future without breaking the worker loop.
 enum QueuedUpload: Codable, Hashable {
     case single(PendingUpload)
-    case batch(PendingBatchUpload)
 
     var id: UUID {
         switch self {
         case .single(let u): return u.id
-        case .batch(let u): return u.id
         }
     }
 
     var nextAttemptAt: Date {
         switch self {
         case .single(let u): return u.nextAttemptAt
-        case .batch(let u): return u.nextAttemptAt
         }
     }
 }
@@ -89,14 +78,8 @@ enum DateOnlyFormatter {
     }()
 
     /// Formats a `Date` as a `YYYY-MM-DD` string.
-    /// - Inputs:
-    ///   - date: the date to format.
-    /// - Outputs: the ISO-8601 full-date string.
     static func string(from date: Date) -> String { formatter.string(from: date) }
 
     /// Parses a `YYYY-MM-DD` string back into a `Date`.
-    /// - Inputs:
-    ///   - string: the ISO-8601 full-date string to parse.
-    /// - Outputs: the parsed `Date`, or `nil` if the string is malformed.
     static func date(from string: String) -> Date? { formatter.date(from: string) }
 }

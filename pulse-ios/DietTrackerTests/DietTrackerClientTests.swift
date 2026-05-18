@@ -13,6 +13,13 @@ import XCTest
 /// through the configured `URLSession` is intercepted.
 final class StubURLProtocol: URLProtocol {
     static var responder: ((URLRequest) -> (HTTPURLResponse, Data))?
+    /// Body bytes for the most recent request, drained from `httpBodyStream`
+    /// (or `httpBody`) before the responder runs. URLSession converts
+    /// `URLRequest.httpBody` into a body stream by the time `URLProtocol`
+    /// sees it; tests that need to inspect upload bodies (e.g. multipart
+    /// fields) should read this property instead of touching the request's
+    /// stream themselves.
+    static var lastRequestBody: Data?
 
     /// Always claims every request so the protocol is always selected.
     /// Inputs:
@@ -29,6 +36,7 @@ final class StubURLProtocol: URLProtocol {
     /// and data back through the URL loading system. Fails the request with
     /// `URLError(.badServerResponse)` if no responder is registered.
     override func startLoading() {
+        Self.lastRequestBody = Self.drainBody(request)
         guard let responder = Self.responder else {
             client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
             return
@@ -41,6 +49,26 @@ final class StubURLProtocol: URLProtocol {
 
     /// No-op cancellation hook; the stub completes synchronously.
     override func stopLoading() {}
+
+    /// Drains a request's body into `Data`, handling both the direct
+    /// `httpBody` path and the more common `httpBodyStream` path that
+    /// `URLSession` produces for outgoing uploads.
+    private static func drainBody(_ request: URLRequest) -> Data? {
+        if let body = request.httpBody, !body.isEmpty { return body }
+        guard let stream = request.httpBodyStream else { return nil }
+        stream.open()
+        defer { stream.close() }
+        var data = Data()
+        let bufferSize = 4096
+        let buf = UnsafeMutablePointer<UInt8>.allocate(capacity: bufferSize)
+        defer { buf.deallocate() }
+        while true {
+            let read = stream.read(buf, maxLength: bufferSize)
+            if read <= 0 { break }
+            data.append(buf, count: read)
+        }
+        return data.isEmpty ? nil : data
+    }
 }
 
 final class DietTrackerClientTests: XCTestCase {

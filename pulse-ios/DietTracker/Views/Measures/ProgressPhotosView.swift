@@ -1,17 +1,21 @@
 /// Photos sub-tab of the Measures screen.
 ///
-/// Hosts `ProgressPhotosView`, which renders a date strip, a 2×2 grid of
-/// `ProgressPhotoSlotCell`s for the currently selected date, an Add button
-/// that presents `PhotoCaptureSession`, and a sync-status footer. Also
-/// triggers `ProgressPhotoStore.reconcile` over a 30-day window when the
-/// selected date changes or on pull-to-refresh.
+/// Hosts `ProgressPhotosView`, which renders a date strip and the day's
+/// photos grouped by tag, with an Add button that walks the user through
+/// `TagPickerSheet` → `PhotoCaptureSession`. Also triggers
+/// `ProgressPhotoStore.reconcile` over a 30-day window when the selected
+/// date changes or on pull-to-refresh, and exposes a "Manage tags" entry
+/// point in the toolbar.
 import SwiftUI
 
-/// Top-level view for browsing and capturing progress photos by date.
 struct ProgressPhotosView: View {
     @Environment(ProgressPhotoStore.self) private var store
+    @Environment(ProgressPhotoTagStore.self) private var tagStore
     @State private var selectedDate: Date = Calendar.current.startOfDay(for: Date())
+    @State private var showTagPicker = false
+    @State private var pickedTag: ProgressPhotoTag?
     @State private var showCapture = false
+    @State private var showManageTags = false
 
     var body: some View {
         ZStack {
@@ -19,7 +23,7 @@ struct ProgressPhotosView: View {
             ScrollView {
                 VStack(spacing: Theme.Layout.sectionSpacing) {
                     dateStrip
-                    grid
+                    sections
                     addButton
                     syncFooter
                     Spacer(minLength: Theme.Layout.dockClearance)
@@ -28,13 +32,35 @@ struct ProgressPhotosView: View {
                 .padding(.top, 8)
             }
         }
-        .task { await reloadRange() }
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { showManageTags = true } label: {
+                    Image(systemName: "tag")
+                        .foregroundStyle(Theme.CTP.mauve)
+                }
+            }
+        }
+        .task {
+            await tagStore.reload()
+            await reloadRange()
+        }
         .refreshable { await reloadRange() }
         .onChange(of: selectedDate) { _, _ in
             Task { await reloadRange() }
         }
+        .sheet(isPresented: $showTagPicker) {
+            TagPickerSheet { tag in
+                pickedTag = tag
+                showCapture = true
+            }
+        }
         .sheet(isPresented: $showCapture) {
-            PhotoCaptureSession(date: selectedDate)
+            if let tag = pickedTag {
+                PhotoCaptureSession(date: selectedDate, tag: tag)
+            }
+        }
+        .sheet(isPresented: $showManageTags) {
+            NavigationStack { ManageTagsView() }
         }
     }
 
@@ -52,13 +78,6 @@ struct ProgressPhotosView: View {
         }
     }
 
-    /// Renders a small capsule button in the date strip.
-    ///
-    /// Inputs:
-    /// - label: visible text on the chip.
-    /// - action: closure invoked on tap.
-    ///
-    /// Outputs: the styled chip `View`.
     private func chip(_ label: String, action: @escaping () -> Void) -> some View {
         Button(label, action: action)
             .font(.system(size: 12, weight: .semibold))
@@ -68,24 +87,58 @@ struct ProgressPhotosView: View {
             .foregroundStyle(Theme.FG.primary)
     }
 
-    /// Shifts the selected date by the given number of days, snapping to day start.
-    ///
-    /// Inputs:
-    /// - days: positive or negative day offset from the current `selectedDate`.
     private func shift(_ days: Int) {
         if let d = Calendar.current.date(byAdding: .day, value: days, to: selectedDate) {
             selectedDate = Calendar.current.startOfDay(for: d)
         }
     }
 
-    // MARK: grid
+    // MARK: sections
 
-    private var grid: some View {
+    /// Photos for the selected date grouped by tag. Sections are driven by
+    /// the photos themselves (not the tag catalog) so a missing/empty
+    /// `tagStore` never hides photos that exist in `ProgressPhotoStore`.
+    /// When a tag is loaded we use its name and sort order; otherwise the
+    /// section header falls back to "Tag" and groups sort to the bottom.
+    private var sections: some View {
+        let photos = store.photos(on: selectedDate)
+        let groups: [(tagId: UUID, name: String, order: Int, photos: [ProgressPhotoMetadata])] =
+            Dictionary(grouping: photos, by: \.tagId)
+                .map { tagId, group in
+                    let tag = tagStore.tag(id: tagId)
+                    return (
+                        tagId: tagId,
+                        name: tag?.name ?? "Tag",
+                        order: tag?.sortOrder ?? Int.max,
+                        photos: group
+                    )
+                }
+                .sorted { ($0.order, $0.name) < ($1.order, $1.name) }
+        return VStack(alignment: .leading, spacing: 16) {
+            if groups.isEmpty {
+                Text("No photos for this day yet.")
+                    .font(.system(size: 13))
+                    .foregroundStyle(Theme.FG.tertiary)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.top, 24)
+            } else {
+                ForEach(groups, id: \.tagId) { group in
+                    tagSection(name: group.name, photos: group.photos)
+                }
+            }
+        }
+    }
+
+    private func tagSection(name: String, photos: [ProgressPhotoMetadata]) -> some View {
         let cols = [GridItem(.flexible()), GridItem(.flexible())]
-        return LazyVGrid(columns: cols, spacing: 12) {
-            ForEach(ProgressPhotoSlot.allCases, id: \.self) { slot in
-                ProgressPhotoSlotCell(date: selectedDate, slot: slot) {
-                    showCapture = true
+        return VStack(alignment: .leading, spacing: 8) {
+            Text(name)
+                .font(.system(size: 13, weight: .semibold))
+                .tracking(0.6)
+                .foregroundStyle(Theme.FG.secondary)
+            LazyVGrid(columns: cols, spacing: 12) {
+                ForEach(photos) { meta in
+                    ProgressPhotoCell(meta: meta)
                 }
             }
         }
@@ -94,10 +147,10 @@ struct ProgressPhotosView: View {
     // MARK: add + sync footer
 
     private var addButton: some View {
-        Button { showCapture = true } label: {
+        Button { showTagPicker = true } label: {
             HStack {
                 Image(systemName: "plus.circle.fill")
-                Text("Add photos")
+                Text("Add photo")
             }
             .font(.system(size: 16, weight: .semibold))
             .foregroundStyle(Theme.CTP.mauve)
@@ -122,9 +175,6 @@ struct ProgressPhotosView: View {
         }
     }
 
-    // MARK: range refresh
-
-    /// Reconciles the 30 days leading up to `selectedDate` with the server.
     private func reloadRange() async {
         let from = Calendar.current.date(byAdding: .day, value: -30, to: selectedDate) ?? selectedDate
         await store.reconcile(from: from, to: selectedDate)
