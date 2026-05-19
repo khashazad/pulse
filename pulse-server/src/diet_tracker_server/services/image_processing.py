@@ -17,7 +17,10 @@ from typing import Final
 from PIL import Image, ImageOps, UnidentifiedImageError
 
 MAX_FULL_PX: Final[int] = 1600
-MAX_THUMB_PX: Final[int] = 256
+# Thumbnails are rendered up to full-screen width on iPhone Pro Max (~430pt
+# × 3x = 1290px), so we keep them at 1024 long-edge — sharp at every grid
+# density the app shows while still encoding small enough to cache cheaply.
+MAX_THUMB_PX: Final[int] = 1024
 JPEG_QUALITY: Final[int] = 82
 MAX_PIXELS: Final[int] = 25_000_000  # decompression-bomb guard
 
