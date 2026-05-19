@@ -37,14 +37,17 @@ def _png_bytes(width: int, height: int) -> bytes:
 
 def test_returns_full_and_thumb_jpeg() -> None:
     """`process_container_photo` returns JPEG full + thumb pair with proper max-edge sizes."""
-    src = _png_bytes(800, 600)
+    from diet_tracker_server.services.image_processing import MAX_THUMB_PX
+
+    # Source long edge larger than the thumb cap so the resize path actually runs.
+    src = _png_bytes(MAX_THUMB_PX * 2, MAX_THUMB_PX * 2 - 100)
     full, thumb, mime = process_container_photo(src, max_bytes=10 * 1024 * 1024)
     assert mime == "image/jpeg"
     full_img = Image.open(io.BytesIO(full))
     thumb_img = Image.open(io.BytesIO(thumb))
     assert full_img.format == "JPEG"
     assert thumb_img.format == "JPEG"
-    assert max(thumb_img.size) == 256
+    assert max(thumb_img.size) == MAX_THUMB_PX
     assert max(full_img.size) <= 1600
 
 
