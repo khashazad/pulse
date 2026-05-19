@@ -1,19 +1,17 @@
 /// Photos sub-tab of the Measures screen.
 ///
 /// Hosts `ProgressPhotosView`, which renders a date strip and the day's
-/// photos grouped by tag, with an Add button that walks the user through
-/// `TagPickerSheet` → `PhotoCaptureSession`. Also triggers
-/// `ProgressPhotoStore.reconcile` over a 30-day window when the selected
-/// date changes or on pull-to-refresh, and exposes a "Manage tags" entry
-/// point in the toolbar.
+/// photos grouped by tag. The "Add" button opens `PhotoCaptureSession`
+/// directly — multi-photo selection + tag assignment happen inside the
+/// capture sheet. Also triggers `ProgressPhotoStore.reconcile` over a
+/// 30-day window when the selected date changes or on pull-to-refresh,
+/// and exposes a "Manage tags" entry point in the toolbar.
 import SwiftUI
 
 struct ProgressPhotosView: View {
     @Environment(ProgressPhotoStore.self) private var store
     @Environment(ProgressPhotoTagStore.self) private var tagStore
     @State private var selectedDate: Date = Calendar.current.startOfDay(for: Date())
-    @State private var showTagPicker = false
-    @State private var pickedTag: ProgressPhotoTag?
     @State private var showCapture = false
     @State private var showManageTags = false
 
@@ -48,16 +46,8 @@ struct ProgressPhotosView: View {
         .onChange(of: selectedDate) { _, _ in
             Task { await reloadRange() }
         }
-        .sheet(isPresented: $showTagPicker) {
-            TagPickerSheet { tag in
-                pickedTag = tag
-                showCapture = true
-            }
-        }
         .sheet(isPresented: $showCapture) {
-            if let tag = pickedTag {
-                PhotoCaptureSession(date: selectedDate, tag: tag)
-            }
+            PhotoCaptureSession(date: selectedDate)
         }
         .sheet(isPresented: $showManageTags) {
             NavigationStack { ManageTagsView() }
@@ -130,7 +120,10 @@ struct ProgressPhotosView: View {
     }
 
     private func tagSection(name: String, photos: [ProgressPhotoMetadata]) -> some View {
-        let cols = [GridItem(.flexible()), GridItem(.flexible())]
+        // One photo gets the full width; multiple photos pack 2-up so the row
+        // is never half-empty.
+        let columnCount = photos.count == 1 ? 1 : 2
+        let cols = Array(repeating: GridItem(.flexible(), spacing: 12), count: columnCount)
         return VStack(alignment: .leading, spacing: 8) {
             Text(name)
                 .font(.system(size: 13, weight: .semibold))
@@ -147,7 +140,7 @@ struct ProgressPhotosView: View {
     // MARK: add + sync footer
 
     private var addButton: some View {
-        Button { showTagPicker = true } label: {
+        Button { showCapture = true } label: {
             HStack {
                 Image(systemName: "plus.circle.fill")
                 Text("Add photo")
