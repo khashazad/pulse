@@ -51,7 +51,7 @@ def test_food_entry_create_validation() -> None:
         fat_g=14.3,
     )
     assert entry.display_name == "eggs"
-    assert entry.date is None
+    assert entry.consumed_at is None
 
 
 def test_food_entry_create_rejects_negative_calories() -> None:
