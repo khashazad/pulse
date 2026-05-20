@@ -1,30 +1,15 @@
-/// Capture flow for adding progress photos with drag-and-drop tag assignment.
+/// Capture flow for adding progress photos with tap-to-tag assignment.
 ///
 /// Hosts `PhotoCaptureSession`, which collects photos from the camera and/or
-/// photo library into a 2-up grid, shows the user's tags as a horizontally-
-/// scrolling row of draggable chips at the top, and lets the user drop a
-/// chip onto a photo to assign that tag. Upload submits every tagged photo
+/// photo library into a 2-up grid. Each photo's top-left corner shows a
+/// "Tag" pill that opens a menu of the user's tags; selecting one assigns
+/// it to that photo. A separate inline affordance lets the user create a
+/// new tag without leaving the sheet. Upload submits every tagged photo
 /// via `ProgressPhotoStore.upload(date:tagId:imageData:)` — untagged photos
 /// are skipped (and the button is disabled until at least one is tagged).
-import CoreTransferable
 import PhotosUI
 import SwiftUI
 import UIKit
-import UniformTypeIdentifiers
-
-/// Drag payload carrying a tag id. A custom UTType keeps photo drop
-/// destinations from picking up stray String drags (selected text from
-/// another view or another app in split view).
-struct DraggedTagID: Codable, Transferable {
-    let id: UUID
-    static var transferRepresentation: some TransferRepresentation {
-        CodableRepresentation(contentType: .diettrackerTagDrag)
-    }
-}
-
-extension UTType {
-    static let diettrackerTagDrag = UTType(exportedAs: "com.khxsh.diettracker.tag-drag")
-}
 
 struct PhotoCaptureSession: View {
     @Environment(ProgressPhotoStore.self) private var store
@@ -33,13 +18,13 @@ struct PhotoCaptureSession: View {
     let date: Date
 
     /// Identity-stable wrapper around a captured `UIImage` plus its
-    /// (currently assigned, if any) tag.
-    private struct CapturedPhoto: Identifiable, Hashable {
+    /// (currently assigned, if any) tag. Not Equatable on purpose — the
+    /// custom id-only equality was making SwiftUI's @State diff skip
+    /// redraws when only `tagId` changed.
+    private struct CapturedPhoto: Identifiable {
         let id = UUID()
         let image: UIImage
         var tagId: UUID?
-        static func == (lhs: CapturedPhoto, rhs: CapturedPhoto) -> Bool { lhs.id == rhs.id }
-        func hash(into hasher: inout Hasher) { hasher.combine(id) }
     }
 
     @State private var captured: [CapturedPhoto] = []
@@ -50,8 +35,8 @@ struct PhotoCaptureSession: View {
     @State private var showNewTagField = false
 
     /// Counts only photos whose `tagId` still resolves in `tagStore`. Guards
-    /// against stale or foreign UUIDs (e.g. dropped from another app) being
-    /// treated as valid assignments and sent to the server.
+    /// against stale UUIDs (e.g. a tag deleted between assignment and upload)
+    /// being treated as valid assignments and sent to the server.
     private var tagAssignedCount: Int {
         captured.lazy.filter { photo in
             guard let id = photo.tagId else { return false }
@@ -110,14 +95,12 @@ struct PhotoCaptureSession: View {
 
     // MARK: tag bar
 
-    /// Floating row of draggable tag chips plus an inline "new tag" affordance.
-    /// Each chip is `.draggable` with its UUID string payload; photo cells
-    /// below are `.dropDestination(for: String.self)` and parse the UUID back
-    /// out to update their `tagId`.
+    /// Compact header with an inline "new tag" affordance. Tag selection
+    /// itself happens per-photo via the "Tag" menu on each cell.
     private var tagBar: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text("Drag a tag onto a photo")
+                Text("Tap a photo's tag to assign")
                     .font(.system(size: 11, weight: .semibold))
                     .tracking(0.6)
                     .foregroundStyle(Theme.FG.secondary)
@@ -125,25 +108,13 @@ struct PhotoCaptureSession: View {
                 Button {
                     withAnimation { showNewTagField.toggle() }
                 } label: {
-                    Image(systemName: showNewTagField ? "minus.circle" : "plus.circle")
+                    Label("New tag", systemImage: showNewTagField ? "minus.circle" : "plus.circle")
+                        .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(Theme.CTP.mauve)
                 }
             }
             if showNewTagField {
                 newTagRow
-            }
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(tagStore.tags) { tag in
-                        chipView(tag: tag)
-                            .contentShape(Capsule())
-                            .draggable(DraggedTagID(id: tag.id)) {
-                                chipView(tag: tag)
-                                    .opacity(0.9)
-                            }
-                    }
-                }
-                .padding(.vertical, 2)
             }
         }
     }
@@ -162,16 +133,6 @@ struct PhotoCaptureSession: View {
             }
             .disabled(newTagDraft.trimmingCharacters(in: .whitespaces).isEmpty)
         }
-    }
-
-    private func chipView(tag: ProgressPhotoTag) -> some View {
-        Text(tag.name)
-            .font(.system(size: 13, weight: .semibold))
-            .foregroundStyle(Theme.FG.primary)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .background(Theme.CTP.mauve.opacity(0.22), in: Capsule())
-            .overlay(Capsule().strokeBorder(Theme.CTP.mauve, lineWidth: 1))
     }
 
     // MARK: grid
@@ -196,8 +157,7 @@ struct PhotoCaptureSession: View {
     }
 
     /// One photo tile: thumbnail plus an overlay that either shows the
-    /// assigned tag chip or a "drop a tag" placeholder, and a remove button.
-    /// The whole cell is a drop destination for tag UUID strings.
+    /// assigned tag chip or a tappable "Tag" menu, and a remove button.
     private func photoCell(_ photo: CapturedPhoto) -> some View {
         let assignedTag = photo.tagId.flatMap { tagStore.tag(id: $0) }
         return Image(uiImage: photo.image)
@@ -207,25 +167,8 @@ struct PhotoCaptureSession: View {
             .aspectRatio(4.0/5.0, contentMode: .fit)
             .clipShape(RoundedRectangle(cornerRadius: 12))
             .overlay(alignment: .topLeading) {
-                Group {
-                    if let tag = assignedTag {
-                        Text(tag.name)
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(Theme.CTP.mauve, in: Capsule())
-                    } else {
-                        Text("Drop a tag")
-                            .font(.system(size: 10, weight: .semibold))
-                            .tracking(0.5)
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(.black.opacity(0.55), in: Capsule())
-                    }
-                }
-                .padding(8)
+                tagMenu(for: photo, assignedTag: assignedTag)
+                    .padding(8)
             }
             .overlay(alignment: .topTrailing) {
                 Button {
@@ -237,22 +180,6 @@ struct PhotoCaptureSession: View {
                 }
                 .padding(6)
             }
-            .overlay(alignment: .bottomTrailing) {
-                if assignedTag != nil {
-                    Button {
-                        if let idx = captured.firstIndex(where: { $0.id == photo.id }) {
-                            captured[idx].tagId = nil
-                        }
-                    } label: {
-                        Image(systemName: "tag.slash.fill")
-                            .font(.system(size: 14))
-                            .foregroundStyle(.white)
-                            .padding(6)
-                            .background(.black.opacity(0.55), in: Circle())
-                    }
-                    .padding(6)
-                }
-            }
             .overlay(
                 RoundedRectangle(cornerRadius: 12)
                     .strokeBorder(
@@ -260,17 +187,96 @@ struct PhotoCaptureSession: View {
                         style: StrokeStyle(lineWidth: 1, dash: assignedTag == nil ? [4] : [])
                     )
             )
-            .dropDestination(for: DraggedTagID.self) { items, _ in
-                // The custom UTType already filters to our drags, but we
-                // still verify the tag id is currently in the store before
-                // applying — guards against a stale chip after a refresh.
-                guard let payload = items.first,
-                      tagStore.tag(id: payload.id) != nil,
-                      let idx = captured.firstIndex(where: { $0.id == photo.id })
-                else { return false }
-                captured[idx].tagId = payload.id
-                return true
+    }
+
+    /// Top-left tag control for each photo.
+    ///
+    /// - Untagged: a dashed "Tag" pill that opens a menu of available tags
+    ///   (tags already attached to another photo are hidden — each tag is
+    ///   one-time-use within this capture session).
+    /// - Tagged: a mauve pill with the tag name; the name is itself a Menu
+    ///   trigger for swapping to a different tag, and an adjacent X button
+    ///   clears the assignment.
+    @ViewBuilder
+    private func tagMenu(for photo: CapturedPhoto, assignedTag: ProgressPhotoTag?) -> some View {
+        if let tag = assignedTag {
+            HStack(spacing: 4) {
+                Menu {
+                    tagPickerItems(for: photo, assignedTag: assignedTag)
+                } label: {
+                    Text(tag.name)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Theme.CTP.mauve, in: Capsule())
+                }
+                Button {
+                    clearTag(for: photo.id)
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 16))
+                        .foregroundStyle(.white, .black.opacity(0.6))
+                        .padding(4)
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
             }
+        } else {
+            Menu {
+                tagPickerItems(for: photo, assignedTag: nil)
+            } label: {
+                HStack(spacing: 4) {
+                    Text("Tag")
+                        .font(.system(size: 11, weight: .semibold))
+                        .tracking(0.5)
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 9, weight: .bold))
+                }
+                .foregroundStyle(.white)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(.black.opacity(0.6), in: Capsule())
+            }
+        }
+    }
+
+    /// Menu body shared by tagged and untagged states. Excludes tags
+    /// already attached to other photos in the current capture; keeps the
+    /// currently-attached tag in the list so the user sees their own
+    /// selection (and tapping it is a no-op cheap way to dismiss).
+    @ViewBuilder
+    private func tagPickerItems(for photo: CapturedPhoto, assignedTag: ProgressPhotoTag?) -> some View {
+        let usedElsewhere: Set<UUID> = Set(
+            captured.compactMap { other in
+                other.id == photo.id ? nil : other.tagId
+            }
+        )
+        ForEach(tagStore.tags) { tag in
+            if !usedElsewhere.contains(tag.id) {
+                Button(tag.name) {
+                    assignTag(tag.id, to: photo.id)
+                }
+            }
+        }
+        if assignedTag != nil {
+            Divider()
+            Button("Unassign", role: .destructive) {
+                clearTag(for: photo.id)
+            }
+        }
+    }
+
+    private func assignTag(_ tagId: UUID, to photoID: UUID) {
+        guard tagStore.tag(id: tagId) != nil,
+              let idx = captured.firstIndex(where: { $0.id == photoID })
+        else { return }
+        captured[idx].tagId = tagId
+    }
+
+    private func clearTag(for photoID: UUID) {
+        guard let idx = captured.firstIndex(where: { $0.id == photoID }) else { return }
+        captured[idx].tagId = nil
     }
 
     // MARK: upload
