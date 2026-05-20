@@ -8,7 +8,7 @@ Single-user iOS client (SwiftUI, iOS 17+, Swift 5.9) for a self-hosted "DietTrac
 
 ## Commands
 
-The Xcode project is **generated** from `project.yml` and gitignored. `DIET_TRACKER_BASE_URL` must be exported in the shell at generate time — xcodegen bakes it into the pbxproj literally. The value lives in `.envrc` at the repo root. Always regenerate before building after pulling or editing `project.yml`:
+The Xcode project is **generated** from `project.yml` and gitignored. `DIET_TRACKER_BASE_URL` (required) and `DEVELOPMENT_TEAM` (required for physical-device builds; leave unset for sim-only) must be exported in the shell at generate time — xcodegen bakes them into the pbxproj literally. Values live in `.envrc` at the repo root (gitignored, per-developer). Always regenerate before building after pulling or editing `project.yml`:
 
 ```bash
 source .envrc && xcodegen generate

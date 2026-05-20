@@ -6,9 +6,25 @@
 /// chip onto a photo to assign that tag. Upload submits every tagged photo
 /// via `ProgressPhotoStore.upload(date:tagId:imageData:)` — untagged photos
 /// are skipped (and the button is disabled until at least one is tagged).
+import CoreTransferable
 import PhotosUI
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
+
+/// Drag payload carrying a tag id. A custom UTType keeps photo drop
+/// destinations from picking up stray String drags (selected text from
+/// another view or another app in split view).
+struct DraggedTagID: Codable, Transferable {
+    let id: UUID
+    static var transferRepresentation: some TransferRepresentation {
+        CodableRepresentation(contentType: .diettrackerTagDrag)
+    }
+}
+
+extension UTType {
+    static let diettrackerTagDrag = UTType(exportedAs: "com.khxsh.diettracker.tag-drag")
+}
 
 struct PhotoCaptureSession: View {
     @Environment(ProgressPhotoStore.self) private var store
@@ -120,9 +136,10 @@ struct PhotoCaptureSession: View {
                 HStack(spacing: 8) {
                     ForEach(tagStore.tags) { tag in
                         chipView(tag: tag)
-                            .draggable(tag.id.uuidString) {
+                            .contentShape(Capsule())
+                            .draggable(DraggedTagID(id: tag.id)) {
                                 chipView(tag: tag)
-                                    .opacity(0.85)
+                                    .opacity(0.9)
                             }
                     }
                 }
@@ -243,19 +260,16 @@ struct PhotoCaptureSession: View {
                         style: StrokeStyle(lineWidth: 1, dash: assignedTag == nil ? [4] : [])
                     )
             )
-            .dropDestination(for: String.self) { items, _ in
-                // Reject any payload that isn't a UUID we recognise in the
-                // current tag catalog — guards against stray drags from other
-                // apps (split view) and from stale chips after a tag refresh.
-                guard let raw = items.first,
-                      let uuid = UUID(uuidString: raw),
-                      tagStore.tag(id: uuid) != nil
+            .dropDestination(for: DraggedTagID.self) { items, _ in
+                // The custom UTType already filters to our drags, but we
+                // still verify the tag id is currently in the store before
+                // applying — guards against a stale chip after a refresh.
+                guard let payload = items.first,
+                      tagStore.tag(id: payload.id) != nil,
+                      let idx = captured.firstIndex(where: { $0.id == photo.id })
                 else { return false }
-                if let idx = captured.firstIndex(where: { $0.id == photo.id }) {
-                    captured[idx].tagId = uuid
-                    return true
-                }
-                return false
+                captured[idx].tagId = payload.id
+                return true
             }
     }
 
