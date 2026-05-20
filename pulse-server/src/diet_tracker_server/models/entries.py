@@ -23,6 +23,11 @@ from diet_tracker_server.models.common import MacroTotals
 class FoodEntryCreate(BaseModel):
     """Request body for one item in ``POST /entries``.
 
+    The owning daily-log calendar date is derived server-side from
+    ``consumed_at`` (projected into server timezone), or from the request's
+    ``now`` when ``consumed_at`` is omitted. Clients should not — and
+    cannot — pass an explicit calendar date.
+
     Note: ``meal_id`` / ``meal_name`` are intentionally NOT public input
     fields — they are server-controlled metadata stamped only by
     ``log_meal``; clients cannot supply them via ``POST /entries``. The
@@ -40,7 +45,6 @@ class FoodEntryCreate(BaseModel):
     protein_g: float = Field(ge=0)
     carbs_g: float = Field(ge=0)
     fat_g: float = Field(ge=0)
-    date: DateValue | None = None
     consumed_at: DateTimeValue | None = None
 
     @model_validator(mode="after")
