@@ -13,6 +13,7 @@ saved meal. Composes :class:`EntriesRepository` and :func:`daily_log_id`.
 from __future__ import annotations
 
 import uuid
+from datetime import date as DateValue
 from datetime import datetime as DateTimeValue
 from typing import Any, Sequence
 from uuid import UUID
@@ -106,7 +107,7 @@ async def _create_entries(
     created_rows: list[dict[str, Any]] = []
     batch_entry_group_id = uuid.uuid4()
     for item in items:
-        log_date = item.date or now.date()
+        log_date = _effective_log_date(item.consumed_at, now)
         consumed_at = item.consumed_at or now
         current_daily_log_id = daily_log_id(user_key, log_date)
 
@@ -134,7 +135,7 @@ async def _create_entries(
             )
         )
 
-    unique_log_dates = {item.date or now.date() for item in items}
+    unique_log_dates = {_effective_log_date(item.consumed_at, now) for item in items}
     if not items:
         totals_log_id = daily_log_id(user_key, now.date())
         all_rows = await entries_repo.list_entries_by_daily_log_id(totals_log_id)
@@ -146,3 +147,27 @@ async def _create_entries(
         all_rows = list(created_rows)
 
     return created_rows, all_rows
+
+
+def _effective_log_date(
+    item_consumed_at: DateTimeValue | None,
+    now: DateTimeValue,
+) -> DateValue:
+    """Resolve the daily-log calendar date for an entry from its consumption time.
+
+    Projects ``item_consumed_at`` into ``now``'s timezone so the entry rolls up
+    into the correct calendar day; falls back to ``now.date()`` when no
+    consumption timestamp is supplied.
+
+    **Inputs:**
+    - item_consumed_at (datetime | None): Explicit consumption timestamp.
+    - now (datetime): Request-scoped tz-aware reference timestamp.
+
+    **Outputs:**
+    - date: The resolved daily-log calendar date.
+    """
+    if item_consumed_at is None:
+        return now.date()
+    if now.tzinfo is not None and item_consumed_at.tzinfo is not None:
+        return item_consumed_at.astimezone(now.tzinfo).date()
+    return item_consumed_at.date()

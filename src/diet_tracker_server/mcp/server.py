@@ -112,6 +112,19 @@ Diet tracking workflow. Follow this order on every food-related interaction:
    for photo-derived foods) — this creates the custom food and writes memory in one step.
    Then call `log_food` with the returned `custom_food_id`.
 
+7) BACKDATE / FUTURE-DATE. `log_food` and `log_meal` accept a single optional
+   `consumed_at` for non-today logging. Pass `YYYY-MM-DD` for a date-only ("tomorrow's
+   breakfast", "Wednesday's lunch") — the server expands it to noon of that day. Pass
+   a full ISO-8601 timestamp when the user gives an explicit time. Without `consumed_at`
+   the entry stamps now. Resolve relative dates ("tomorrow", "Wednesday") to absolute
+   YYYY-MM-DD before calling. Past, present, and future days are all allowed.
+
+8) EDIT / DELETE ON ANY DAY. `delete_entry(entry_id)` is date-agnostic — the UUID
+   already identifies the row regardless of when it was logged. To act on a past or
+   future day, call `get_day(date)` first to discover the entry's id, then pass it to
+   `delete_entry`. Same pattern for "replace yesterday's eggs": `get_day` → `delete_entry`
+   → `log_food(..., consumed_at="<that day>")`.
+
 `forget_food(name)` and `list_remembered_foods()` let the user audit memory.
 """.strip()
 
@@ -445,8 +458,9 @@ def build_mcp(usda_getter) -> FastMCP:
         custom_food_id: str | None = None,
         normalized_quantity_value: float | None = None,
         normalized_quantity_unit: str | None = None,
+        consumed_at: str | None = None,
     ) -> LogFoodResponse:
-        """Log a food entry for today (server timezone) with pre-scaled macros.
+        """Log a food entry with pre-scaled macros. Defaults to now (server timezone).
 
         Provide EXACTLY ONE source:
         - `fdc_id` + `usda_description` for USDA-backed entries
@@ -454,6 +468,12 @@ def build_mcp(usda_getter) -> FastMCP:
 
         `calories`/`protein_g`/`carbs_g`/`fat_g` are the FINAL values for the consumed quantity
         (already scaled). `display_name` is the user-facing label; `quantity_text` is the raw phrase.
+
+        Backdate or future-date by passing `consumed_at`. Accepts either
+        `YYYY-MM-DD` (expands to noon of that day in server tz) or a full
+        ISO-8601 timestamp (`2026-05-20T19:30:00-04:00`). The daily-log bucket
+        is always derived from `consumed_at` in server timezone — past, present,
+        and future dates are all allowed.
         """
         if (fdc_id is None) == (custom_food_id is None):
             raise ToolError("Provide exactly one of fdc_id or custom_food_id")
@@ -467,6 +487,8 @@ def build_mcp(usda_getter) -> FastMCP:
             except ValueError as exc:
                 raise ToolError(f"Invalid custom_food_id '{custom_food_id}'") from exc
 
+        consumed_dt = _parse_consumed_at(consumed_at, tz)
+
         item = FoodEntryCreate(
             display_name=display_name,
             quantity_text=quantity_text,
@@ -479,6 +501,7 @@ def build_mcp(usda_getter) -> FastMCP:
             protein_g=protein_g,
             carbs_g=carbs_g,
             fat_g=fat_g,
+            consumed_at=consumed_dt,
         )
         now = DateTimeValue.now(tz=tz)
 
@@ -1215,21 +1238,18 @@ def build_mcp(usda_getter) -> FastMCP:
         consumed_at: str | None = None,
     ) -> LogMealResponse:
         """Log every item of a saved meal at its original quantity. Items log as separate
-        food entries sharing one `entry_group_id`. `consumed_at` defaults to now (server tz)
-        and accepts ISO-8601.
+        food entries sharing one `entry_group_id`.
+
+        Backdate or future-date by passing `consumed_at`. Accepts either
+        `YYYY-MM-DD` (expands to noon of that day in server tz) or a full
+        ISO-8601 timestamp. The daily-log bucket is always derived from
+        `consumed_at` in server timezone. Defaults to now when omitted.
         """
         try:
             meal_uuid = UUID(meal_id)
         except ValueError as exc:
             raise ToolError(f"Invalid meal_id '{meal_id}'") from exc
-        consumed_dt: DateTimeValue | None = None
-        if consumed_at is not None:
-            try:
-                consumed_dt = DateTimeValue.fromisoformat(consumed_at)
-            except ValueError as exc:
-                raise ToolError(f"Invalid consumed_at '{consumed_at}'") from exc
-            if consumed_dt.tzinfo is None:
-                consumed_dt = consumed_dt.replace(tzinfo=tz)
+        consumed_dt = _parse_consumed_at(consumed_at, tz)
 
         now = DateTimeValue.now(tz=tz)
         async with get_session() as session:
@@ -1260,6 +1280,47 @@ def build_mcp(usda_getter) -> FastMCP:
         )
 
     return mcp
+
+
+def _parse_consumed_at(value: str | None, tz: ZoneInfo) -> DateTimeValue | None:
+    """Parse the MCP ``consumed_at`` argument shared by ``log_food`` / ``log_meal``.
+
+    Accepts either ``YYYY-MM-DD`` (expanded to noon in ``tz``) or any ISO-8601
+    timestamp (naive strings are stamped with ``tz``). Returns ``None`` when
+    ``value`` is ``None`` so callers can fall back to request-scoped ``now``.
+
+    **Inputs:**
+    - value (str | None): Raw user input.
+    - tz (ZoneInfo): Server timezone used to localize date-only and naive
+      timestamps.
+
+    **Outputs:**
+    - datetime | None: Timezone-aware datetime, or ``None`` when no value was
+      provided.
+
+    **Exceptions:**
+    - ToolError: Raised when ``value`` is non-empty but does not parse as
+      either ``YYYY-MM-DD`` or ISO-8601.
+    """
+    if value is None:
+        return None
+    try:
+        return DateTimeValue.combine(
+            DateValue.fromisoformat(value),
+            DateTimeValue.min.time().replace(hour=12),
+            tzinfo=tz,
+        )
+    except ValueError:
+        pass
+    try:
+        parsed = DateTimeValue.fromisoformat(value)
+    except ValueError as exc:
+        raise ToolError(
+            f"Invalid consumed_at '{value}', expected YYYY-MM-DD or ISO-8601"
+        ) from exc
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=tz)
+    return parsed
 
 
 def _target_and_remaining(
