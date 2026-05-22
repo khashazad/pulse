@@ -1,4 +1,4 @@
-name: DietTracker
+name: Pulse
 options:
   bundleIdPrefix: com.khxsh
   deploymentTarget:
@@ -14,19 +14,19 @@ settings:
     CURRENT_PROJECT_VERSION: "1"
 
 targets:
-  DietTracker:
+  Pulse:
     type: application
     platform: iOS
     deploymentTarget: "17.0"
     sources:
-      - path: DietTracker
+      - path: Pulse
         excludes:
           - "Info.plist"
     resources: []
     info:
-      path: DietTracker/Info.plist
+      path: Pulse/Info.plist
       properties:
-        CFBundleDisplayName: Diet Tracker
+        CFBundleDisplayName: Pulse
         UILaunchScreen: {}
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
@@ -35,18 +35,18 @@ targets:
         ITSAppUsesNonExemptEncryption: false
         NSCameraUsageDescription: To take progress photos and meal-prep container photos.
         NSPhotoLibraryUsageDescription: To pick progress and meal-prep container photos from your library.
-        BaseURL: $(DIET_TRACKER_BASE_URL)
+        BaseURL: $(PULSE_BASE_URL)
     preBuildScripts:
       - name: Verify BaseURL
         script: |
-          if [ -z "${DIET_TRACKER_BASE_URL}" ]; then
-            echo "error: DIET_TRACKER_BASE_URL not set in environment at build time. Export it before xcodebuild."
+          if [ -z "${PULSE_BASE_URL}" ]; then
+            echo "error: PULSE_BASE_URL not set in environment at build time. Export it before xcodebuild."
             exit 1
           fi
-          case "${DIET_TRACKER_BASE_URL}" in
+          case "${PULSE_BASE_URL}" in
             http://*|https://*) ;;
             *)
-              echo "error: DIET_TRACKER_BASE_URL must be an absolute http(s) URL, got: ${DIET_TRACKER_BASE_URL}"
+              echo "error: PULSE_BASE_URL must be an absolute http(s) URL, got: ${PULSE_BASE_URL}"
               exit 1
               ;;
           esac
@@ -55,26 +55,26 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.khxsh.diettracker
         TARGETED_DEVICE_FAMILY: "1"  # iPhone only
-        # xcodegen interpolates ${DIET_TRACKER_BASE_URL} from the shell at
+        # xcodegen interpolates ${PULSE_BASE_URL} from the shell at
         # generation time, baking a literal build setting into the pbxproj.
-        # Info.plist's $(DIET_TRACKER_BASE_URL) substitution then resolves to it.
-        DIET_TRACKER_BASE_URL: ${DIET_TRACKER_BASE_URL}
+        # Info.plist's $(PULSE_BASE_URL) substitution then resolves to it.
+        PULSE_BASE_URL: ${PULSE_BASE_URL}
 
-  DietTrackerTests:
+  PulseTests:
     type: bundle.unit-test
     platform: iOS
     deploymentTarget: "17.0"
     sources:
-      - path: DietTrackerTests
+      - path: PulseTests
     dependencies:
-      - target: DietTracker
+      - target: Pulse
     info:
-      path: DietTrackerTests/Info.plist
+      path: PulseTests/Info.plist
       properties:
-        CFBundleIdentifier: com.khxsh.diettracker.tests
+        CFBundleIdentifier: com.khxsh.pulse.tests
         BaseURL: https://example.test
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.khxsh.diettracker.tests
+        PRODUCT_BUNDLE_IDENTIFIER: com.khxsh.pulse.tests
         BUNDLE_LOADER: "$(TEST_HOST)"
-        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/DietTracker.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/DietTracker"
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Pulse.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Pulse"
