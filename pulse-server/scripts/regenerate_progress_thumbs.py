@@ -21,10 +21,10 @@ from typing import Any
 from PIL import Image, ImageOps
 from sqlalchemy import select, update
 
-from diet_tracker_server.config import get_settings
-from diet_tracker_server.db import close_pool, get_session, init_pool, transaction
-from diet_tracker_server.repositories.tables import progress_photos
-from diet_tracker_server.services.image_processing import MAX_THUMB_PX, _encode_jpeg, _resize
+from pulse_server.config import get_settings
+from pulse_server.db import close_pool, get_session, init_pool, transaction
+from pulse_server.repositories.tables import progress_photos
+from pulse_server.services.image_processing import MAX_THUMB_PX, _encode_jpeg, _resize
 
 
 def _rethumb(full: bytes) -> bytes:

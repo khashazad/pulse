@@ -92,18 +92,18 @@ def client() -> TestClient:
     db_ctx.__aenter__.return_value = fake_db_session
     db_ctx.__aexit__.return_value = None
 
-    with patch("diet_tracker_server.db.init_pool", new_callable=AsyncMock), patch(
-        "diet_tracker_server.db.bootstrap_schema", new_callable=AsyncMock
-    ), patch("diet_tracker_server.db.close_pool", new_callable=AsyncMock), patch(
-        "diet_tracker_server.usda.USDAClient"
+    with patch("pulse_server.db.init_pool", new_callable=AsyncMock), patch(
+        "pulse_server.db.bootstrap_schema", new_callable=AsyncMock
+    ), patch("pulse_server.db.close_pool", new_callable=AsyncMock), patch(
+        "pulse_server.usda.USDAClient"
     ) as mock_usda_client, patch(
-        "diet_tracker_server.auth.middleware.get_session", return_value=db_ctx
+        "pulse_server.auth.middleware.get_session", return_value=db_ctx
     ), patch(
-        "diet_tracker_server.auth.middleware.SessionsRepository", return_value=session_repo
+        "pulse_server.auth.middleware.SessionsRepository", return_value=session_repo
     ):
         mock_usda_client.return_value.close = AsyncMock()
-        from diet_tracker_server.app import app
-        from diet_tracker_server.db import get_session_dependency
+        from pulse_server.app import app
+        from pulse_server.db import get_session_dependency
 
         async def _fake_session_dep():
             """Yield a `MagicMock` DB session with a working async `begin()` ctx."""
@@ -133,7 +133,7 @@ def test_list_containers(client: TestClient) -> None:
     """`GET /containers` returns serialized rows from the repository."""
     rows = [_row("A"), _row("B")]
     with patch(
-        "diet_tracker_server.routers.containers.ContainersRepository"
+        "pulse_server.routers.containers.ContainersRepository"
     ) as MockRepo:
         instance = MockRepo.return_value
         instance.list_for_user = AsyncMock(return_value=rows)
@@ -150,7 +150,7 @@ def test_create_container(client: TestClient) -> None:
     """`POST /containers` returns 201 with the newly created row."""
     row = _row("Big Pyrex", 412.0)
     with patch(
-        "diet_tracker_server.routers.containers.ContainersRepository"
+        "pulse_server.routers.containers.ContainersRepository"
     ) as MockRepo:
         instance = MockRepo.return_value
         instance.create = AsyncMock(return_value=row)
@@ -178,7 +178,7 @@ def test_create_duplicate_name_returns_409(client: TestClient) -> None:
     from sqlalchemy.exc import IntegrityError
 
     with patch(
-        "diet_tracker_server.routers.containers.ContainersRepository"
+        "pulse_server.routers.containers.ContainersRepository"
     ) as MockRepo:
         instance = MockRepo.return_value
         instance.create = AsyncMock(side_effect=IntegrityError("x", "y", Exception()))
@@ -193,7 +193,7 @@ def test_create_duplicate_name_returns_409(client: TestClient) -> None:
 def test_get_container_404_when_missing(client: TestClient) -> None:
     """`GET /containers/{id}` returns 404 when the repository returns `None`."""
     with patch(
-        "diet_tracker_server.routers.containers.ContainersRepository"
+        "pulse_server.routers.containers.ContainersRepository"
     ) as MockRepo:
         instance = MockRepo.return_value
         instance.get_by_id = AsyncMock(return_value=None)
@@ -205,7 +205,7 @@ def test_patch_container(client: TestClient) -> None:
     """`PATCH /containers/{id}` returns 200 with the updated row."""
     row = _row("Renamed", 99.0)
     with patch(
-        "diet_tracker_server.routers.containers.ContainersRepository"
+        "pulse_server.routers.containers.ContainersRepository"
     ) as MockRepo:
         instance = MockRepo.return_value
         instance.update_fields = AsyncMock(return_value=row)
@@ -221,7 +221,7 @@ def test_patch_container(client: TestClient) -> None:
 def test_delete_container(client: TestClient) -> None:
     """`DELETE /containers/{id}` returns 204 on a successful delete."""
     with patch(
-        "diet_tracker_server.routers.containers.ContainersRepository"
+        "pulse_server.routers.containers.ContainersRepository"
     ) as MockRepo:
         instance = MockRepo.return_value
         instance.delete = AsyncMock(return_value=True)
@@ -234,7 +234,7 @@ def test_upload_photo_resizes_and_returns_status(client: TestClient) -> None:
     container_id = uuid.uuid4()
     src = _png_bytes(2000, 1000)
     with patch(
-        "diet_tracker_server.routers.containers.ContainersRepository"
+        "pulse_server.routers.containers.ContainersRepository"
     ) as MockRepo:
         instance = MockRepo.return_value
         instance.set_photo = AsyncMock(return_value=True)
@@ -252,7 +252,7 @@ def test_upload_photo_rejects_oversize_via_streaming_cap(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Uploads exceeding `MAX_UPLOAD_BYTES` 413 without invoking the image processor."""
-    from diet_tracker_server.routers import containers as containers_module
+    from pulse_server.routers import containers as containers_module
 
     monkeypatch.setattr(containers_module, "MAX_UPLOAD_BYTES", 1024)
 
@@ -260,9 +260,9 @@ def test_upload_photo_rejects_oversize_via_streaming_cap(
     big = b"\x00" * 4096  # 4 KB > 1 KB cap
     process_spy = MagicMock()
     with patch(
-        "diet_tracker_server.routers.containers.ContainersRepository"
+        "pulse_server.routers.containers.ContainersRepository"
     ) as MockRepo, patch(
-        "diet_tracker_server.routers.containers.process_container_photo",
+        "pulse_server.routers.containers.process_container_photo",
         side_effect=process_spy,
     ):
         instance = MockRepo.return_value
@@ -280,7 +280,7 @@ def test_upload_photo_rejects_non_image(client: TestClient) -> None:
     """Non-image content type returns 415."""
     container_id = uuid.uuid4()
     with patch(
-        "diet_tracker_server.routers.containers.ContainersRepository"
+        "pulse_server.routers.containers.ContainersRepository"
     ) as MockRepo:
         instance = MockRepo.return_value
         instance.set_photo = AsyncMock(return_value=True)
@@ -296,7 +296,7 @@ def test_get_photo_returns_jpeg(client: TestClient) -> None:
     """`GET /containers/{id}/photo` returns the JPEG bytes with the correct content type."""
     container_id = uuid.uuid4()
     with patch(
-        "diet_tracker_server.routers.containers.ContainersRepository"
+        "pulse_server.routers.containers.ContainersRepository"
     ) as MockRepo:
         instance = MockRepo.return_value
         instance.get_photo = AsyncMock(return_value=(b"\xff\xd8\xff\xe0", "image/jpeg"))
@@ -310,7 +310,7 @@ def test_get_photo_404_when_missing(client: TestClient) -> None:
     """`GET /containers/{id}/photo` returns 404 when no photo is stored."""
     container_id = uuid.uuid4()
     with patch(
-        "diet_tracker_server.routers.containers.ContainersRepository"
+        "pulse_server.routers.containers.ContainersRepository"
     ) as MockRepo:
         instance = MockRepo.return_value
         instance.get_photo = AsyncMock(return_value=None)
@@ -322,7 +322,7 @@ def test_delete_photo(client: TestClient) -> None:
     """`DELETE /containers/{id}/photo` returns 204 when the row is cleared."""
     container_id = uuid.uuid4()
     with patch(
-        "diet_tracker_server.routers.containers.ContainersRepository"
+        "pulse_server.routers.containers.ContainersRepository"
     ) as MockRepo:
         instance = MockRepo.return_value
         instance.clear_photo = AsyncMock(return_value=True)

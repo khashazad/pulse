@@ -1,4 +1,4 @@
-"""Tests for the MCP auth-provider assembly in `diet_tracker_server.mcp.server`.
+"""Tests for the MCP auth-provider assembly in `pulse_server.mcp.server`.
 
 Covers `_build_auth_provider`'s four combinations (none / GitHub only /
 service token only / both) and `_build_static_token_verifier`'s synthesized
@@ -39,7 +39,7 @@ def _isolate_env(monkeypatch):
 
 
 def _reload_settings():
-    from diet_tracker_server import config as cfg
+    from pulse_server import config as cfg
 
     cfg.get_settings.cache_clear()
     return cfg.get_settings()
@@ -48,8 +48,8 @@ def _reload_settings():
 @pytest.mark.asyncio
 async def test_static_verifier_accepts_token_and_carries_login_claim():
     """The static verifier resolves the configured token and emits the synthetic login claim."""
-    from diet_tracker_server.config import SERVICE_TOKEN_LOGIN
-    from diet_tracker_server.mcp.server import _build_static_token_verifier
+    from pulse_server.config import SERVICE_TOKEN_LOGIN
+    from pulse_server.mcp.server import _build_static_token_verifier
 
     verifier = _build_static_token_verifier(SERVICE_TOKEN)
     access = await verifier.verify_token(SERVICE_TOKEN)
@@ -60,7 +60,7 @@ async def test_static_verifier_accepts_token_and_carries_login_claim():
 
 def test_build_auth_provider_returns_none_when_nothing_configured():
     """No GitHub OAuth and no service token → no auth provider; caller decides fallback."""
-    from diet_tracker_server.mcp.server import _build_auth_provider
+    from pulse_server.mcp.server import _build_auth_provider
 
     settings = _reload_settings()
     assert _build_auth_provider(settings) is None
@@ -71,7 +71,7 @@ def test_build_auth_provider_uses_static_verifier_when_only_service_token_set(mo
     from fastmcp.server.auth.providers.jwt import StaticTokenVerifier
 
     monkeypatch.setenv("MCP_SERVICE_TOKEN", SERVICE_TOKEN)
-    from diet_tracker_server.mcp.server import _build_auth_provider
+    from pulse_server.mcp.server import _build_auth_provider
 
     provider = _build_auth_provider(_reload_settings())
     assert isinstance(provider, StaticTokenVerifier)
@@ -88,7 +88,7 @@ def test_build_auth_provider_wraps_in_multiauth_when_both_configured(monkeypatch
     monkeypatch.setenv("PUBLIC_BASE_URL", "https://api.example.com")
     monkeypatch.setenv("MCP_SERVICE_TOKEN", SERVICE_TOKEN)
 
-    from diet_tracker_server.mcp.server import _build_auth_provider
+    from pulse_server.mcp.server import _build_auth_provider
 
     provider = _build_auth_provider(_reload_settings())
     assert isinstance(provider, MultiAuth)
@@ -105,7 +105,7 @@ def test_build_auth_provider_uses_github_only_when_no_service_token(monkeypatch)
     monkeypatch.setenv("GITHUB_CLIENT_SECRET", "ghsecret")
     monkeypatch.setenv("PUBLIC_BASE_URL", "https://api.example.com")
 
-    from diet_tracker_server.mcp.server import _build_auth_provider
+    from pulse_server.mcp.server import _build_auth_provider
 
     provider = _build_auth_provider(_reload_settings())
     assert isinstance(provider, GitHubProvider)
@@ -118,7 +118,7 @@ async def test_build_mcp_accepts_service_token_in_prod(monkeypatch):
     monkeypatch.setenv("MCP_SERVICE_TOKEN", SERVICE_TOKEN)
     _reload_settings()
 
-    from diet_tracker_server.mcp import build_mcp
+    from pulse_server.mcp import build_mcp
 
     mcp = build_mcp(lambda: MagicMock())
     tools = await mcp.list_tools()

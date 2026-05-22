@@ -1,7 +1,7 @@
 """Shared pytest env defaults.
 
 Module-level env defaults so test files that import the app at import time
-(via `from diet_tracker_server.app import app`) succeed before any fixture
+(via `from pulse_server.app import app`) succeed before any fixture
 runs.
 """
 

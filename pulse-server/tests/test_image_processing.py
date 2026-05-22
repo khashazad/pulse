@@ -11,7 +11,7 @@ import io
 import pytest
 from PIL import Image
 
-from diet_tracker_server.services.image_processing import (
+from pulse_server.services.image_processing import (
     ImageProcessingError,
     MAX_FULL_PX,
     MAX_THUMB_PX,

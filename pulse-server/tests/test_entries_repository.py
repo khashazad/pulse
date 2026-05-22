@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from diet_tracker_server.repositories.entries import EntriesRepository
+from pulse_server.repositories.entries import EntriesRepository
 
 
 @pytest.mark.asyncio

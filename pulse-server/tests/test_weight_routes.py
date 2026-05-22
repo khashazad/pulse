@@ -71,18 +71,18 @@ def client() -> TestClient:
     db_ctx.__aenter__.return_value = fake_db_session
     db_ctx.__aexit__.return_value = None
 
-    with patch("diet_tracker_server.db.init_pool", new_callable=AsyncMock), patch(
-        "diet_tracker_server.db.bootstrap_schema", new_callable=AsyncMock
-    ), patch("diet_tracker_server.db.close_pool", new_callable=AsyncMock), patch(
-        "diet_tracker_server.usda.USDAClient"
+    with patch("pulse_server.db.init_pool", new_callable=AsyncMock), patch(
+        "pulse_server.db.bootstrap_schema", new_callable=AsyncMock
+    ), patch("pulse_server.db.close_pool", new_callable=AsyncMock), patch(
+        "pulse_server.usda.USDAClient"
     ) as mock_usda_client, patch(
-        "diet_tracker_server.auth.middleware.get_session", return_value=db_ctx
+        "pulse_server.auth.middleware.get_session", return_value=db_ctx
     ), patch(
-        "diet_tracker_server.auth.middleware.SessionsRepository", return_value=session_repo
+        "pulse_server.auth.middleware.SessionsRepository", return_value=session_repo
     ):
         mock_usda_client.return_value.close = AsyncMock()
-        from diet_tracker_server.app import app
-        from diet_tracker_server.db import get_session_dependency
+        from pulse_server.app import app
+        from pulse_server.db import get_session_dependency
 
         async def _fake_session_dep():
             """Yield a `MagicMock` DB session with a working async `begin()` ctx."""
@@ -113,10 +113,10 @@ def test_put_weight_lb(client: TestClient) -> None:
     log_date = DateValue.today()
     row = _row(log_date)
     with patch(
-        "diet_tracker_server.routers.weight.upsert_weight",
+        "pulse_server.routers.weight.upsert_weight",
         new_callable=AsyncMock,
     ) as upsert:
-        from diet_tracker_server.models.weight import WeightEntryResponse
+        from pulse_server.models.weight import WeightEntryResponse
         upsert.return_value = WeightEntryResponse(**row)
         resp = client.put(
             f"/weight/{log_date.isoformat()}",
@@ -135,10 +135,10 @@ def test_put_weight_kg(client: TestClient) -> None:
     row = _row(log_date, weight_lb=Decimal("154.32"))
     row["source_unit"] = "kg"
     with patch(
-        "diet_tracker_server.routers.weight.upsert_weight",
+        "pulse_server.routers.weight.upsert_weight",
         new_callable=AsyncMock,
     ) as upsert:
-        from diet_tracker_server.models.weight import WeightEntryResponse
+        from pulse_server.models.weight import WeightEntryResponse
         upsert.return_value = WeightEntryResponse(**row)
         resp = client.put(
             f"/weight/{log_date.isoformat()}",
@@ -175,7 +175,7 @@ def test_put_rejects_future_date(client: TestClient) -> None:
 def test_get_weight_404(client: TestClient) -> None:
     """`GET /weight/{date}` returns 404 when no entry exists."""
     with patch(
-        "diet_tracker_server.routers.weight.get_weight",
+        "pulse_server.routers.weight.get_weight",
         new_callable=AsyncMock,
     ) as g:
         g.return_value = None
@@ -187,10 +187,10 @@ def test_get_weight_200(client: TestClient) -> None:
     """`GET /weight/{date}` returns 200 when the service yields a row."""
     row = _row(DateValue.today())
     with patch(
-        "diet_tracker_server.routers.weight.get_weight",
+        "pulse_server.routers.weight.get_weight",
         new_callable=AsyncMock,
     ) as g:
-        from diet_tracker_server.models.weight import WeightEntryResponse
+        from pulse_server.models.weight import WeightEntryResponse
         g.return_value = WeightEntryResponse(**row)
         resp = client.get(f"/weight/{DateValue.today().isoformat()}", headers=HEADERS)
     assert resp.status_code == 200
@@ -201,10 +201,10 @@ def test_list_range(client: TestClient) -> None:
     today = DateValue.today()
     rows = [_row(today - TimeDeltaValue(days=2)), _row(today - TimeDeltaValue(days=1))]
     with patch(
-        "diet_tracker_server.routers.weight.list_weight_range",
+        "pulse_server.routers.weight.list_weight_range",
         new_callable=AsyncMock,
     ) as lst:
-        from diet_tracker_server.models.weight import WeightEntryResponse
+        from pulse_server.models.weight import WeightEntryResponse
         lst.return_value = [WeightEntryResponse(**r) for r in rows]
         resp = client.get(
             f"/weight?from={(today - TimeDeltaValue(days=7)).isoformat()}&to={today.isoformat()}",
@@ -229,7 +229,7 @@ def test_list_range_rejects_oversize(client: TestClient) -> None:
 def test_delete_204(client: TestClient) -> None:
     """`DELETE /weight/{date}` returns 204 on success."""
     with patch(
-        "diet_tracker_server.routers.weight.delete_weight",
+        "pulse_server.routers.weight.delete_weight",
         new_callable=AsyncMock,
     ) as d:
         d.return_value = True
@@ -240,7 +240,7 @@ def test_delete_204(client: TestClient) -> None:
 def test_delete_404(client: TestClient) -> None:
     """`DELETE /weight/{date}` returns 404 when no row was deleted."""
     with patch(
-        "diet_tracker_server.routers.weight.delete_weight",
+        "pulse_server.routers.weight.delete_weight",
         new_callable=AsyncMock,
     ) as d:
         d.return_value = False

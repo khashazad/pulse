@@ -27,7 +27,7 @@ async def session():
     """
     if not os.environ.get("TEST_DATABASE_URL"):
         pytest.skip("TEST_DATABASE_URL not set")
-    from diet_tracker_server import db
+    from pulse_server import db
 
     await db.init_pool(os.environ["TEST_DATABASE_URL"])
     await db.bootstrap_schema()
@@ -52,7 +52,7 @@ def _hash(token: str) -> bytes:
 
 async def test_create_and_lookup(session):
     """``create`` then ``get`` round-trips the email and expiry for a hashed token."""
-    from diet_tracker_server.repositories.sessions import SessionsRepository
+    from pulse_server.repositories.sessions import SessionsRepository
 
     repo = SessionsRepository(session)
     now = datetime.now(timezone.utc)
@@ -68,7 +68,7 @@ async def test_create_and_lookup(session):
 
 async def test_slide_extends_expiry(session):
     """``slide`` advances ``last_used_at`` and ``expires_at`` for an existing token."""
-    from diet_tracker_server.repositories.sessions import SessionsRepository
+    from pulse_server.repositories.sessions import SessionsRepository
 
     repo = SessionsRepository(session)
     now = datetime.now(timezone.utc)
@@ -89,7 +89,7 @@ async def test_slide_extends_expiry(session):
 
 async def test_delete_returns_count(session):
     """``delete`` returns 1 for an existing token and 0 on a repeated delete of the same hash."""
-    from diet_tracker_server.repositories.sessions import SessionsRepository
+    from pulse_server.repositories.sessions import SessionsRepository
 
     repo = SessionsRepository(session)
     now = datetime.now(timezone.utc)

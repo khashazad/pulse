@@ -15,7 +15,7 @@ def test_settings_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("USDA_API_KEY", "test-usda-key")
     monkeypatch.setenv("LEGACY_USER_KEY", "khash")
 
-    from diet_tracker_server.config import Settings
+    from pulse_server.config import Settings
 
     settings = Settings(_env_file=None)
     assert settings.database_url == "postgresql://localhost/test"
@@ -30,7 +30,7 @@ def test_settings_requires_database_url(monkeypatch: pytest.MonkeyPatch) -> None
     monkeypatch.delenv("DATABASE_URL", raising=False)
     monkeypatch.setenv("USDA_API_KEY", "k")
 
-    from diet_tracker_server.config import Settings
+    from pulse_server.config import Settings
 
     with pytest.raises(Exception):
         Settings(_env_file=None)
@@ -38,7 +38,7 @@ def test_settings_requires_database_url(monkeypatch: pytest.MonkeyPatch) -> None
 
 def test_food_entry_create_validation() -> None:
     """A typical USDA-backed payload is accepted by `FoodEntryCreate`."""
-    from diet_tracker_server.models import FoodEntryCreate
+    from pulse_server.models import FoodEntryCreate
 
     entry = FoodEntryCreate(
         display_name="eggs",
@@ -56,7 +56,7 @@ def test_food_entry_create_validation() -> None:
 
 def test_food_entry_create_rejects_negative_calories() -> None:
     """Negative `calories` is rejected by `FoodEntryCreate`."""
-    from diet_tracker_server.models import FoodEntryCreate
+    from pulse_server.models import FoodEntryCreate
 
     with pytest.raises(Exception):
         FoodEntryCreate(
@@ -73,7 +73,7 @@ def test_food_entry_create_rejects_negative_calories() -> None:
 
 def test_macro_targets_validation() -> None:
     """A valid `MacroTargets` payload parses with expected field values."""
-    from diet_tracker_server.models import MacroTargets
+    from pulse_server.models import MacroTargets
 
     targets = MacroTargets(calories=2000, protein_g=150.0, carbs_g=200.0, fat_g=80.0)
     assert targets.calories == 2000
@@ -81,7 +81,7 @@ def test_macro_targets_validation() -> None:
 
 def test_food_memory_table_has_aliases_column() -> None:
     """`food_memory` and `meals` tables both expose an `aliases` column."""
-    from diet_tracker_server.repositories.tables import food_memory, meals
+    from pulse_server.repositories.tables import food_memory, meals
     assert "aliases" in food_memory.c
     assert "aliases" in meals.c
 
@@ -90,7 +90,7 @@ def test_food_memory_entry_aliases_defaults_to_empty_list() -> None:
     """`FoodMemoryEntry.aliases` defaults to `[]` when not provided."""
     from datetime import datetime
     from uuid import uuid4
-    from diet_tracker_server.models import FoodMemoryEntry
+    from pulse_server.models import FoodMemoryEntry
 
     entry = FoodMemoryEntry(
         id=uuid4(),
@@ -113,7 +113,7 @@ def test_food_memory_entry_aliases_defaults_to_empty_list() -> None:
 def test_meal_summary_aliases_defaults_to_empty_list() -> None:
     """`MealSummary.aliases` defaults to `[]` when not provided."""
     from uuid import uuid4
-    from diet_tracker_server.models import MealSummary
+    from pulse_server.models import MealSummary
 
     summary = MealSummary(
         id=uuid4(),

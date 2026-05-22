@@ -36,14 +36,14 @@ def client():
     **Outputs:**
     - TestClient: Client bound to the configured app.
     """
-    with patch("diet_tracker_server.db.init_pool", new_callable=AsyncMock), \
-         patch("diet_tracker_server.db.bootstrap_schema", new_callable=AsyncMock), \
-         patch("diet_tracker_server.db.close_pool", new_callable=AsyncMock), \
-         patch("diet_tracker_server.usda.USDAClient") as mock_usda:
+    with patch("pulse_server.db.init_pool", new_callable=AsyncMock), \
+         patch("pulse_server.db.bootstrap_schema", new_callable=AsyncMock), \
+         patch("pulse_server.db.close_pool", new_callable=AsyncMock), \
+         patch("pulse_server.usda.USDAClient") as mock_usda:
         mock_usda.return_value.close = AsyncMock()
-        from diet_tracker_server.config import get_settings
+        from pulse_server.config import get_settings
         get_settings.cache_clear()
-        from diet_tracker_server.app import app
+        from pulse_server.app import app
         with TestClient(app) as c:
             yield c
 
@@ -67,7 +67,7 @@ def test_start_redirects_to_google_with_state_cookie(client):
 
 from datetime import datetime, timezone
 
-from diet_tracker_server.auth.google import GoogleAuthError
+from pulse_server.auth.google import GoogleAuthError
 
 
 @pytest.fixture
@@ -83,8 +83,8 @@ def _patch_db_repo():
     fake_session_ctx = AsyncMock()
     fake_session_ctx.__aenter__.return_value = fake_session
     fake_session_ctx.__aexit__.return_value = None
-    with patch("diet_tracker_server.routers.auth.get_session", return_value=fake_session_ctx), \
-         patch("diet_tracker_server.routers.auth.SessionsRepository", return_value=fake_repo):
+    with patch("pulse_server.routers.auth.get_session", return_value=fake_session_ctx), \
+         patch("pulse_server.routers.auth.SessionsRepository", return_value=fake_repo):
         yield fake_repo
 
 
@@ -126,10 +126,10 @@ def test_callback_disallowed_email_redirects_not_allowed(client, _patch_db_repo)
     """Verified email outside `ALLOWED_EMAILS` redirects with `error=not_allowed` and skips session creation."""
     client.cookies.set("oauth_state", "s", path="/auth/google")
     with patch(
-        "diet_tracker_server.routers.auth.exchange_code_for_id_token",
+        "pulse_server.routers.auth.exchange_code_for_id_token",
         new_callable=AsyncMock, return_value="jwt",
     ), patch(
-        "diet_tracker_server.routers.auth.verify_id_token",
+        "pulse_server.routers.auth.verify_id_token",
         return_value=("nobody@gmail.com", "sub"),
     ):
         r = client.get(
@@ -146,10 +146,10 @@ def test_callback_happy_path_creates_session_and_redirects_with_token(client, _p
     """Successful callback creates a session and redirects to the app scheme with `token` + `email`."""
     client.cookies.set("oauth_state", "s", path="/auth/google")
     with patch(
-        "diet_tracker_server.routers.auth.exchange_code_for_id_token",
+        "pulse_server.routers.auth.exchange_code_for_id_token",
         new_callable=AsyncMock, return_value="jwt",
     ), patch(
-        "diet_tracker_server.routers.auth.verify_id_token",
+        "pulse_server.routers.auth.verify_id_token",
         return_value=("khashzd@gmail.com", "sub"),
     ):
         r = client.get(
@@ -169,7 +169,7 @@ def test_callback_token_exchange_failure_redirects_server_error(client):
     """`GoogleAuthError` from token exchange redirects with `error=server_error`."""
     client.cookies.set("oauth_state", "s", path="/auth/google")
     with patch(
-        "diet_tracker_server.routers.auth.exchange_code_for_id_token",
+        "pulse_server.routers.auth.exchange_code_for_id_token",
         new_callable=AsyncMock, side_effect=GoogleAuthError("boom"),
     ):
         r = client.get(
@@ -211,8 +211,8 @@ def test_whoami_returns_email_and_expires_at(client):
     ctx = AsyncMock()
     ctx.__aenter__.return_value = fake_session
     ctx.__aexit__.return_value = None
-    with patch("diet_tracker_server.auth.middleware.get_session", return_value=ctx), \
-         patch("diet_tracker_server.auth.middleware.SessionsRepository", return_value=fake_repo):
+    with patch("pulse_server.auth.middleware.get_session", return_value=ctx), \
+         patch("pulse_server.auth.middleware.SessionsRepository", return_value=fake_repo):
         r = client.get("/auth/whoami", headers={"Authorization": "Bearer tok"})
     assert r.status_code == 200
     body = r.json()
@@ -233,10 +233,10 @@ def test_logout_deletes_session_and_returns_204(client):
     ctx = AsyncMock()
     ctx.__aenter__.return_value = fake_session
     ctx.__aexit__.return_value = None
-    with patch("diet_tracker_server.auth.middleware.get_session", return_value=ctx), \
-         patch("diet_tracker_server.auth.middleware.SessionsRepository", return_value=fake_repo), \
-         patch("diet_tracker_server.routers.auth.get_session", return_value=ctx), \
-         patch("diet_tracker_server.routers.auth.SessionsRepository", return_value=fake_repo):
+    with patch("pulse_server.auth.middleware.get_session", return_value=ctx), \
+         patch("pulse_server.auth.middleware.SessionsRepository", return_value=fake_repo), \
+         patch("pulse_server.routers.auth.get_session", return_value=ctx), \
+         patch("pulse_server.routers.auth.SessionsRepository", return_value=fake_repo):
         r = client.post("/auth/logout", headers={"Authorization": "Bearer tok"})
     assert r.status_code == 204
     fake_repo.delete.assert_awaited()

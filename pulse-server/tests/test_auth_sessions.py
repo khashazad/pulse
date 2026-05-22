@@ -1,4 +1,4 @@
-"""Unit tests for the session-token helpers in `diet_tracker_server.auth.sessions`.
+"""Unit tests for the session-token helpers in `pulse_server.auth.sessions`.
 
 Covers token generation (length, alphabet, uniqueness), SHA-256 hashing of
 tokens, and the single-user `email_to_user_key` shim that maps any email to
@@ -11,7 +11,7 @@ import hashlib
 
 import pytest
 
-from diet_tracker_server.auth.sessions import (
+from pulse_server.auth.sessions import (
     email_to_user_key,
     generate_token,
     hash_token,
@@ -47,7 +47,7 @@ def test_email_to_user_key_returns_legacy_value(monkeypatch):
     monkeypatch.setenv("USDA_API_KEY", "x")
     monkeypatch.setenv("ALLOWED_EMAILS", "khashzd@gmail.com")
     monkeypatch.setenv("APP_ENV", "local")
-    from diet_tracker_server.config import get_settings
+    from pulse_server.config import get_settings
 
     get_settings.cache_clear()
     assert email_to_user_key("khashzd@gmail.com") == "khash"

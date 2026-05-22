@@ -48,18 +48,18 @@ def client() -> TestClient:
     db_ctx.__aenter__.return_value = fake_db_session
     db_ctx.__aexit__.return_value = None
 
-    with patch("diet_tracker_server.db.init_pool", new_callable=AsyncMock), patch(
-        "diet_tracker_server.db.bootstrap_schema", new_callable=AsyncMock
-    ), patch("diet_tracker_server.db.close_pool", new_callable=AsyncMock), patch(
-        "diet_tracker_server.usda.USDAClient"
+    with patch("pulse_server.db.init_pool", new_callable=AsyncMock), patch(
+        "pulse_server.db.bootstrap_schema", new_callable=AsyncMock
+    ), patch("pulse_server.db.close_pool", new_callable=AsyncMock), patch(
+        "pulse_server.usda.USDAClient"
     ) as mock_usda_client, patch(
-        "diet_tracker_server.auth.middleware.get_session", return_value=db_ctx
+        "pulse_server.auth.middleware.get_session", return_value=db_ctx
     ), patch(
-        "diet_tracker_server.auth.middleware.SessionsRepository", return_value=session_repo
+        "pulse_server.auth.middleware.SessionsRepository", return_value=session_repo
     ):
         mock_usda_client.return_value.close = AsyncMock()
-        from diet_tracker_server.app import app
-        from diet_tracker_server.db import get_session_dependency
+        from pulse_server.app import app
+        from pulse_server.db import get_session_dependency
 
         async def _fake_session_dep():
             """Yield a `MagicMock` standing in for the real DB session dependency."""
@@ -81,10 +81,10 @@ def test_calories_daily_happy(client: TestClient) -> None:
     """`/calories_daily` returns the aggregator rows verbatim for a valid range."""
     today = DateValue.today()
     with patch(
-        "diet_tracker_server.routers.summary.daily_calorie_totals",
+        "pulse_server.routers.summary.daily_calorie_totals",
         new_callable=AsyncMock,
     ) as fn:
-        from diet_tracker_server.models.weight import CaloriesDailyRow
+        from pulse_server.models.weight import CaloriesDailyRow
         fn.return_value = [
             CaloriesDailyRow(log_date=today - TimeDeltaValue(days=1), calories=1850),
             CaloriesDailyRow(log_date=today, calories=2100),

@@ -19,9 +19,9 @@ from decimal import Decimal
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from diet_tracker_server.config import get_settings
-from diet_tracker_server.db import close_pool, get_session, init_pool, transaction
-from diet_tracker_server.services.weight_service import upsert_weight
+from pulse_server.config import get_settings
+from pulse_server.db import close_pool, get_session, init_pool, transaction
+from pulse_server.services.weight_service import upsert_weight
 
 
 def _parse_date(raw: str) -> DateValue:

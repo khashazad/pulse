@@ -5,7 +5,7 @@ multiple spaces) to single spaces, and idempotence on already-normalized
 input.
 """
 
-from diet_tracker_server.services.normalize import normalize_name
+from pulse_server.services.normalize import normalize_name
 
 
 def test_normalize_lowercases_and_trims() -> None:

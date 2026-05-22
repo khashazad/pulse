@@ -16,7 +16,7 @@ import pytest
 @pytest.mark.asyncio
 async def test_build_mcp_registers_expected_tools() -> None:
     """`build_mcp` registers every tool name the documented agent workflow expects."""
-    from diet_tracker_server.mcp import build_mcp
+    from pulse_server.mcp import build_mcp
 
     mcp = build_mcp(lambda: MagicMock())
     tools = await mcp.list_tools()
@@ -56,8 +56,8 @@ async def test_build_mcp_registers_expected_tools() -> None:
 @pytest.mark.asyncio
 async def test_build_mcp_emits_workflow_instructions() -> None:
     """The MCP server's instructions string includes the canonical workflow guidance."""
-    from diet_tracker_server.mcp import build_mcp
-    from diet_tracker_server.mcp.server import WORKFLOW_INSTRUCTIONS
+    from pulse_server.mcp import build_mcp
+    from pulse_server.mcp.server import WORKFLOW_INSTRUCTIONS
 
     mcp = build_mcp(lambda: MagicMock())
     assert mcp.instructions is not None
@@ -69,6 +69,6 @@ async def test_build_mcp_emits_workflow_instructions() -> None:
 @pytest.mark.asyncio
 async def test_workflow_instructions_mention_aliases() -> None:
     """Workflow instructions reference the alias-management tools."""
-    from diet_tracker_server.mcp.server import WORKFLOW_INSTRUCTIONS
+    from pulse_server.mcp.server import WORKFLOW_INSTRUCTIONS
     assert "add_meal_alias" in WORKFLOW_INSTRUCTIONS
     assert "add_food_alias" in WORKFLOW_INSTRUCTIONS

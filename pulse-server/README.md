@@ -1,8 +1,8 @@
-# diet-tracker-server
+# pulse-server
 
 Backend for a self-hosted nutrition / meal-prep tracker. FastAPI + Postgres, single-user today (gated by Google OAuth allowlist), exposed both as a JSON HTTP API for the iOS client and as an MCP server for Claude.
 
-Paired with [`diet-tracker-ios`](../diet-tracker-ios) — same product, two repos coupled only by the JSON wire format.
+Paired with [`pulse-ios`](../pulse-ios) — same product, two repos coupled only by the JSON wire format.
 
 ## What it does
 
@@ -85,4 +85,4 @@ Dockerized; Railway-targeted (`railway.json`, healthcheck `/health`). The Docker
 
 ## Wire-format contract with iOS
 
-JSON over HTTP, `snake_case` keys. iOS Codable structs in `diet-tracker-ios/DietTracker/Models/` mirror the Pydantic DTOs in `src/diet_tracker_server/models/` via explicit `CodingKeys`. iOS accepts both `YYYY-MM-DD` and ISO-8601 dates — keep server outputs within those.
+JSON over HTTP, `snake_case` keys. iOS Codable structs in `pulse-ios/DietTracker/Models/` mirror the Pydantic DTOs in `src/diet_tracker_server/models/` via explicit `CodingKeys`. iOS accepts both `YYYY-MM-DD` and ISO-8601 dates — keep server outputs within those.
