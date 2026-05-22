@@ -20,9 +20,9 @@ import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from diet_tracker_server.db import to_sqlalchemy_url, transaction
-from diet_tracker_server.repositories.progress_photo import ProgressPhotoRepository
-from diet_tracker_server.repositories.progress_photo_tag import (
+from pulse_server.db import to_sqlalchemy_url, transaction
+from pulse_server.repositories.progress_photo import ProgressPhotoRepository
+from pulse_server.repositories.progress_photo_tag import (
     ProgressPhotoTagRepository,
 )
 

@@ -88,18 +88,18 @@ def client() -> TestClient:
     db_ctx.__aenter__.return_value = fake_db_session
     db_ctx.__aexit__.return_value = None
 
-    with patch("diet_tracker_server.db.init_pool", new_callable=AsyncMock), patch(
-        "diet_tracker_server.db.bootstrap_schema", new_callable=AsyncMock
-    ), patch("diet_tracker_server.db.close_pool", new_callable=AsyncMock), patch(
-        "diet_tracker_server.usda.USDAClient"
+    with patch("pulse_server.db.init_pool", new_callable=AsyncMock), patch(
+        "pulse_server.db.bootstrap_schema", new_callable=AsyncMock
+    ), patch("pulse_server.db.close_pool", new_callable=AsyncMock), patch(
+        "pulse_server.usda.USDAClient"
     ) as mock_usda_client, patch(
-        "diet_tracker_server.auth.middleware.get_session", return_value=db_ctx
+        "pulse_server.auth.middleware.get_session", return_value=db_ctx
     ), patch(
-        "diet_tracker_server.auth.middleware.SessionsRepository", return_value=session_repo
+        "pulse_server.auth.middleware.SessionsRepository", return_value=session_repo
     ):
         mock_usda_client.return_value.close = AsyncMock()
-        from diet_tracker_server.app import app
-        from diet_tracker_server.db import get_session_dependency
+        from pulse_server.app import app
+        from pulse_server.db import get_session_dependency
 
         async def _fake_session_dep():
             session = MagicMock()
@@ -131,7 +131,7 @@ def test_list_tags_seeds_defaults_when_empty(client: TestClient) -> None:
     """`GET /measures/photo-tags` seeds the four defaults when the user has none."""
     seeded = [_tag_row(n, i) for i, n in enumerate(["front", "left", "right", "back"])]
     with patch(
-        "diet_tracker_server.routers.measures_photo_tags.ProgressPhotoTagRepository"
+        "pulse_server.routers.measures_photo_tags.ProgressPhotoTagRepository"
     ) as MockRepo:
         instance = MockRepo.return_value
         instance.list_for_user = AsyncMock(side_effect=[[], seeded])
@@ -147,7 +147,7 @@ def test_list_tags_returns_existing(client: TestClient) -> None:
     """`GET /measures/photo-tags` skips seeding when rows already exist."""
     existing = [_tag_row("morning", 0)]
     with patch(
-        "diet_tracker_server.routers.measures_photo_tags.ProgressPhotoTagRepository"
+        "pulse_server.routers.measures_photo_tags.ProgressPhotoTagRepository"
     ) as MockRepo:
         instance = MockRepo.return_value
         instance.list_for_user = AsyncMock(return_value=existing)
@@ -164,7 +164,7 @@ def test_create_tag_returns_201(client: TestClient) -> None:
     """`POST /measures/photo-tags` creates a tag and returns it."""
     created = _tag_row("flexed", 4)
     with patch(
-        "diet_tracker_server.routers.measures_photo_tags.ProgressPhotoTagRepository"
+        "pulse_server.routers.measures_photo_tags.ProgressPhotoTagRepository"
     ) as MockRepo:
         instance = MockRepo.return_value
         instance.list_for_user = AsyncMock(return_value=[])
@@ -194,7 +194,7 @@ def test_update_tag_renames(client: TestClient) -> None:
     """`PATCH /measures/photo-tags/{id}` renames a tag."""
     renamed = {**_tag_row("morning", 0), "name": "morning", "normalized_name": "morning"}
     with patch(
-        "diet_tracker_server.routers.measures_photo_tags.ProgressPhotoTagRepository"
+        "pulse_server.routers.measures_photo_tags.ProgressPhotoTagRepository"
     ) as MockRepo:
         instance = MockRepo.return_value
         instance.update_fields = AsyncMock(return_value=renamed)
@@ -210,7 +210,7 @@ def test_update_tag_renames(client: TestClient) -> None:
 def test_update_tag_404_when_missing(client: TestClient) -> None:
     """`PATCH /measures/photo-tags/{id}` returns 404 when no row matches."""
     with patch(
-        "diet_tracker_server.routers.measures_photo_tags.ProgressPhotoTagRepository"
+        "pulse_server.routers.measures_photo_tags.ProgressPhotoTagRepository"
     ) as MockRepo:
         instance = MockRepo.return_value
         instance.update_fields = AsyncMock(return_value=None)
@@ -234,10 +234,10 @@ def test_post_photo_returns_metadata(client: TestClient) -> None:
     tag_repo = MagicMock()
     tag_repo.get_by_id = AsyncMock(return_value=_tag_row("front", 0))
     with patch(
-        "diet_tracker_server.routers.measures_photos.ProgressPhotoRepository",
+        "pulse_server.routers.measures_photos.ProgressPhotoRepository",
         return_value=photo_repo,
     ), patch(
-        "diet_tracker_server.routers.measures_photos.ProgressPhotoTagRepository",
+        "pulse_server.routers.measures_photos.ProgressPhotoTagRepository",
         return_value=tag_repo,
     ):
         resp = client.post(
@@ -263,10 +263,10 @@ def test_post_photo_forwards_idempotency_key(client: TestClient) -> None:
     tag_repo = MagicMock()
     tag_repo.get_by_id = AsyncMock(return_value=_tag_row("front", 0))
     with patch(
-        "diet_tracker_server.routers.measures_photos.ProgressPhotoRepository",
+        "pulse_server.routers.measures_photos.ProgressPhotoRepository",
         return_value=photo_repo,
     ), patch(
-        "diet_tracker_server.routers.measures_photos.ProgressPhotoTagRepository",
+        "pulse_server.routers.measures_photos.ProgressPhotoTagRepository",
         return_value=tag_repo,
     ):
         resp = client.post(
@@ -292,7 +292,7 @@ def test_post_photo_rejects_future_date(client: TestClient) -> None:
     tag_repo = MagicMock()
     tag_repo.get_by_id = AsyncMock(return_value=_tag_row("front", 0))
     with patch(
-        "diet_tracker_server.routers.measures_photos.ProgressPhotoTagRepository",
+        "pulse_server.routers.measures_photos.ProgressPhotoTagRepository",
         return_value=tag_repo,
     ):
         resp = client.post(
@@ -310,7 +310,7 @@ def test_post_photo_404_on_unknown_tag(client: TestClient) -> None:
     tag_repo = MagicMock()
     tag_repo.get_by_id = AsyncMock(return_value=None)
     with patch(
-        "diet_tracker_server.routers.measures_photos.ProgressPhotoTagRepository",
+        "pulse_server.routers.measures_photos.ProgressPhotoTagRepository",
         return_value=tag_repo,
     ):
         resp = client.post(
@@ -327,7 +327,7 @@ def test_post_photo_rejects_non_image(client: TestClient) -> None:
     tag_repo = MagicMock()
     tag_repo.get_by_id = AsyncMock(return_value=_tag_row("front", 0))
     with patch(
-        "diet_tracker_server.routers.measures_photos.ProgressPhotoTagRepository",
+        "pulse_server.routers.measures_photos.ProgressPhotoTagRepository",
         return_value=tag_repo,
     ):
         resp = client.post(
@@ -343,7 +343,7 @@ def test_get_photo_returns_bytes_with_etag(client: TestClient) -> None:
     """`GET /measures/photos/{id}` returns photo bytes with an ETag header."""
     photo_id = uuid.uuid4()
     with patch(
-        "diet_tracker_server.routers.measures_photos.ProgressPhotoRepository"
+        "pulse_server.routers.measures_photos.ProgressPhotoRepository"
     ) as MockRepo:
         instance = MockRepo.return_value
         instance.get_photo = AsyncMock(
@@ -367,7 +367,7 @@ def test_get_photo_returns_bytes_with_etag(client: TestClient) -> None:
 def test_get_photo_returns_404_when_missing(client: TestClient) -> None:
     """`GET /measures/photos/{id}` returns 404 when no photo exists."""
     with patch(
-        "diet_tracker_server.routers.measures_photos.ProgressPhotoRepository"
+        "pulse_server.routers.measures_photos.ProgressPhotoRepository"
     ) as MockRepo:
         MockRepo.return_value.get_photo = AsyncMock(return_value=None)
         resp = client.get(f"/measures/photos/{uuid.uuid4()}", headers=HEADERS)
@@ -378,7 +378,7 @@ def test_list_returns_metadata_for_range(client: TestClient) -> None:
     """`GET /measures/photos?from=&to=` returns metadata rows for the range."""
     tag_id = uuid.uuid4()
     with patch(
-        "diet_tracker_server.routers.measures_photos.ProgressPhotoRepository"
+        "pulse_server.routers.measures_photos.ProgressPhotoRepository"
     ) as MockRepo:
         instance = MockRepo.return_value
         instance.list_metadata = AsyncMock(return_value=[_photo_row(tag_id, "a")])
@@ -396,7 +396,7 @@ def test_list_returns_metadata_for_range(client: TestClient) -> None:
 def test_delete_returns_204(client: TestClient) -> None:
     """`DELETE /measures/photos/{id}` returns 204 on success."""
     with patch(
-        "diet_tracker_server.routers.measures_photos.ProgressPhotoRepository"
+        "pulse_server.routers.measures_photos.ProgressPhotoRepository"
     ) as MockRepo:
         MockRepo.return_value.delete = AsyncMock(return_value=True)
         resp = client.delete(f"/measures/photos/{uuid.uuid4()}", headers=HEADERS)
@@ -406,7 +406,7 @@ def test_delete_returns_204(client: TestClient) -> None:
 def test_delete_returns_404_when_missing(client: TestClient) -> None:
     """`DELETE /measures/photos/{id}` returns 404 when nothing was removed."""
     with patch(
-        "diet_tracker_server.routers.measures_photos.ProgressPhotoRepository"
+        "pulse_server.routers.measures_photos.ProgressPhotoRepository"
     ) as MockRepo:
         MockRepo.return_value.delete = AsyncMock(return_value=False)
         resp = client.delete(f"/measures/photos/{uuid.uuid4()}", headers=HEADERS)

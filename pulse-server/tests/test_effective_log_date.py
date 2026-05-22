@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
-from diet_tracker_server.services.entries_service import _effective_log_date
+from pulse_server.services.entries_service import _effective_log_date
 
 
 TZ = ZoneInfo("America/Toronto")

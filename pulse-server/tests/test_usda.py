@@ -6,7 +6,7 @@ detail responses) plus the safe zero defaults when no nutrient rows are
 present.
 """
 
-from diet_tracker_server.usda import normalize_food_nutrients
+from pulse_server.usda import normalize_food_nutrients
 
 
 def test_normalize_extracts_macros_from_search_result() -> None:

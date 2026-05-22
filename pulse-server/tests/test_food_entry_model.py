@@ -11,12 +11,12 @@ from uuid import UUID, uuid4
 
 import pytest
 
-from diet_tracker_server.models.entries import FoodEntryCreate, FoodEntryResponse
+from pulse_server.models.entries import FoodEntryCreate, FoodEntryResponse
 
 
 def test_food_entry_create_accepts_usda_only() -> None:
     """USDA-only payload is accepted and ``custom_food_id`` defaults to ``None``."""
-    from diet_tracker_server.models import FoodEntryCreate
+    from pulse_server.models import FoodEntryCreate
 
     entry = FoodEntryCreate(
         display_name="eggs",
@@ -34,7 +34,7 @@ def test_food_entry_create_accepts_usda_only() -> None:
 
 def test_food_entry_create_accepts_custom_only() -> None:
     """Custom-food-only payload is accepted and ``usda_fdc_id`` defaults to ``None``."""
-    from diet_tracker_server.models import FoodEntryCreate
+    from pulse_server.models import FoodEntryCreate
 
     cf_id = uuid4()
     entry = FoodEntryCreate(
@@ -52,7 +52,7 @@ def test_food_entry_create_accepts_custom_only() -> None:
 
 def test_food_entry_create_rejects_both_sources() -> None:
     """Specifying both USDA and custom-food sources fails validation."""
-    from diet_tracker_server.models import FoodEntryCreate
+    from pulse_server.models import FoodEntryCreate
 
     with pytest.raises(Exception):
         FoodEntryCreate(
@@ -70,7 +70,7 @@ def test_food_entry_create_rejects_both_sources() -> None:
 
 def test_food_entry_create_rejects_neither_source() -> None:
     """Omitting both USDA and custom-food sources fails validation."""
-    from diet_tracker_server.models import FoodEntryCreate
+    from pulse_server.models import FoodEntryCreate
 
     with pytest.raises(Exception):
         FoodEntryCreate(
@@ -85,7 +85,7 @@ def test_food_entry_create_rejects_neither_source() -> None:
 
 def test_food_entry_create_rejects_missing_usda_description() -> None:
     """A USDA payload without `usda_description` fails validation."""
-    from diet_tracker_server.models import FoodEntryCreate
+    from pulse_server.models import FoodEntryCreate
 
     with pytest.raises(Exception):
         FoodEntryCreate(

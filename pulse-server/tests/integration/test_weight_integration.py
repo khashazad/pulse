@@ -22,9 +22,9 @@ import pytest_asyncio
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from diet_tracker_server import db
-from diet_tracker_server.repositories.weight import WeightRepository
-from diet_tracker_server.services.weight_service import (
+from pulse_server import db
+from pulse_server.repositories.weight import WeightRepository
+from pulse_server.services.weight_service import (
     delete_weight,
     get_weight,
     list_weight_range,

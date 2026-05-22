@@ -39,7 +39,7 @@ def _env(monkeypatch):
     monkeypatch.setenv("LEGACY_USER_KEY", "khash")
     monkeypatch.setenv("APP_ENV", "local")
     monkeypatch.setenv("SESSION_TTL_DAYS", "7")
-    from diet_tracker_server.config import get_settings
+    from pulse_server.config import get_settings
     get_settings.cache_clear()
 
 
@@ -50,12 +50,12 @@ def client():
     **Outputs:**
     - ``TestClient``: client wired against the real app for full request flows.
     """
-    with patch("diet_tracker_server.usda.USDAClient") as mock_usda:
+    with patch("pulse_server.usda.USDAClient") as mock_usda:
         mock_usda.return_value.close = AsyncMock()
-        from diet_tracker_server.app import app
+        from pulse_server.app import app
 
         with TestClient(app) as c:
-            from diet_tracker_server import db
+            from pulse_server import db
 
             async def _truncate():
                 async with db.get_session() as s:
@@ -76,10 +76,10 @@ def test_full_signin_flow(client):
 
     # /callback (mock Google)
     with patch(
-        "diet_tracker_server.routers.auth.exchange_code_for_id_token",
+        "pulse_server.routers.auth.exchange_code_for_id_token",
         new_callable=AsyncMock, return_value="jwt",
     ), patch(
-        "diet_tracker_server.routers.auth.verify_id_token",
+        "pulse_server.routers.auth.verify_id_token",
         return_value=("khashzd@gmail.com", "sub"),
     ):
         client.cookies.set("oauth_state", state_cookie, path="/auth/google")

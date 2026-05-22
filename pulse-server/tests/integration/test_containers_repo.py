@@ -19,8 +19,8 @@ import pytest_asyncio
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from diet_tracker_server.db import to_sqlalchemy_url, transaction
-from diet_tracker_server.repositories.containers import ContainersRepository
+from pulse_server.db import to_sqlalchemy_url, transaction
+from pulse_server.repositories.containers import ContainersRepository
 
 pytestmark = pytest.mark.integration
 

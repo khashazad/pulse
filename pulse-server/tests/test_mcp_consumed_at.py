@@ -14,7 +14,7 @@ from zoneinfo import ZoneInfo
 import pytest
 from fastmcp.exceptions import ToolError
 
-from diet_tracker_server.mcp.server import _parse_consumed_at
+from pulse_server.mcp.server import _parse_consumed_at
 
 
 TZ = ZoneInfo("America/Toronto")

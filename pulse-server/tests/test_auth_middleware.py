@@ -34,7 +34,7 @@ def _env(monkeypatch):
     monkeypatch.setenv("LEGACY_USER_KEY", "khash")
     monkeypatch.setenv("APP_ENV", "local")
     monkeypatch.setenv("SESSION_TTL_DAYS", "7")
-    from diet_tracker_server.config import get_settings
+    from pulse_server.config import get_settings
 
     get_settings.cache_clear()
 
@@ -45,7 +45,7 @@ def _build_app():
     **Outputs:**
     - FastAPI: App exposing ``/health`` (public) and ``/me`` (session-required).
     """
-    from diet_tracker_server.auth.middleware import (
+    from pulse_server.auth.middleware import (
         SessionAuthMiddleware,
         UserKeyGuardrailMiddleware,
         require_session,
@@ -117,8 +117,8 @@ def test_protected_unknown_session_returns_401():
     """Bearer token that doesn't match any stored session returns 401."""
     app = _build_app()
     repo, ctx = _patched_session_repo(get_return=None)
-    with patch("diet_tracker_server.auth.middleware.get_session", return_value=ctx), \
-         patch("diet_tracker_server.auth.middleware.SessionsRepository", return_value=repo):
+    with patch("pulse_server.auth.middleware.get_session", return_value=ctx), \
+         patch("pulse_server.auth.middleware.SessionsRepository", return_value=repo):
         with TestClient(app) as c:
             r = c.get("/me", headers={"Authorization": "Bearer unknown"})
     assert r.status_code == 401
@@ -129,8 +129,8 @@ def test_protected_expired_session_returns_401_and_deletes():
     app = _build_app()
     past = datetime.now(timezone.utc) - timedelta(days=1)
     repo, ctx = _patched_session_repo(get_return={"email": "u@e.com", "expires_at": past})
-    with patch("diet_tracker_server.auth.middleware.get_session", return_value=ctx), \
-         patch("diet_tracker_server.auth.middleware.SessionsRepository", return_value=repo):
+    with patch("pulse_server.auth.middleware.get_session", return_value=ctx), \
+         patch("pulse_server.auth.middleware.SessionsRepository", return_value=repo):
         with TestClient(app) as c:
             r = c.get("/me", headers={"Authorization": "Bearer tok"})
     assert r.status_code == 401
@@ -142,8 +142,8 @@ def test_protected_happy_path_slides_and_attaches_state():
     app = _build_app()
     future = datetime.now(timezone.utc) + timedelta(days=7)
     repo, ctx = _patched_session_repo(get_return={"email": "khashzd@gmail.com", "expires_at": future})
-    with patch("diet_tracker_server.auth.middleware.get_session", return_value=ctx), \
-         patch("diet_tracker_server.auth.middleware.SessionsRepository", return_value=repo):
+    with patch("pulse_server.auth.middleware.get_session", return_value=ctx), \
+         patch("pulse_server.auth.middleware.SessionsRepository", return_value=repo):
         with TestClient(app) as c:
             r = c.get("/me", headers={"Authorization": "Bearer tok"})
     assert r.status_code == 200
@@ -179,7 +179,7 @@ def _build_app_with_mcp_exemptions():
     - FastAPI: App with ``/mcp/probe``, ``/authorize``, and
       ``/.well-known/oauth-authorization-server`` routes registered.
     """
-    from diet_tracker_server.auth.middleware import (
+    from pulse_server.auth.middleware import (
         SessionAuthMiddleware,
         UserKeyGuardrailMiddleware,
     )

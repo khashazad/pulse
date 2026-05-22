@@ -31,14 +31,14 @@ def _env(monkeypatch):
     monkeypatch.setenv("ALLOWED_EMAILS", "khashzd@gmail.com")
     monkeypatch.setenv("LEGACY_USER_KEY", "khash")
     monkeypatch.setenv("APP_ENV", "local")
-    from diet_tracker_server.config import get_settings
+    from pulse_server.config import get_settings
 
     get_settings.cache_clear()
 
 
 def test_build_authorize_url_includes_required_params():
     """`build_authorize_url` produces a Google authorize URL with all required OAuth params."""
-    from diet_tracker_server.auth.google import build_authorize_url
+    from pulse_server.auth.google import build_authorize_url
 
     url = build_authorize_url(state="abc123")
     assert url.startswith("https://accounts.google.com/o/oauth2/v2/auth?")
@@ -54,7 +54,7 @@ def test_build_authorize_url_includes_required_params():
 @pytest.mark.asyncio
 async def test_exchange_code_for_id_token_calls_google():
     """`exchange_code_for_id_token` posts the OAuth payload to Google and returns the id_token string."""
-    from diet_tracker_server.auth import google as g
+    from pulse_server.auth import google as g
 
     mock_client = AsyncMock()
     mock_response = AsyncMock()
@@ -65,7 +65,7 @@ async def test_exchange_code_for_id_token_calls_google():
     mock_client.__aexit__.return_value = None
     mock_client.post.return_value = mock_response
 
-    with patch("diet_tracker_server.auth.google.httpx.AsyncClient", return_value=mock_client):
+    with patch("pulse_server.auth.google.httpx.AsyncClient", return_value=mock_client):
         id_token_str = await g.exchange_code_for_id_token(code="auth_code")
 
     assert id_token_str == "fake.jwt.value"
@@ -82,7 +82,7 @@ async def test_exchange_code_for_id_token_calls_google():
 @pytest.mark.asyncio
 async def test_exchange_code_raises_on_non_2xx():
     """`exchange_code_for_id_token` wraps non-2xx Google responses in `GoogleAuthError`."""
-    from diet_tracker_server.auth import google as g
+    from pulse_server.auth import google as g
 
     mock_client = AsyncMock()
     mock_response = AsyncMock()
@@ -96,7 +96,7 @@ async def test_exchange_code_raises_on_non_2xx():
     mock_client.__aexit__.return_value = None
     mock_client.post.return_value = mock_response
 
-    with patch("diet_tracker_server.auth.google.httpx.AsyncClient", return_value=mock_client):
+    with patch("pulse_server.auth.google.httpx.AsyncClient", return_value=mock_client):
         with pytest.raises(g.GoogleAuthError):
             await g.exchange_code_for_id_token(code="bad")
 
@@ -104,7 +104,7 @@ async def test_exchange_code_raises_on_non_2xx():
 @pytest.mark.asyncio
 async def test_exchange_code_raises_when_id_token_missing():
     """`exchange_code_for_id_token` raises `GoogleAuthError` when the response lacks an id_token."""
-    from diet_tracker_server.auth import google as g
+    from pulse_server.auth import google as g
 
     mock_client = AsyncMock()
     mock_response = AsyncMock()
@@ -115,17 +115,17 @@ async def test_exchange_code_raises_when_id_token_missing():
     mock_client.__aexit__.return_value = None
     mock_client.post.return_value = mock_response
 
-    with patch("diet_tracker_server.auth.google.httpx.AsyncClient", return_value=mock_client):
+    with patch("pulse_server.auth.google.httpx.AsyncClient", return_value=mock_client):
         with pytest.raises(g.GoogleAuthError, match="missing id_token"):
             await g.exchange_code_for_id_token(code="x")
 
 
 def test_verify_id_token_returns_email_and_sub():
     """`verify_id_token` returns the lowercased email and Google subject from a valid JWT payload."""
-    from diet_tracker_server.auth import google as g
+    from pulse_server.auth import google as g
 
     payload = {"email": "Khashzd@Gmail.com", "sub": "1234567890", "aud": "cid.apps.googleusercontent.com"}
-    with patch("diet_tracker_server.auth.google.id_token.verify_oauth2_token", return_value=payload):
+    with patch("pulse_server.auth.google.id_token.verify_oauth2_token", return_value=payload):
         email, sub = g.verify_id_token("jwt-here")
     assert email == "khashzd@gmail.com"  # lowercased + stripped
     assert sub == "1234567890"
@@ -133,10 +133,10 @@ def test_verify_id_token_returns_email_and_sub():
 
 def test_verify_id_token_raises_on_invalid():
     """`verify_id_token` raises `GoogleAuthError` when the underlying verifier rejects the JWT."""
-    from diet_tracker_server.auth import google as g
+    from pulse_server.auth import google as g
 
     with patch(
-        "diet_tracker_server.auth.google.id_token.verify_oauth2_token",
+        "pulse_server.auth.google.id_token.verify_oauth2_token",
         side_effect=ValueError("bad signature"),
     ):
         with pytest.raises(g.GoogleAuthError):
@@ -145,10 +145,10 @@ def test_verify_id_token_raises_on_invalid():
 
 def test_verify_id_token_raises_when_email_missing():
     """`verify_id_token` raises `GoogleAuthError` when the JWT payload omits the email claim."""
-    from diet_tracker_server.auth import google as g
+    from pulse_server.auth import google as g
 
     payload = {"sub": "x"}  # no email
-    with patch("diet_tracker_server.auth.google.id_token.verify_oauth2_token", return_value=payload):
+    with patch("pulse_server.auth.google.id_token.verify_oauth2_token", return_value=payload):
         with pytest.raises(g.GoogleAuthError, match="missing"):
             g.verify_id_token("jwt-here")
 
@@ -156,7 +156,7 @@ def test_verify_id_token_raises_when_email_missing():
 @pytest.mark.asyncio
 async def test_exchange_code_raises_on_invalid_json():
     """`exchange_code_for_id_token` raises `GoogleAuthError` when Google returns malformed JSON."""
-    from diet_tracker_server.auth import google as g
+    from pulse_server.auth import google as g
 
     mock_client = AsyncMock()
     mock_response = AsyncMock()
@@ -170,6 +170,6 @@ async def test_exchange_code_raises_on_invalid_json():
     mock_client.__aexit__.return_value = None
     mock_client.post.return_value = mock_response
 
-    with patch("diet_tracker_server.auth.google.httpx.AsyncClient", return_value=mock_client):
+    with patch("pulse_server.auth.google.httpx.AsyncClient", return_value=mock_client):
         with pytest.raises(g.GoogleAuthError):
             await g.exchange_code_for_id_token(code="x")

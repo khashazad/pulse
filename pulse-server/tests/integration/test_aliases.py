@@ -22,7 +22,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from diet_tracker_server.db import to_sqlalchemy_url
+from pulse_server.db import to_sqlalchemy_url
 
 pytestmark = pytest.mark.integration
 
@@ -197,8 +197,8 @@ async def test_meals_trigger_rejects_alias_overlap(session: AsyncSession) -> Non
         await session.commit()
 
 
-from diet_tracker_server.repositories.food_memory import FoodMemoryRepository
-from diet_tracker_server.repositories.meals import MealsRepository
+from pulse_server.repositories.food_memory import FoodMemoryRepository
+from pulse_server.repositories.meals import MealsRepository
 
 
 @pytest.mark.asyncio
@@ -380,7 +380,7 @@ async def test_meals_remove_alias(session: AsyncSession) -> None:
 @pytest.mark.asyncio
 async def test_food_memory_alias_collision_pre_check(session: AsyncSession) -> None:
     """``assert_food_alias_available`` raises ``ValueError`` for an alias colliding with an existing canonical name."""
-    from diet_tracker_server.services.food_memory_service import assert_food_alias_available
+    from pulse_server.services.food_memory_service import assert_food_alias_available
 
     user_key = f"user-{uuid.uuid4()}"
     now = DateTimeValue.now(tz=TimezoneValue.utc)
@@ -406,7 +406,7 @@ async def test_food_memory_alias_collision_pre_check(session: AsyncSession) -> N
 @pytest.mark.asyncio
 async def test_food_memory_alias_collision_excludes_own_row(session: AsyncSession) -> None:
     """``assert_food_alias_available`` skips the row identified by ``exclude_normalized_name``."""
-    from diet_tracker_server.services.food_memory_service import assert_food_alias_available
+    from pulse_server.services.food_memory_service import assert_food_alias_available
 
     user_key = f"user-{uuid.uuid4()}"
     now = DateTimeValue.now(tz=TimezoneValue.utc)

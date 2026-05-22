@@ -22,19 +22,19 @@ import pytest_asyncio
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from diet_tracker_server.db import to_sqlalchemy_url, transaction
-from diet_tracker_server.models import (
+from pulse_server.db import to_sqlalchemy_url, transaction
+from pulse_server.models import (
     CustomFoodCreate,
     MealCreate,
     MealItemCreate,
 )
-from diet_tracker_server.repositories.custom_foods import CustomFoodsRepository
-from diet_tracker_server.repositories.entries import EntriesRepository
-from diet_tracker_server.repositories.food_memory import FoodMemoryRepository
-from diet_tracker_server.repositories.meals import MealsRepository
-from diet_tracker_server.services.custom_foods_service import upsert_custom_food_and_remember
-from diet_tracker_server.services.food_memory_service import resolve_food_by_name
-from diet_tracker_server.services.meals_service import create_meal_with_items, log_meal
+from pulse_server.repositories.custom_foods import CustomFoodsRepository
+from pulse_server.repositories.entries import EntriesRepository
+from pulse_server.repositories.food_memory import FoodMemoryRepository
+from pulse_server.repositories.meals import MealsRepository
+from pulse_server.services.custom_foods_service import upsert_custom_food_and_remember
+from pulse_server.services.food_memory_service import resolve_food_by_name
+from pulse_server.services.meals_service import create_meal_with_items, log_meal
 
 pytestmark = pytest.mark.integration
 
@@ -507,7 +507,7 @@ async def test_meal_rename_does_not_mutate_historical_entries(session: AsyncSess
 
     # Rename the meal (direct UPDATE — covers the "what if a write happens later" case).
     from sqlalchemy import update as sa_update
-    from diet_tracker_server.repositories.tables import meals as meals_table
+    from pulse_server.repositories.tables import meals as meals_table
 
     async with transaction(session):
         await session.execute(
@@ -571,8 +571,8 @@ async def test_meal_delete_sets_meal_id_null_keeps_meal_name(session: AsyncSessi
 @pytest.mark.asyncio
 async def test_public_entries_path_ignores_client_supplied_meal_link(session: AsyncSession) -> None:
     """``create_entries_with_side_effects`` drops client-supplied ``meal_id``/``meal_name`` fields rather than stamping them on the row."""
-    from diet_tracker_server.models import FoodEntryCreate
-    from diet_tracker_server.services.entries_service import create_entries_with_side_effects
+    from pulse_server.models import FoodEntryCreate
+    from pulse_server.services.entries_service import create_entries_with_side_effects
 
     user_key = f"user-{uuid.uuid4()}"
     now = DateTimeValue.now(tz=TimezoneValue.utc)

@@ -42,13 +42,13 @@ def client() -> TestClient:
     **Outputs:**
     - TestClient: Client bound to the app under test.
     """
-    with patch("diet_tracker_server.db.init_pool", new_callable=AsyncMock), patch(
-        "diet_tracker_server.db.bootstrap_schema", new_callable=AsyncMock
-    ), patch("diet_tracker_server.db.close_pool", new_callable=AsyncMock), patch(
-        "diet_tracker_server.usda.USDAClient"
+    with patch("pulse_server.db.init_pool", new_callable=AsyncMock), patch(
+        "pulse_server.db.bootstrap_schema", new_callable=AsyncMock
+    ), patch("pulse_server.db.close_pool", new_callable=AsyncMock), patch(
+        "pulse_server.usda.USDAClient"
     ) as mock_usda_client:
         mock_usda_client.return_value.close = AsyncMock()
-        from diet_tracker_server.app import app
+        from pulse_server.app import app
 
         with TestClient(app) as test_client:
             yield test_client
@@ -70,8 +70,8 @@ def test_unauthenticated_request_rejected(client: TestClient) -> None:
 def test_user_key_query_rejected_on_protected_route(client: TestClient) -> None:
     """`user_key` query on a protected route returns 400 even with a valid Bearer token."""
     repo, ctx = _patched_session_repo()
-    with patch("diet_tracker_server.auth.middleware.get_session", return_value=ctx), patch(
-        "diet_tracker_server.auth.middleware.SessionsRepository", return_value=repo
+    with patch("pulse_server.auth.middleware.get_session", return_value=ctx), patch(
+        "pulse_server.auth.middleware.SessionsRepository", return_value=repo
     ):
         response = client.get(
             "/entries?user_key=foo&date=2026-04-05",

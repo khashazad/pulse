@@ -46,18 +46,18 @@ def client() -> TestClient:
     db_ctx.__aenter__.return_value = fake_db_session
     db_ctx.__aexit__.return_value = None
 
-    with patch("diet_tracker_server.db.init_pool", new_callable=AsyncMock), patch(
-        "diet_tracker_server.db.bootstrap_schema", new_callable=AsyncMock
-    ), patch("diet_tracker_server.db.close_pool", new_callable=AsyncMock), patch(
-        "diet_tracker_server.usda.USDAClient"
+    with patch("pulse_server.db.init_pool", new_callable=AsyncMock), patch(
+        "pulse_server.db.bootstrap_schema", new_callable=AsyncMock
+    ), patch("pulse_server.db.close_pool", new_callable=AsyncMock), patch(
+        "pulse_server.usda.USDAClient"
     ) as mock_usda_client, patch(
-        "diet_tracker_server.auth.middleware.get_session", return_value=db_ctx
+        "pulse_server.auth.middleware.get_session", return_value=db_ctx
     ), patch(
-        "diet_tracker_server.auth.middleware.SessionsRepository", return_value=session_repo
+        "pulse_server.auth.middleware.SessionsRepository", return_value=session_repo
     ):
         mock_usda_client.return_value.close = AsyncMock()
-        from diet_tracker_server.app import app
-        from diet_tracker_server.db import get_session_dependency
+        from pulse_server.app import app
+        from pulse_server.db import get_session_dependency
 
         async def _fake_session_dep():
             """Yield a `MagicMock` DB session with a working async `begin()` ctx."""
@@ -81,7 +81,7 @@ HEADERS = {"Authorization": "Bearer tok"}
 def test_get_targets_includes_target_weight(client: TestClient) -> None:
     """`GET /targets` exposes `target_weight_lb` in the response payload."""
     with patch(
-        "diet_tracker_server.routers.targets.TargetsRepository"
+        "pulse_server.routers.targets.TargetsRepository"
     ) as MockRepo:
         instance = MockRepo.return_value
         instance.get_target_profile = AsyncMock(
@@ -101,7 +101,7 @@ def test_get_targets_includes_target_weight(client: TestClient) -> None:
 def test_get_targets_null_target_weight(client: TestClient) -> None:
     """`GET /targets` returns `target_weight_lb=null` when unset in the DB."""
     with patch(
-        "diet_tracker_server.routers.targets.TargetsRepository"
+        "pulse_server.routers.targets.TargetsRepository"
     ) as MockRepo:
         instance = MockRepo.return_value
         instance.get_target_profile = AsyncMock(
@@ -121,7 +121,7 @@ def test_get_targets_null_target_weight(client: TestClient) -> None:
 def test_put_targets_writes_target_weight(client: TestClient) -> None:
     """`PUT /targets` forwards `target_weight_lb` to the repository upsert."""
     with patch(
-        "diet_tracker_server.routers.targets.TargetsRepository"
+        "pulse_server.routers.targets.TargetsRepository"
     ) as MockRepo:
         instance = MockRepo.return_value
         instance.upsert_targets = AsyncMock(return_value=None)

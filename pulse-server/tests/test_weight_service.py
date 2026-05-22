@@ -12,7 +12,7 @@ from datetime import date, timedelta
 
 import pytest
 
-from diet_tracker_server.services.weight_service import (
+from pulse_server.services.weight_service import (
     MAX_RANGE_DAYS,
     normalize_to_lb,
     validate_range,

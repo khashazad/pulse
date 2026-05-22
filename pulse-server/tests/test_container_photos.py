@@ -12,7 +12,7 @@ import io
 import pytest
 from PIL import Image
 
-from diet_tracker_server.services.container_photos import (
+from pulse_server.services.container_photos import (
     PhotoTooLargeError,
     UnsupportedImageError,
     process_container_photo,
@@ -37,7 +37,7 @@ def _png_bytes(width: int, height: int) -> bytes:
 
 def test_returns_full_and_thumb_jpeg() -> None:
     """`process_container_photo` returns JPEG full + thumb pair with proper max-edge sizes."""
-    from diet_tracker_server.services.image_processing import MAX_THUMB_PX
+    from pulse_server.services.image_processing import MAX_THUMB_PX
 
     # Source long edge larger than the thumb cap so the resize path actually runs.
     src = _png_bytes(MAX_THUMB_PX * 2, MAX_THUMB_PX * 2 - 100)
@@ -81,8 +81,8 @@ def test_non_image_input_raises() -> None:
 
 def test_rejects_oversized_dimensions(monkeypatch: pytest.MonkeyPatch) -> None:
     """Decompression-bomb guard rejects images whose pixel count exceeds `MAX_PIXELS`."""
-    from diet_tracker_server.services import container_photos as svc
-    from diet_tracker_server.services import image_processing
+    from pulse_server.services import container_photos as svc
+    from pulse_server.services import image_processing
 
     monkeypatch.setattr(image_processing, "MAX_PIXELS", 100)
     src = _png_bytes(20, 20)  # 400 pixels > 100

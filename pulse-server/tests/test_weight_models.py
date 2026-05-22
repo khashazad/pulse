@@ -11,7 +11,7 @@ from decimal import Decimal
 import pytest
 from pydantic import ValidationError
 
-from diet_tracker_server.models.weight import WeightEntryUpsert
+from pulse_server.models.weight import WeightEntryUpsert
 
 
 def test_upsert_accepts_lb() -> None:

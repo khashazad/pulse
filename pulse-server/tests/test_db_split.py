@@ -6,7 +6,7 @@ Also asserts that the on-disk `schema.sql` still defines the `sessions`
 table and its indexes.
 """
 
-from diet_tracker_server.db import _split_sql_statements
+from pulse_server.db import _split_sql_statements
 
 
 def test_splits_simple_statements() -> None:

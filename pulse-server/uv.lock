@@ -397,52 +397,6 @@ wheels = [
 ]
 
 [[package]]
-name = "diet-tracker-server"
-version = "0.1.0"
-source = { editable = "." }
-dependencies = [
-    { name = "alembic" },
-    { name = "fastapi" },
-    { name = "fastmcp" },
-    { name = "google-auth" },
-    { name = "greenlet" },
-    { name = "httpx" },
-    { name = "pillow" },
-    { name = "psycopg", extra = ["binary"] },
-    { name = "psycopg-pool" },
-    { name = "pydantic-settings" },
-    { name = "requests" },
-    { name = "sqlalchemy" },
-    { name = "uvicorn", extra = ["standard"] },
-]
-
-[package.optional-dependencies]
-dev = [
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "alembic", specifier = ">=1.16" },
-    { name = "fastapi", specifier = ">=0.115" },
-    { name = "fastmcp", specifier = ">=2.7" },
-    { name = "google-auth", specifier = ">=2.30" },
-    { name = "greenlet", specifier = ">=3.0" },
-    { name = "httpx", specifier = ">=0.28" },
-    { name = "pillow", specifier = ">=10.4" },
-    { name = "psycopg", extras = ["binary"], specifier = ">=3.2" },
-    { name = "psycopg-pool", specifier = ">=3.2" },
-    { name = "pydantic-settings", specifier = ">=2.7" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
-    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.25" },
-    { name = "requests", specifier = ">=2.32" },
-    { name = "sqlalchemy", specifier = ">=2.0" },
-    { name = "uvicorn", extras = ["standard"], specifier = ">=0.34" },
-]
-provides-extras = ["dev"]
-
-[[package]]
 name = "dnspython"
 version = "2.8.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1223,6 +1177,52 @@ sdist = { url = "https://files.pythonhosted.org/packages/56/9a/9470d013d0d50af0d
 wheels = [
     { url = "https://files.pythonhosted.org/packages/e7/c3/26b8a0908a9db249de3b4169692e1c7c19048a9bc41a4d3209cee7dbb758/psycopg_pool-3.3.0-py3-none-any.whl", hash = "sha256:2e44329155c410b5e8666372db44276a8b1ebd8c90f1c3026ebba40d4bc81063", size = 39995, upload-time = "2025-12-01T11:34:29.761Z" },
 ]
+
+[[package]]
+name = "pulse-server"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [
+    { name = "alembic" },
+    { name = "fastapi" },
+    { name = "fastmcp" },
+    { name = "google-auth" },
+    { name = "greenlet" },
+    { name = "httpx" },
+    { name = "pillow" },
+    { name = "psycopg", extra = ["binary"] },
+    { name = "psycopg-pool" },
+    { name = "pydantic-settings" },
+    { name = "requests" },
+    { name = "sqlalchemy" },
+    { name = "uvicorn", extra = ["standard"] },
+]
+
+[package.optional-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "alembic", specifier = ">=1.16" },
+    { name = "fastapi", specifier = ">=0.115" },
+    { name = "fastmcp", specifier = ">=2.7" },
+    { name = "google-auth", specifier = ">=2.30" },
+    { name = "greenlet", specifier = ">=3.0" },
+    { name = "httpx", specifier = ">=0.28" },
+    { name = "pillow", specifier = ">=10.4" },
+    { name = "psycopg", extras = ["binary"], specifier = ">=3.2" },
+    { name = "psycopg-pool", specifier = ">=3.2" },
+    { name = "pydantic-settings", specifier = ">=2.7" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
+    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.25" },
+    { name = "requests", specifier = ">=2.32" },
+    { name = "sqlalchemy", specifier = ">=2.0" },
+    { name = "uvicorn", extras = ["standard"], specifier = ">=0.34" },
+]
+provides-extras = ["dev"]
 
 [[package]]
 name = "py-key-value-aio"
