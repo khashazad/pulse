@@ -6,6 +6,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Single-user iOS client (SwiftUI, iOS 17+, Swift 5.9) for a self-hosted "Pulse" HTTP backend. The user identity is hardcoded (`Constants.userKey = "khash"`); base URL + API key are entered at runtime via Settings (URL → `UserDefaults`, key → Keychain via `KeychainStore`).
 
+**Auth in flight:** `Views/Auth/LoginView.swift` + `State/AuthSession.swift` exist for the migration to the server's session/Bearer flow. The legacy `user_key` + `X-API-Key` path still works; treat both as live until cutover.
+
+**Sibling doc:** `AGENTS.md` at the repo root is the Codex-equivalent. CLAUDE.md is the canonical reference — keep AGENTS.md in sync (or shrink it to a pointer) when editing either.
+
 ## Commands
 
 The Xcode project is **generated** from `project.yml` and gitignored. `PULSE_BASE_URL` (required) and `DEVELOPMENT_TEAM` (required for physical-device builds; leave unset for sim-only) must be exported in the shell at generate time — xcodegen bakes them into the pbxproj literally. Values live in `.envrc` at the repo root (gitignored, per-developer). Always regenerate before building after pulling or editing `project.yml`:
@@ -36,9 +40,19 @@ The `build/` directory in the repo root is the local DerivedData (gitignored).
 **Layers** (`Pulse/`):
 
 - `Networking/PulseClient.swift` — `actor` wrapping `URLSession`. Every request appends `?user_key=khash` and sets `X-API-Key`. `JSONDecoder.pulseDefault()` accepts both `YYYY-MM-DD` and ISO-8601 dates. Errors are normalized into `PulseError` (notConfigured / unauthorized / notFound / payloadTooLarge / server / network / decoding).
-- `Models/` — Codable DTOs mirroring the backend (`DailySummary`, `FoodEntry`, `MealSummary`/`Meal`, `Container`, `MacroTotals`/`MacroTargets`, `PeriodBucket`). `snake_case` JSON ↔ camelCase Swift via explicit `CodingKeys`.
-- `State/` — `@Observable` view models (no Combine). Pattern: each model holds a `weak var settings: AppSettings?`, calls `settings.makeClient()` on demand, and exposes a `LoadState<T>` (`.idle | .loading | .loaded(T) | .failed(PulseError)`). Key models: `DayMacroModel`, `WeekModel`, `MonthModel`, `YearModel`, `MealsModel`/`MealDetailModel`, `ContainersListModel`, `ContainerEditModel`, `PrepModel`.
-- `Views/` — SwiftUI. `RootView` owns three `NavigationStack`s (one per tab) and a `FloatingDock` overlay; the dock auto-hides when the active stack has pushed views. Tabs: **Log** (day/week/month/year), **Meals** (saved meal templates), **Prep** (tare-based portion calculator + container CRUD with photos).
+- `Models/` — Codable DTOs mirroring the backend: `DailySummary`, `DailyLog`, `FoodEntry`, `Meal`, `Container`, `MacroTotals`/`MacroTargets`, `PeriodBucket`, `CaloriesDailyRow`, `WeightEntry`, `ProgressPhoto`, `WhoAmI`. `snake_case` JSON ↔ camelCase Swift via explicit `CodingKeys`.
+- `State/` — `@Observable` view models (no Combine). Pattern: each model holds a `weak var settings: AppSettings?`, calls `settings.makeClient()` on demand, and exposes a `LoadState<T>` (`.idle | .loading | .loaded(T) | .failed(PulseError)`). Models:
+  - **Intake:** `DayMacroModel`, `WeekModel`, `MonthModel`, `YearModel`, `DayEntriesGrouping`, `UserTargetsStore`.
+  - **Meals:** `MealsModel`.
+  - **Prep:** `ContainersListModel`, `ContainerEditModel`, `PrepModel`.
+  - **Measures:** `WeightLogModel`, `WeightTrendsModel`, `WeightAnalytics`, `ProgressPhotoStore`, `ProgressPhotoCache`, `ProgressPhotoTagStore`, `PhotoUploadQueue`.
+  - **App-wide:** `AppSettings`, `AuthSession`, `LoadState`.
+- `Views/` — SwiftUI. `RootView` owns four `NavigationStack`s (one per tab) and a `FloatingDock` overlay; the dock auto-hides when the active stack has pushed views. Tabs (`DockTab` enum):
+  - **Intake** (`.intake`) — day/week/month/year macro views (`DayMacroView`, `WeekView`, `MonthView`, `YearView`, `LogView`).
+  - **Meals** (`.meals`) — saved meal templates (`MealsView`, `MealDetailView`).
+  - **Prep** (`.prep`) — tare-based portion calculator + container CRUD with photos (`Views/Prep/`).
+  - **Measures** (`.measures`) — weight log + trends + progress photos with tags + side-by-side comparison + in-app camera (`Views/Measures/`).
+  - Subfolders: `Components/` (rings/bars/rows reused across tabs), `Auth/` (`LoginView`).
 - `Theme/Theme.swift` — Catppuccin Macchiato palette, dark only. Always style via `Theme.CTP.*` / `Theme.BG.*` / `Theme.FG.*` and the `.ctpCard()` view modifier — don't introduce raw `Color` literals or system grays.
 - `Config/` — `Constants` (user key, defaults, keychain identifiers) and `KeychainStore` (Generic Password item with `kSecAttrAccessibleAfterFirstUnlock`).
 
