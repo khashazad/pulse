@@ -95,7 +95,13 @@ final class ProgressPhotoStore {
 
     // MARK: write
 
-    /// Persists the image to disk, enqueues a single tagged upload, and kicks the worker.
+    /// Persists the image to disk, enqueues a single tagged upload, and restarts the worker so newly due work is not hidden behind an older sleep.
+    ///
+    /// - Parameters:
+    ///   - date: Date for the progress photo.
+    ///   - tagId: UUID for the photo tag assigned by the server.
+    ///   - imageData: Data containing the JPEG bytes to upload.
+    /// - Returns: Void.
     func upload(date: Date, tagId: UUID, imageData: Data) async {
         let id = UUID()
         do {
@@ -106,6 +112,8 @@ final class ProgressPhotoStore {
             )
             try queue.enqueueSingle(pending)
             recountPending()
+            workerTask?.cancel()
+            workerTask = nil
             kickWorker()
         } catch {
             lastError = error.localizedDescription
@@ -147,7 +155,9 @@ final class ProgressPhotoStore {
         kickWorker()
     }
 
-    /// Spawns the worker task if one isn't already running.
+    /// Spawns the worker task when no active worker is running.
+    ///
+    /// - Returns: Void.
     func kickWorker() {
         if let existing = workerTask, !existing.isCancelled { return }
         workerTask = Task { [weak self] in
@@ -174,8 +184,16 @@ final class ProgressPhotoStore {
         }
     }
 
+    /// Attempts one queued upload and updates queue state for success, retry, or unavailable authentication.
+    ///
+    /// - Parameters:
+    ///   - item: QueuedUpload item selected by the worker as due.
+    /// - Returns: Void.
     private func processOne(_ item: QueuedUpload) async {
-        guard let client = auth?.makeProgressPhotoClient() else { return }
+        guard let client = auth?.makeProgressPhotoClient() else {
+            try? queue.markFailure(id: item.id)
+            return
+        }
         switch item {
         case .single(let p):
             let data: Data
