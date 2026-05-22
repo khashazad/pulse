@@ -63,47 +63,46 @@ def upgrade() -> None:
         "on progress_photo_tags(user_key, sort_order, normalized_name)"
     )
 
-    # Seed a tag row per distinct (user_key, slot) found in existing photos
-    # so the FK switchover below has a target. We preserve the original slot
-    # name as the user-visible tag name.
     op.execute(
         """
-        insert into progress_photo_tags (user_key, name, normalized_name, sort_order)
-        select user_key, slot, slot,
-               case slot when 'front' then 0
-                        when 'left'  then 1
-                        when 'right' then 2
-                        when 'back'  then 3
-                        else 4 end
-          from progress_photos
-         where slot is not null
-         group by user_key, slot
-        on conflict (user_key, normalized_name) do nothing
-        """
-    )
+        do $body$
+        begin
+          if exists (
+            select 1 from information_schema.columns
+            where table_name = 'progress_photos' and column_name = 'slot'
+          ) then
+            insert into progress_photo_tags (user_key, name, normalized_name, sort_order)
+            select user_key, slot, slot,
+                   case slot when 'front' then 0
+                            when 'left'  then 1
+                            when 'right' then 2
+                            when 'back'  then 3
+                            else 4 end
+              from progress_photos
+             where slot is not null
+             group by user_key, slot
+            on conflict (user_key, normalized_name) do nothing;
 
-    op.execute("alter table progress_photos add column if not exists tag_id uuid")
-    op.execute(
-        """
-        update progress_photos pp
-           set tag_id = t.id
-          from progress_photo_tags t
-         where pp.tag_id is null
-           and pp.user_key = t.user_key
-           and pp.slot = t.normalized_name
-        """
-    )
+            alter table progress_photos add column if not exists tag_id uuid;
 
-    op.execute(
-        "alter table progress_photos "
-        "drop constraint if exists progress_photos_slot_check"
+            update progress_photos pp
+               set tag_id = t.id
+              from progress_photo_tags t
+             where pp.tag_id is null
+               and pp.user_key = t.user_key
+               and pp.slot = t.normalized_name;
+
+            alter table progress_photos
+              drop constraint if exists progress_photos_slot_check;
+            alter table progress_photos
+              drop constraint if exists uq_progress_photos_user_date_slot;
+            alter table progress_photos drop column if exists slot;
+            alter table progress_photos alter column tag_id set not null;
+          end if;
+        end
+        $body$
+        """
     )
-    op.execute(
-        "alter table progress_photos "
-        "drop constraint if exists uq_progress_photos_user_date_slot"
-    )
-    op.execute("alter table progress_photos drop column if exists slot")
-    op.execute("alter table progress_photos alter column tag_id set not null")
     op.execute(
         """
         do $body$

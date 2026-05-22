@@ -45,7 +45,10 @@ def _parse_rows(csv_path: Path) -> list[tuple[DateValue, Decimal]]:
 
 async def _run(csv_path: Path, user_key: str, dry_run: bool) -> None:
     rows = _parse_rows(csv_path)
-    print(f"parsed {len(rows)} rows ({rows[0][0]} → {rows[-1][0]})")
+    if not rows:
+        print("parsed 0 rows")
+        return
+    print(f"parsed {len(rows)} rows ({rows[0][0]} -> {rows[-1][0]})")
     if dry_run:
         for d, w in rows[:5]:
             print(f"  {d} {w} lb")

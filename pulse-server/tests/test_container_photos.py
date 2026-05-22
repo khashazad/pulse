@@ -82,8 +82,9 @@ def test_non_image_input_raises() -> None:
 def test_rejects_oversized_dimensions(monkeypatch: pytest.MonkeyPatch) -> None:
     """Decompression-bomb guard rejects images whose pixel count exceeds `MAX_PIXELS`."""
     from diet_tracker_server.services import container_photos as svc
+    from diet_tracker_server.services import image_processing
 
-    monkeypatch.setattr(svc, "MAX_PIXELS", 100)
+    monkeypatch.setattr(image_processing, "MAX_PIXELS", 100)
     src = _png_bytes(20, 20)  # 400 pixels > 100
     with pytest.raises(UnsupportedImageError) as excinfo:
         svc.process_container_photo(src, max_bytes=10 * 1024 * 1024)

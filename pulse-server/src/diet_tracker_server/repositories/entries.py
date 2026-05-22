@@ -210,11 +210,12 @@ class EntriesRepository:
         result = await self._session.execute(stmt)
         return [dict(row) for row in result.mappings().all()]
 
-    async def delete_entry(self, entry_id: UUID) -> bool:
+    async def delete_entry(self, entry_id: UUID, user_key: str) -> bool:
         """Delete a food entry by primary key.
 
         **Inputs:**
         - entry_id (UUID): UUID of the food-entry row to delete.
+        - user_key (str): Owning user identifier used to scope the delete.
 
         **Outputs:**
         - bool: ``True`` when a row was deleted, otherwise ``False``.
@@ -222,6 +223,11 @@ class EntriesRepository:
         **Exceptions:**
         - sqlalchemy.exc.SQLAlchemyError: Raised when SQL execution fails.
         """
-        stmt = delete(food_entries).where(food_entries.c.id == entry_id).returning(food_entries.c.id)
+        stmt = (
+            delete(food_entries)
+            .where(food_entries.c.id == entry_id)
+            .where(food_entries.c.user_key == user_key)
+            .returning(food_entries.c.id)
+        )
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none() is not None
