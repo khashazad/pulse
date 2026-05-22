@@ -106,12 +106,14 @@ async def list_entries(
 
 @router.delete("/entries/{entry_id}", status_code=204)
 async def delete_entry(
+    request: Request,
     entry_id: UUID,
     session: AsyncSession = Depends(get_session_dependency),
 ) -> None:
     """Delete a single food entry by id and return HTTP 204.
 
     **Inputs:**
+    - request (Request): Active request providing ``user_key``.
     - entry_id (UUID): Food-entry primary key.
     - session (AsyncSession): DB session dependency.
 
@@ -122,6 +124,6 @@ async def delete_entry(
     """
     repository = EntriesRepository(session)
     async with transaction(session):
-        is_deleted = await repository.delete_entry(entry_id)
+        is_deleted = await repository.delete_entry(entry_id, request.state.user_key)
         if not is_deleted:
             raise HTTPException(status_code=404, detail="Entry not found")

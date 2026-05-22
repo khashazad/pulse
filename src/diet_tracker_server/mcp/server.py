@@ -581,7 +581,7 @@ def build_mcp(usda_getter) -> FastMCP:
         async with get_session() as session:
             repo = EntriesRepository(session)
             async with transaction(session):
-                deleted = await repo.delete_entry(entry_uuid)
+                deleted = await repo.delete_entry(entry_uuid, user_key)
         return {"deleted": deleted}
 
     # ---------------- targets ----------------
