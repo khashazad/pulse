@@ -112,7 +112,11 @@ final class ProgressPhotoStore {
             )
             try queue.enqueueSingle(pending)
             recountPending()
+            // Wait for the previous worker to actually exit before kicking a new
+            // one. Otherwise a worker still inside `client.upload` could finish
+            // alongside the new worker and process the same queue item twice.
             workerTask?.cancel()
+            await workerTask?.value
             workerTask = nil
             kickWorker()
         } catch {
@@ -198,7 +202,10 @@ final class ProgressPhotoStore {
         case .single(let p):
             let data: Data
             do {
-                data = try Data(contentsOf: URL(fileURLWithPath: p.localPath))
+                let path = p.localPath
+                data = try await Task.detached(priority: .utility) {
+                    try Data(contentsOf: URL(fileURLWithPath: path))
+                }.value
             } catch {
                 // Pending bytes are gone (e.g. cache cleared). Drop the entry —
                 // retrying would just loop forever on the same missing file.

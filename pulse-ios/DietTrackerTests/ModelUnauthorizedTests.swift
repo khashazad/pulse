@@ -9,6 +9,7 @@ import XCTest
 final class ModelUnauthorizedTests: XCTestCase {
     private let testService = "com.khxsh.diettracker.session.test"
     private let testAccount = "model-unauth-\(UUID().uuidString)"
+    private var activeStubs: [StubURLProtocol.Registration] = []
 
     /// Writes a JSON-encoded session blob to the test keychain slot.
     /// Inputs:
@@ -19,16 +20,20 @@ final class ModelUnauthorizedTests: XCTestCase {
         _ = KeychainStore.write(json, service: testService, account: testAccount)
     }
 
-    /// Builds an ephemeral `URLSession` wired to `StubURLProtocol`.
+    /// Builds an ephemeral `URLSession` wired to a scoped `StubURLProtocol` responder.
+    /// Inputs:
+    ///   - responder: closure that returns a stubbed HTTP response.
     /// Outputs: a fresh `URLSession` for stubbed HTTP traffic.
-    private func makeStubSession() -> URLSession {
-        let cfg = URLSessionConfiguration.ephemeral
-        cfg.protocolClasses = [StubURLProtocol.self]
-        return URLSession(configuration: cfg)
+    private func makeStubSession(responder: @escaping StubURLProtocol.Responder) -> URLSession {
+        let stub = StubURLProtocol.makeSession(responder: responder)
+        activeStubs.append(stub)
+        return stub.session
     }
 
     /// Removes the test keychain entry after each test.
     override func tearDown() {
+        activeStubs.forEach { $0.invalidate() }
+        activeStubs = []
         _ = KeychainStore.delete(service: testService, account: testAccount)
         super.tearDown()
     }
@@ -38,7 +43,7 @@ final class ModelUnauthorizedTests: XCTestCase {
     /// `AuthSession`, clearing the keychain.
     func testDayMacroModel401SignsOutAuthSession() async {
         writeStoredSession(token: "tok", email: "khashzd@gmail.com")
-        StubURLProtocol.responder = { req in
+        let session = makeStubSession { req in
             let resp = HTTPURLResponse(url: req.url!, statusCode: 401, httpVersion: nil, headerFields: nil)!
             return (resp, Data())
         }
@@ -46,7 +51,7 @@ final class ModelUnauthorizedTests: XCTestCase {
             baseURL: URL(string: "https://example.test")!,
             keychainService: testService,
             keychainAccount: testAccount,
-            urlSession: makeStubSession()
+            urlSession: session
         )
         XCTAssertTrue(auth.isSignedIn)
 
@@ -61,6 +66,5 @@ final class ModelUnauthorizedTests: XCTestCase {
         }
         XCTAssertFalse(auth.isSignedIn)
         XCTAssertNil(KeychainStore.read(service: testService, account: testAccount))
-        StubURLProtocol.responder = nil
     }
 }

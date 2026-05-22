@@ -7,13 +7,16 @@ import XCTest
 @testable import DietTracker
 
 final class WeightClientTests: XCTestCase {
+    private var activeStubs: [StubURLProtocol.Registration] = []
 
-    /// Builds an ephemeral `URLSession` wired to `StubURLProtocol`.
+    /// Builds an ephemeral `URLSession` wired to a scoped `StubURLProtocol` responder.
+    /// Inputs:
+    ///   - responder: closure that returns a stubbed HTTP response.
     /// Outputs: a fresh `URLSession` for stubbed HTTP traffic.
-    private func makeSession() -> URLSession {
-        let config = URLSessionConfiguration.ephemeral
-        config.protocolClasses = [StubURLProtocol.self]
-        return URLSession(configuration: config)
+    private func makeSession(responder: @escaping StubURLProtocol.Responder) -> URLSession {
+        let stub = StubURLProtocol.makeSession(responder: responder)
+        activeStubs.append(stub)
+        return stub.session
     }
 
     /// Loads a JSON fixture from the test bundle.
@@ -28,18 +31,21 @@ final class WeightClientTests: XCTestCase {
     }
 
     /// Builds a `DietTrackerClient` against the stub URL with a fixed bearer.
+    /// Inputs:
+    ///   - responder: closure that returns a stubbed HTTP response.
     /// Outputs: a `DietTrackerClient`.
-    private func makeClient() -> DietTrackerClient {
+    private func makeClient(responder: @escaping StubURLProtocol.Responder) -> DietTrackerClient {
         DietTrackerClient(
             baseURL: URL(string: "https://example.test")!,
             sessionToken: "session-k",
-            session: makeSession()
+            session: makeSession(responder: responder)
         )
     }
 
-    /// Clears the shared `StubURLProtocol` responder between tests.
+    /// Clears scoped `StubURLProtocol` registrations between tests.
     override func tearDown() {
-        StubURLProtocol.responder = nil
+        activeStubs.forEach { $0.invalidate() }
+        activeStubs = []
         super.tearDown()
     }
 
@@ -48,14 +54,14 @@ final class WeightClientTests: XCTestCase {
     func testListWeightSendsRange() async throws {
         let json = try loadFixture("weight_entries")
         var captured: URLRequest?
-        StubURLProtocol.responder = { req in
+        let client = makeClient { req in
             captured = req
             let resp = HTTPURLResponse(url: req.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
             return (resp, json)
         }
         let from = DateOnly.formatter.date(from: "2026-05-01")!
         let to = DateOnly.formatter.date(from: "2026-05-13")!
-        let entries = try await makeClient().listWeightEntries(from: from, to: to)
+        let entries = try await client.listWeightEntries(from: from, to: to)
         XCTAssertEqual(entries.count, 2)
         XCTAssertEqual(captured?.url?.path, "/weight")
         let query = captured?.url?.query ?? ""
@@ -69,18 +75,16 @@ final class WeightClientTests: XCTestCase {
     func testUpsertWeightPostsLbBody() async throws {
         let json = try loadFixture("weight_entry")
         var captured: URLRequest?
-        var body: Data?
-        StubURLProtocol.responder = { req in
+        let client = makeClient { req in
             captured = req
-            body = req.bodyStreamData()
             let resp = HTTPURLResponse(url: req.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
             return (resp, json)
         }
         let date = DateOnly.formatter.date(from: "2026-05-13")!
-        _ = try await makeClient().upsertWeight(date: date, weight: 180.5, unit: .lb)
+        _ = try await client.upsertWeight(date: date, weight: 180.5, unit: .lb)
         XCTAssertEqual(captured?.httpMethod, "PUT")
         XCTAssertEqual(captured?.url?.path, "/weight/2026-05-13")
-        let parsed = try JSONSerialization.jsonObject(with: body ?? Data()) as? [String: Any]
+        let parsed = try JSONSerialization.jsonObject(with: activeStubs.last?.lastRequestBody ?? Data()) as? [String: Any]
         XCTAssertEqual(parsed?["unit"] as? String, "lb")
         XCTAssertEqual(parsed?["weight"] as? Double, 180.5)
     }
@@ -88,28 +92,26 @@ final class WeightClientTests: XCTestCase {
     /// Verifies `upsertWeight` sends `unit=kg` when the caller selects kg.
     func testUpsertWeightPostsKgBody() async throws {
         let json = try loadFixture("weight_entry")
-        var body: Data?
-        StubURLProtocol.responder = { req in
-            body = req.bodyStreamData()
+        let client = makeClient { req in
             let resp = HTTPURLResponse(url: req.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
             return (resp, json)
         }
         let date = DateOnly.formatter.date(from: "2026-05-13")!
-        _ = try await makeClient().upsertWeight(date: date, weight: 82, unit: .kg)
-        let parsed = try JSONSerialization.jsonObject(with: body ?? Data()) as? [String: Any]
+        _ = try await client.upsertWeight(date: date, weight: 82, unit: .kg)
+        let parsed = try JSONSerialization.jsonObject(with: activeStubs.last?.lastRequestBody ?? Data()) as? [String: Any]
         XCTAssertEqual(parsed?["unit"] as? String, "kg")
     }
 
     /// Verifies `deleteWeight` sends DELETE against `/weight/<date>`.
     func testDeleteWeightSendsDelete() async throws {
         var captured: URLRequest?
-        StubURLProtocol.responder = { req in
+        let client = makeClient { req in
             captured = req
             let resp = HTTPURLResponse(url: req.url!, statusCode: 204, httpVersion: nil, headerFields: nil)!
             return (resp, Data())
         }
         let date = DateOnly.formatter.date(from: "2026-05-13")!
-        try await makeClient().deleteWeight(date: date)
+        try await client.deleteWeight(date: date)
         XCTAssertEqual(captured?.httpMethod, "DELETE")
         XCTAssertEqual(captured?.url?.path, "/weight/2026-05-13")
     }
@@ -117,13 +119,13 @@ final class WeightClientTests: XCTestCase {
     /// Verifies `fetchCaloriesDaily(from:to:)` decodes the per-day rows.
     func testFetchCaloriesDaily() async throws {
         let json = try loadFixture("calories_daily")
-        StubURLProtocol.responder = { req in
+        let client = makeClient { req in
             let resp = HTTPURLResponse(url: req.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
             return (resp, json)
         }
         let from = DateOnly.formatter.date(from: "2026-05-01")!
         let to = DateOnly.formatter.date(from: "2026-05-13")!
-        let rows = try await makeClient().fetchCaloriesDaily(from: from, to: to)
+        let rows = try await client.fetchCaloriesDaily(from: from, to: to)
         XCTAssertEqual(rows.count, 3)
         XCTAssertEqual(rows[1].calories, 2100)
     }
@@ -131,13 +133,13 @@ final class WeightClientTests: XCTestCase {
     /// Verifies a 404 from `getWeight(date:)` maps to
     /// `DietTrackerError.notFound`.
     func testGetWeight404MapsToNotFound() async throws {
-        StubURLProtocol.responder = { req in
+        let client = makeClient { req in
             let resp = HTTPURLResponse(url: req.url!, statusCode: 404, httpVersion: nil, headerFields: nil)!
             return (resp, Data())
         }
         let date = DateOnly.formatter.date(from: "2026-05-13")!
         do {
-            _ = try await makeClient().getWeight(date: date)
+            _ = try await client.getWeight(date: date)
             XCTFail("expected throw")
         } catch DietTrackerError.notFound {
             // expected

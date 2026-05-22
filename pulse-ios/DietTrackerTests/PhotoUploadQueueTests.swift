@@ -8,12 +8,23 @@ import XCTest
 
 final class PhotoUploadQueueTests: XCTestCase {
 
+    private var createdDirs: [URL] = []
+
     private func tempQueue() throws -> (PhotoUploadQueue, URL) {
         let dir = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("queuetest-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        createdDirs.append(dir)
         let file = dir.appendingPathComponent("pending_uploads.json")
         return (PhotoUploadQueue(fileURL: file), file)
+    }
+
+    override func tearDown() {
+        for dir in createdDirs {
+            try? FileManager.default.removeItem(at: dir)
+        }
+        createdDirs = []
+        super.tearDown()
     }
 
     func testEnqueueSinglePersists() throws {

@@ -12,6 +12,7 @@ import XCTest
 final class AuthSessionTests: XCTestCase {
     private let testService = "com.khxsh.diettracker.session.test"
     private let testAccount = "auth-test-\(UUID().uuidString)"
+    private var activeStubs: [StubURLProtocol.Registration] = []
 
     /// Writes a JSON-encoded session blob to the test keychain slot.
     /// Inputs:
@@ -29,6 +30,8 @@ final class AuthSessionTests: XCTestCase {
 
     /// Clears the test keychain slot after each test.
     override func tearDown() {
+        activeStubs.forEach { $0.invalidate() }
+        activeStubs = []
         clearStoredSession()
         super.tearDown()
     }
@@ -116,20 +119,21 @@ extension AuthSessionTests {
 }
 
 extension AuthSessionTests {
-    /// Builds an ephemeral `URLSession` wired to `StubURLProtocol` so HTTP
-    /// traffic during the test is satisfied by the per-test responder.
+    /// Builds an ephemeral `URLSession` wired to a scoped `StubURLProtocol` responder.
+    /// Inputs:
+    ///   - responder: closure that returns a stubbed HTTP response.
     /// Outputs: a fresh `URLSession` configured for stubbed requests.
-    private func makeStubSession() -> URLSession {
-        let cfg = URLSessionConfiguration.ephemeral
-        cfg.protocolClasses = [StubURLProtocol.self]
-        return URLSession(configuration: cfg)
+    private func makeStubSession(responder: @escaping StubURLProtocol.Responder) -> URLSession {
+        let stub = StubURLProtocol.makeSession(responder: responder)
+        activeStubs.append(stub)
+        return stub.session
     }
 
     /// Verifies a 200 response from `/auth/whoami` during bootstrap keeps
     /// the session signed in.
     func testBootstrapHappyPathStaysSignedIn() async {
         writeStoredSession(token: "tok", email: "khashzd@gmail.com")
-        StubURLProtocol.responder = { req in
+        let session = makeStubSession { req in
             let body = #"{"email":"khashzd@gmail.com","expires_at":"2026-08-07T12:00:00Z"}"#
             let resp = HTTPURLResponse(url: req.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
             return (resp, body.data(using: .utf8)!)
@@ -138,18 +142,17 @@ extension AuthSessionTests {
             baseURL: URL(string: "https://example.test")!,
             keychainService: testService,
             keychainAccount: testAccount,
-            urlSession: makeStubSession()
+            urlSession: session
         )
         await auth.bootstrap()
         XCTAssertTrue(auth.isSignedIn)
-        StubURLProtocol.responder = nil
     }
 
     /// Verifies a 401 from `/auth/whoami` during bootstrap forces sign-out
     /// and removes the persisted credentials.
     func testBootstrap401SignsOutAndClearsKeychain() async {
         writeStoredSession(token: "tok", email: "khashzd@gmail.com")
-        StubURLProtocol.responder = { req in
+        let session = makeStubSession { req in
             let resp = HTTPURLResponse(url: req.url!, statusCode: 401, httpVersion: nil, headerFields: nil)!
             return (resp, Data())
         }
@@ -157,19 +160,18 @@ extension AuthSessionTests {
             baseURL: URL(string: "https://example.test")!,
             keychainService: testService,
             keychainAccount: testAccount,
-            urlSession: makeStubSession()
+            urlSession: session
         )
         await auth.bootstrap()
         XCTAssertFalse(auth.isSignedIn)
         XCTAssertNil(KeychainStore.read(service: testService, account: testAccount))
-        StubURLProtocol.responder = nil
     }
 
     /// Verifies a non-401 server error during bootstrap leaves the
     /// optimistic signed-in state intact (offline grace).
     func testBootstrapNetworkErrorKeepsOptimisticSignedIn() async {
         writeStoredSession(token: "tok", email: "khashzd@gmail.com")
-        StubURLProtocol.responder = { _ in
+        let session = makeStubSession { _ in
             // 500 is a non-401 error that bootstrap should ignore (offline-grace).
             let resp = HTTPURLResponse(url: URL(string: "https://example.test")!, statusCode: 500, httpVersion: nil, headerFields: nil)!
             return (resp, Data())
@@ -178,11 +180,10 @@ extension AuthSessionTests {
             baseURL: URL(string: "https://example.test")!,
             keychainService: testService,
             keychainAccount: testAccount,
-            urlSession: makeStubSession()
+            urlSession: session
         )
         await auth.bootstrap()
         XCTAssertTrue(auth.isSignedIn)
-        StubURLProtocol.responder = nil
     }
 
     /// Verifies bootstrap performs no HTTP work when there is no stored
@@ -190,7 +191,7 @@ extension AuthSessionTests {
     func testBootstrapWithNoStoredTokenIsNoOp() async {
         clearStoredSession()
         var hit = false
-        StubURLProtocol.responder = { req in
+        let session = makeStubSession { req in
             hit = true
             let resp = HTTPURLResponse(url: req.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
             return (resp, Data())
@@ -199,12 +200,11 @@ extension AuthSessionTests {
             baseURL: URL(string: "https://example.test")!,
             keychainService: testService,
             keychainAccount: testAccount,
-            urlSession: makeStubSession()
+            urlSession: session
         )
         await auth.bootstrap()
         XCTAssertFalse(hit)
         XCTAssertFalse(auth.isSignedIn)
-        StubURLProtocol.responder = nil
     }
 }
 
@@ -213,7 +213,7 @@ extension AuthSessionTests {
     /// removes the keychain entry.
     func testSignOutClearsLocalStateOn204() async {
         writeStoredSession(token: "tok", email: "khashzd@gmail.com")
-        StubURLProtocol.responder = { req in
+        let session = makeStubSession { req in
             let resp = HTTPURLResponse(url: req.url!, statusCode: 204, httpVersion: nil, headerFields: nil)!
             return (resp, Data())
         }
@@ -221,19 +221,18 @@ extension AuthSessionTests {
             baseURL: URL(string: "https://example.test")!,
             keychainService: testService,
             keychainAccount: testAccount,
-            urlSession: makeStubSession()
+            urlSession: session
         )
         await auth.signOut()
         XCTAssertFalse(auth.isSignedIn)
         XCTAssertNil(KeychainStore.read(service: testService, account: testAccount))
-        StubURLProtocol.responder = nil
     }
 
     /// Verifies sign-out still clears local state and keychain even when
     /// the server responds with 500.
     func testSignOutClearsLocalStateOnServerError() async {
         writeStoredSession(token: "tok", email: "khashzd@gmail.com")
-        StubURLProtocol.responder = { req in
+        let session = makeStubSession { req in
             let resp = HTTPURLResponse(url: req.url!, statusCode: 500, httpVersion: nil, headerFields: nil)!
             return (resp, Data())
         }
@@ -241,12 +240,11 @@ extension AuthSessionTests {
             baseURL: URL(string: "https://example.test")!,
             keychainService: testService,
             keychainAccount: testAccount,
-            urlSession: makeStubSession()
+            urlSession: session
         )
         await auth.signOut()
         XCTAssertFalse(auth.isSignedIn)
         XCTAssertNil(KeychainStore.read(service: testService, account: testAccount))
-        StubURLProtocol.responder = nil
     }
 }
 

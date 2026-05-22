@@ -25,15 +25,29 @@ final class ProgressPhotoStoreSourceTests: XCTestCase {
         return String(tail[..<end.lowerBound])
     }
 
+    /// Extracts the upload scheduling method body from ProgressPhotoStore source.
+    /// - Parameter source: String containing the full ProgressPhotoStore source.
+    /// - Returns: String containing the upload method source.
+    /// - Throws: XCTest unwrap failures when the method boundaries cannot be found.
+    private func uploadSource(from source: String) throws -> String {
+        let start = try XCTUnwrap(source.range(of: "func upload(date: Date"))
+        let tail = source[start.lowerBound...]
+        let end = try XCTUnwrap(tail.range(of: "\n    /// Evicts"))
+        return String(tail[..<end.lowerBound])
+    }
+
     /// Ensures new uploads can wake a worker sleeping on a later retry.
-    /// Outputs: none.
-    /// Exceptions: throws when source cannot be read.
+    /// - Returns: Void.
+    /// - Throws: XCTest unwrap failures when source cannot be read or expected calls are missing.
     func testUploadCancelsSleepingWorkerBeforeKick() throws {
         let source = try progressPhotoStoreSource()
+        let upload = try uploadSource(from: source)
+        let cancel = try XCTUnwrap(upload.range(of: "workerTask?.cancel()"))
+        let clear = try XCTUnwrap(upload.range(of: "workerTask = nil"))
+        let kick = try XCTUnwrap(upload.range(of: "kickWorker()"))
 
-        XCTAssertTrue(source.contains("workerTask?.cancel()"))
-        XCTAssertTrue(source.contains("workerTask = nil"))
-        XCTAssertTrue(source.contains("kickWorker()"))
+        XCTAssertLessThan(cancel.lowerBound, clear.lowerBound)
+        XCTAssertLessThan(clear.lowerBound, kick.lowerBound)
     }
 
     /// Ensures signed-out auth does not make the due queue spin forever.

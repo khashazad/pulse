@@ -383,13 +383,13 @@ actor DietTrackerClient {
     /// Inputs:
     ///   - request: prepared `URLRequest`.
     /// Outputs: tuple of response body bytes and the `HTTPURLResponse`.
-    /// Exceptions: `DietTrackerError.network` wrapping a `URLError`, or
-    /// `DietTrackerError.server(status: -1)` if the response isn't HTTP.
+    /// Exceptions: `DietTrackerError.network` wrapping a `URLError`, including
+    /// `URLError.badServerResponse` when the response isn't HTTP.
     private func raw(request: URLRequest) async throws -> (Data, HTTPURLResponse) {
         do {
             let (data, response) = try await session.data(for: request)
             guard let http = response as? HTTPURLResponse else {
-                throw DietTrackerError.server(status: -1)
+                throw URLError(.badServerResponse)
             }
             return (data, http)
         } catch let urlError as URLError {

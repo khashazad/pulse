@@ -7,10 +7,15 @@ import UIKit
 /// Login screen with a Google sign-in button and inline error message.
 struct LoginView: View {
     @Environment(AuthSession.self) private var auth
+    @State private var anchorWindow: UIWindow?
 
     var body: some View {
         ZStack {
             Theme.BG.primary.ignoresSafeArea()
+            WindowReader { window in
+                anchorWindow = window
+            }
+            .frame(width: 0, height: 0)
             VStack(spacing: 24) {
                 Spacer()
                 Text("Diet Tracker")
@@ -62,18 +67,30 @@ struct LoginView: View {
         if case .signingIn = auth.state { return true } else { return false }
     }
 
-    /// Resolves the foreground key UIWindow and starts a Google OAuth flow through
-    /// `AuthSession`. No-op if no suitable window is found.
+    /// Starts a Google OAuth flow anchored to the UIWindow that hosts this
+    /// LoginView. No-op if the host window has not been resolved yet.
     private func signIn() {
-        guard
-            let scene = UIApplication.shared.connectedScenes
-                .compactMap({ $0 as? UIWindowScene })
-                .first(where: { $0.activationState == .foregroundActive })
-                ?? (UIApplication.shared.connectedScenes.first as? UIWindowScene),
-            let window = scene.windows.first(where: { $0.isKeyWindow }) ?? scene.windows.first
-        else { return }
+        guard let window = anchorWindow else { return }
         Task { @MainActor in
             await auth.signInWithGoogle(presentationAnchor: window)
         }
+    }
+}
+
+/// Zero-sized UIViewRepresentable that reports the UIWindow owning the SwiftUI
+/// view hierarchy it's installed in. Used to resolve a presentation anchor that
+/// matches the rendered scene instead of guessing across `connectedScenes`.
+private struct WindowReader: UIViewRepresentable {
+    let onResolve: (UIWindow?) -> Void
+
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView()
+        view.isUserInteractionEnabled = false
+        DispatchQueue.main.async { onResolve(view.window) }
+        return view
+    }
+
+    func updateUIView(_ uiView: UIView, context: Context) {
+        DispatchQueue.main.async { onResolve(uiView.window) }
     }
 }

@@ -202,11 +202,13 @@ actor ProgressPhotoClient {
     }
 
     /// Executes a request and returns the raw data plus `HTTPURLResponse`.
+    /// Non-HTTP responses are normalized through `URLError.badServerResponse`
+    /// so callers see `DietTrackerError.network` instead of `.server(status: -1)`.
     private func raw(request: URLRequest) async throws -> (Data, HTTPURLResponse) {
         do {
             let (data, response) = try await session.data(for: request)
             guard let http = response as? HTTPURLResponse else {
-                throw DietTrackerError.server(status: -1)
+                throw URLError(.badServerResponse)
             }
             return (data, http)
         } catch let urlError as URLError {
