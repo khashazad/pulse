@@ -23,7 +23,7 @@ Google OAuth → opaque Bearer session tokens.
 - Allowlist: `ALLOWED_EMAILS` (case-insensitive, comma-separated).
 - `UserKeyGuardrailMiddleware` rejects any `?user_key=` query on protected routes (cutover guardrail; remove next release).
 - Single-user today: `email_to_user_key` returns `LEGACY_USER_KEY`.
-- MCP has its own GitHub-OAuth path (`GITHUB_CLIENT_ID/SECRET` + `PUBLIC_BASE_URL`); `/mcp` is exempt from session auth. Non-local startup refuses to boot when GitHub OAuth is unconfigured unless `MCP_ALLOW_UNAUTH=true`.
+- MCP has its own GitHub-OAuth path (`GITHUB_CLIENT_ID/SECRET` + `PUBLIC_BASE_URL`) for interactive clients (claude.ai, Claude Desktop) and a static service-token path (`MCP_SERVICE_TOKEN`, min 32 chars) for headless agents. Either is sufficient; both can run together via `MultiAuth`. `/mcp` is exempt from session auth. Non-local startup refuses to boot unless GitHub OAuth, the service token, or `MCP_ALLOW_UNAUTH=true` is configured. The service token synthesizes a `login=service-account` claim that auto-joins any non-empty `ALLOWED_GITHUB_USERS`.
 
 ## Architecture
 
@@ -77,7 +77,7 @@ uv run alembic upgrade head
 
 ## Config
 
-Required env: `DATABASE_URL`, `USDA_API_KEY`. Optional: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `OAUTH_REDIRECT_URI`, `APP_REDIRECT_SCHEME`, `ALLOWED_EMAILS`, `SESSION_TTL_DAYS`, `LEGACY_USER_KEY`, `APP_ENV`, `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `ALLOWED_GITHUB_USERS`, `PUBLIC_BASE_URL`, `MCP_ALLOW_UNAUTH`.
+Required env: `DATABASE_URL`, `USDA_API_KEY`. Optional: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `OAUTH_REDIRECT_URI`, `APP_REDIRECT_SCHEME`, `ALLOWED_EMAILS`, `SESSION_TTL_DAYS`, `LEGACY_USER_KEY`, `APP_ENV`, `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `ALLOWED_GITHUB_USERS`, `PUBLIC_BASE_URL`, `MCP_ALLOW_UNAUTH`, `MCP_SERVICE_TOKEN`.
 
 ## Deploy
 

@@ -18,6 +18,17 @@ from pydantic import model_validator
 from pydantic_settings import BaseSettings
 
 
+# Synthetic GitHub-style `login` claim attached to service-token requests so
+# `GitHubAllowlistMiddleware` can gate them with the same machinery used for
+# real GitHub OAuth users. Auto-injected into the effective allowlist whenever a
+# service token is configured.
+SERVICE_TOKEN_LOGIN = "service-account"
+
+# Lower bound on `MCP_SERVICE_TOKEN` entropy. 32 chars ≈ 256 bits when the value
+# is random hex/base64; rejects obviously-weak shared secrets.
+SERVICE_TOKEN_MIN_LENGTH = 32
+
+
 class Settings(BaseSettings):
     """Typed configuration for the diet-tracker-server, sourced from env and ``.env``.
 
@@ -51,8 +62,13 @@ class Settings(BaseSettings):
     public_base_url: str = ""
 
     # Explicit opt-in to run the MCP layer without auth. Only honored when APP_ENV is
-    # local/dev/test; non-local envs always require GitHub OAuth.
+    # local/dev/test; non-local envs always require GitHub OAuth or a service token.
     mcp_allow_unauth: bool = False
+
+    # Static bearer token for headless agents (e.g. Hermes). When set, requests
+    # carrying `Authorization: Bearer <token>` are accepted alongside any
+    # configured GitHub OAuth flow. Empty disables this path.
+    mcp_service_token: str = ""
 
     model_config = {
         "env_prefix": "",
@@ -76,11 +92,31 @@ class Settings(BaseSettings):
     def allowed_github_users_set(self) -> set[str]:
         """Return the allow-listed GitHub usernames for MCP OAuth as a lowercase set.
 
+        Auto-includes ``SERVICE_TOKEN_LOGIN`` when a service token is configured
+        so that headless agents pass ``GitHubAllowlistMiddleware`` without the
+        operator having to remember to add the synthetic login alongside their
+        real GitHub usernames.
+
         **Outputs:**
         - set[str]: Trimmed, lowercased entries parsed from
-          ``ALLOWED_GITHUB_USERS`` (empty when unset).
+          ``ALLOWED_GITHUB_USERS`` (empty when unset), plus the service-token
+          synthetic login when ``mcp_service_token_enabled``.
         """
-        return {u.strip().lower() for u in self.allowed_github_users.split(",") if u.strip()}
+        base = {u.strip().lower() for u in self.allowed_github_users.split(",") if u.strip()}
+        # Only auto-add when the operator already opted into gating; an empty
+        # allowlist means open-mode and the middleware short-circuits anyway.
+        if base and self.mcp_service_token_enabled:
+            base.add(SERVICE_TOKEN_LOGIN)
+        return base
+
+    @property
+    def mcp_service_token_enabled(self) -> bool:
+        """Indicate whether a static service-token bearer is configured.
+
+        **Outputs:**
+        - bool: ``True`` when ``MCP_SERVICE_TOKEN`` is set to a non-empty value.
+        """
+        return bool(self.mcp_service_token)
 
     @property
     def mcp_oauth_enabled(self) -> bool:
@@ -136,10 +172,32 @@ class Settings(BaseSettings):
         """
         if self.is_local_env:
             return self
-        if not self.mcp_oauth_enabled and not self.mcp_allow_unauth:
+        if (
+            not self.mcp_oauth_enabled
+            and not self.mcp_service_token_enabled
+            and not self.mcp_allow_unauth
+        ):
             raise ValueError(
                 "MCP layer is unauthenticated: set GITHUB_CLIENT_ID/SECRET + PUBLIC_BASE_URL "
-                "to enable GitHub OAuth, or MCP_ALLOW_UNAUTH=true to opt in explicitly"
+                "to enable GitHub OAuth, set MCP_SERVICE_TOKEN for a static bearer, "
+                "or MCP_ALLOW_UNAUTH=true to opt in explicitly"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _require_strong_service_token(self) -> "Settings":
+        """Reject short ``MCP_SERVICE_TOKEN`` values that would be trivially guessable.
+
+        **Outputs:**
+        - Settings: This instance, unchanged, when validation passes.
+
+        **Exceptions:**
+        - ValueError: Raised when ``MCP_SERVICE_TOKEN`` is set but shorter than
+          :data:`SERVICE_TOKEN_MIN_LENGTH`.
+        """
+        if self.mcp_service_token and len(self.mcp_service_token) < SERVICE_TOKEN_MIN_LENGTH:
+            raise ValueError(
+                f"MCP_SERVICE_TOKEN must be at least {SERVICE_TOKEN_MIN_LENGTH} characters"
             )
         return self
 
