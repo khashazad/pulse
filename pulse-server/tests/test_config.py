@@ -32,8 +32,10 @@ def _isolate_env(monkeypatch):
         "APP_ENV",
         "GITHUB_CLIENT_ID",
         "GITHUB_CLIENT_SECRET",
+        "ALLOWED_GITHUB_USERS",
         "PUBLIC_BASE_URL",
         "MCP_ALLOW_UNAUTH",
+        "MCP_SERVICE_TOKEN",
     ):
         monkeypatch.delenv(k, raising=False)
     monkeypatch.setenv("DATABASE_URL", "postgresql://localhost/test")
@@ -147,3 +149,50 @@ def test_mcp_unauth_allowed_in_local_without_github(monkeypatch):
     s = cfg.get_settings()
     assert s.is_local_env is True
     assert s.mcp_oauth_enabled is False
+
+
+def test_mcp_service_token_satisfies_prod_auth_requirement(monkeypatch):
+    """A static `MCP_SERVICE_TOKEN` satisfies the prod auth requirement without GitHub OAuth."""
+    monkeypatch.setenv("APP_ENV", "prod")
+    monkeypatch.setenv("MCP_SERVICE_TOKEN", "x" * 32)
+    from diet_tracker_server import config as cfg
+
+    cfg.get_settings.cache_clear()
+    s = cfg.get_settings()
+    assert s.mcp_service_token_enabled is True
+    assert s.mcp_oauth_enabled is False
+
+
+def test_mcp_service_token_too_short_rejected(monkeypatch):
+    """`MCP_SERVICE_TOKEN` shorter than the minimum is rejected at load time."""
+    monkeypatch.setenv("APP_ENV", "local")
+    monkeypatch.setenv("MCP_SERVICE_TOKEN", "short")
+    from diet_tracker_server import config as cfg
+
+    cfg.get_settings.cache_clear()
+    with pytest.raises(ValueError, match="at least"):
+        cfg.get_settings()
+
+
+def test_service_token_login_auto_included_in_allowlist(monkeypatch):
+    """When the service token is set, its synthetic login joins `allowed_github_users_set`."""
+    monkeypatch.setenv("APP_ENV", "prod")
+    monkeypatch.setenv("MCP_SERVICE_TOKEN", "x" * 32)
+    monkeypatch.setenv("ALLOWED_GITHUB_USERS", "khashazad")
+    from diet_tracker_server import config as cfg
+
+    cfg.get_settings.cache_clear()
+    s = cfg.get_settings()
+    assert cfg.SERVICE_TOKEN_LOGIN in s.allowed_github_users_set
+    assert "khashazad" in s.allowed_github_users_set
+
+
+def test_service_token_login_not_added_when_allowlist_empty(monkeypatch):
+    """An empty `ALLOWED_GITHUB_USERS` stays empty (open mode) even with the service token set."""
+    monkeypatch.setenv("APP_ENV", "prod")
+    monkeypatch.setenv("MCP_SERVICE_TOKEN", "x" * 32)
+    from diet_tracker_server import config as cfg
+
+    cfg.get_settings.cache_clear()
+    s = cfg.get_settings()
+    assert s.allowed_github_users_set == set()

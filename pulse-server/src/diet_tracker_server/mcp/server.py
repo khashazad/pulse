@@ -33,7 +33,7 @@ from fastmcp.exceptions import ToolError
 from pydantic import BaseModel, Field
 from sqlalchemy.exc import IntegrityError
 
-from diet_tracker_server.config import get_settings
+from diet_tracker_server.config import SERVICE_TOKEN_LOGIN, get_settings
 from diet_tracker_server.db import get_session, transaction
 from diet_tracker_server.macro_aggregates import sum_food_entry_macros
 from diet_tracker_server.mcp.auth import GitHubAllowlistMiddleware
@@ -354,15 +354,85 @@ def _meal_response(meal_row: dict[str, Any], item_rows: list[dict[str, Any]]) ->
     )
 
 
+def _build_static_token_verifier(service_token: str):
+    """Build a fastmcp ``StaticTokenVerifier`` for the configured service token.
+
+    Synthesizes a GitHub-style ``login`` claim equal to
+    :data:`SERVICE_TOKEN_LOGIN` so :class:`GitHubAllowlistMiddleware` can gate
+    service-token calls with the same machinery as real GitHub OAuth users.
+
+    **Inputs:**
+    - service_token (str): The shared secret accepted as a bearer token.
+
+    **Outputs:**
+    - StaticTokenVerifier: Verifier mapping the token to a single client
+      identity carrying the service login claim.
+    """
+    from fastmcp.server.auth.providers.jwt import StaticTokenVerifier
+
+    return StaticTokenVerifier(
+        tokens={
+            service_token: {
+                "client_id": SERVICE_TOKEN_LOGIN,
+                "scopes": [],
+                "login": SERVICE_TOKEN_LOGIN,
+            }
+        }
+    )
+
+
+def _build_auth_provider(settings):
+    """Assemble the MCP auth provider from configured GitHub OAuth and/or service token.
+
+    Combinations:
+
+    - GitHub OAuth only → ``GitHubProvider`` directly.
+    - Service token only → ``StaticTokenVerifier`` directly (no OAuth metadata routes).
+    - Both → ``MultiAuth`` with GitHub as the server (owning routes/metadata) and the
+      static verifier as a fallback verifier.
+    - Neither → ``None``; the caller decides whether unauth is permitted.
+
+    **Inputs:**
+    - settings (Settings): Application settings carrying both auth configurations.
+
+    **Outputs:**
+    - AuthProvider | None: Configured provider, or ``None`` when no auth is set.
+    """
+    static_verifier = (
+        _build_static_token_verifier(settings.mcp_service_token)
+        if settings.mcp_service_token_enabled
+        else None
+    )
+
+    if settings.mcp_oauth_enabled:
+        from fastmcp.server.auth.providers.github import GitHubProvider
+
+        github_provider = GitHubProvider(
+            client_id=settings.github_client_id,
+            client_secret=settings.github_client_secret,
+            base_url=settings.public_base_url.rstrip("/"),
+        )
+        if static_verifier is None:
+            return github_provider
+        from fastmcp.server.auth import MultiAuth
+
+        return MultiAuth(server=github_provider, verifiers=[static_verifier])
+
+    return static_verifier
+
+
 def build_mcp(usda_getter) -> FastMCP:
     """Construct the FastMCP server and register every diet-tracking tool.
 
     Indirection through ``usda_getter`` lets callers bind to
-    ``app.get_usda_client`` after lifespan startup without import cycles. When
-    GitHub OAuth is configured (``GITHUB_CLIENT_ID``/``SECRET`` +
-    ``PUBLIC_BASE_URL``) the server uses ``GitHubProvider`` plus
-    :class:`GitHubAllowlistMiddleware`; otherwise it runs unauthenticated and is
-    refused outside local env (unless ``MCP_ALLOW_UNAUTH=true``).
+    ``app.get_usda_client`` after lifespan startup without import cycles. The
+    auth provider is assembled by :func:`_build_auth_provider` from any
+    combination of GitHub OAuth (``GITHUB_CLIENT_ID``/``SECRET`` +
+    ``PUBLIC_BASE_URL``) and a static service token (``MCP_SERVICE_TOKEN``).
+    :class:`GitHubAllowlistMiddleware` runs when ``ALLOWED_GITHUB_USERS`` is
+    non-empty; the service-token synthetic login is auto-included in that
+    allowlist. With no auth configured the server is refused outside local env
+    unless ``MCP_ALLOW_UNAUTH=true``.
 
     **Inputs:**
     - usda_getter: Zero-arg callable returning the live ``USDAClient``;
@@ -380,14 +450,8 @@ def build_mcp(usda_getter) -> FastMCP:
     settings = get_settings()
     tz = ZoneInfo(settings.timezone)
 
-    if settings.mcp_oauth_enabled:
-        from fastmcp.server.auth.providers.github import GitHubProvider
-
-        auth_provider = GitHubProvider(
-            client_id=settings.github_client_id,
-            client_secret=settings.github_client_secret,
-            base_url=settings.public_base_url.rstrip("/"),
-        )
+    auth_provider = _build_auth_provider(settings)
+    if auth_provider is not None:
         mcp = FastMCP(name="diet", instructions=WORKFLOW_INSTRUCTIONS, auth=auth_provider)
         if settings.allowed_github_users_set:
             mcp.add_middleware(GitHubAllowlistMiddleware(settings.allowed_github_users_set))
@@ -397,7 +461,8 @@ def build_mcp(usda_getter) -> FastMCP:
         if not settings.is_local_env and not settings.mcp_allow_unauth:
             raise RuntimeError(
                 "Refusing to build unauthenticated MCP outside local env. "
-                "Set GITHUB_CLIENT_ID/SECRET + PUBLIC_BASE_URL or MCP_ALLOW_UNAUTH=true."
+                "Set GITHUB_CLIENT_ID/SECRET + PUBLIC_BASE_URL, MCP_SERVICE_TOKEN, "
+                "or MCP_ALLOW_UNAUTH=true."
             )
         mcp = FastMCP(name="diet", instructions=WORKFLOW_INSTRUCTIONS)
 
