@@ -1,6 +1,6 @@
-# diet-tracker-ios
+# pulse-ios
 
-SwiftUI iOS 17+ client for the self-hosted nutrition / meal-prep tracker. Single-user (identity hardcoded to `user_key = "khash"`); talks JSON over HTTP to [`diet-tracker-server`](../diet-tracker-server).
+SwiftUI iOS 17+ client for the self-hosted nutrition / meal-prep tracker. Single-user (identity hardcoded to `user_key = "khash"`); talks JSON over HTTP to [`pulse-server`](../pulse-server).
 
 ## What it does
 
@@ -14,11 +14,11 @@ Dark only, Catppuccin Macchiato palette.
 ## Architecture
 
 ```
-DietTracker/
-├── DietTrackerApp.swift   App entry, AppSettings + AuthSession injection
+Pulse/
+├── PulseApp.swift   App entry, AppSettings + AuthSession injection
 ├── Config/                Constants (user key, defaults), KeychainStore
 ├── Networking/
-│   └── DietTrackerClient.swift   actor over URLSession, ?user_key=khash + X-API-Key
+│   └── PulseClient.swift   actor over URLSession, ?user_key=khash + X-API-Key
 ├── Models/                Codable DTOs — camelCase Swift, snake_case JSON via CodingKeys
 ├── State/                 @Observable view models, no Combine
 │                          (DayMacroModel, WeekModel, MonthModel, YearModel,
@@ -37,8 +37,8 @@ DietTracker/
 
 **Patterns worth preserving.**
 
-- `@Observable` view models. Each holds `weak var settings: AppSettings?`, calls `settings.makeClient()` on demand, and exposes `LoadState<T>` (`.idle | .loading | .loaded(T) | .failed(DietTrackerError)`).
-- `DietTrackerClient` is an `actor`. `JSONDecoder.dietTrackerDefault()` accepts both `YYYY-MM-DD` and ISO-8601. Errors normalized to `DietTrackerError` (notConfigured / unauthorized / notFound / payloadTooLarge / server / network / decoding).
+- `@Observable` view models. Each holds `weak var settings: AppSettings?`, calls `settings.makeClient()` on demand, and exposes `LoadState<T>` (`.idle | .loading | .loaded(T) | .failed(PulseError)`).
+- `PulseClient` is an `actor`. `JSONDecoder.pulseDefault()` accepts both `YYYY-MM-DD` and ISO-8601. Errors normalized to `PulseError` (notConfigured / unauthorized / notFound / payloadTooLarge / server / network / decoding).
 - `PrepModel` stores the whole selected `Container`, not just an id+tare — keeps tare/selection drift impossible.
 - `AppSettings.isConfigured` gates the app; when false, `RootView` force-presents `SettingsView(requireConfig: true)` non-dismissibly.
 - Container photos go through `AuthorizedAsyncImage` driven by `containerPhotoRequest(id:size:)` (a `nonisolated` factory on the actor), because `AsyncImage` can't add auth headers.
@@ -46,33 +46,33 @@ DietTracker/
 
 ## Build
 
-The Xcode project is **generated** from `project.yml` (gitignored). `DIET_TRACKER_BASE_URL` is baked into the pbxproj literally at generate time; the value lives in `.envrc` at the repo root.
+The Xcode project is **generated** from `project.yml` (gitignored). `PULSE_BASE_URL` is baked into the pbxproj literally at generate time; the value lives in `.envrc` at the repo root.
 
 ```bash
 source .envrc && xcodegen generate
-open DietTracker.xcodeproj
+open Pulse.xcodeproj
 ```
 
 CLI:
 
 ```bash
-xcodebuild -project DietTracker.xcodeproj -scheme DietTracker \
+xcodebuild -project Pulse.xcodeproj -scheme Pulse \
   -destination 'platform=iOS Simulator,name=iPhone 15' build
 
-xcodebuild -project DietTracker.xcodeproj -scheme DietTracker \
+xcodebuild -project Pulse.xcodeproj -scheme Pulse \
   -destination 'platform=iOS Simulator,name=iPhone 15' test
 
 # single test
-xcodebuild ... test -only-testing:DietTrackerTests/PrepModelTests/testNetGramsSubtractsTare
+xcodebuild ... test -only-testing:PulseTests/PrepModelTests/testNetGramsSubtractsTare
 ```
 
 ## Testing
 
-`DietTrackerTests/` uses `StubURLProtocol` injected into an ephemeral `URLSession` to intercept requests and return JSON fixtures from `DietTrackerTests/Fixtures/`. When adding endpoints, add a fixture and a client test rather than mocking the model layer.
+`PulseTests/` uses `StubURLProtocol` injected into an ephemeral `URLSession` to intercept requests and return JSON fixtures from `PulseTests/Fixtures/`. When adding endpoints, add a fixture and a client test rather than mocking the model layer.
 
 ## Wire-format contract with the server
 
-Server DTOs in `diet-tracker-server/src/diet_tracker_server/models/` are Pydantic `snake_case`; iOS mirrors them as Codable `camelCase` with explicit `CodingKeys`. Every request appends `?user_key=khash` and sends `X-API-Key` (legacy single-user path), plus the Bearer session token from `AuthSession` on session-auth routes.
+Server DTOs in `pulse-server/src/diet_tracker_server/models/` are Pydantic `snake_case`; iOS mirrors them as Codable `camelCase` with explicit `CodingKeys`. Every request appends `?user_key=khash` and sends `X-API-Key` (legacy single-user path), plus the Bearer session token from `AuthSession` on session-auth routes.
 
 ## Design docs
 

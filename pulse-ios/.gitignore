@@ -4,7 +4,7 @@
 # Claude Code per-session state
 .claude/
 
-# Per-developer direnv env (DIET_TRACKER_BASE_URL etc.)
+# Per-developer direnv env (PULSE_BASE_URL etc.)
 .envrc
 
 # Xcode
@@ -26,4 +26,4 @@ Package.resolved
 .DS_Store
 
 # xcodegen — regenerate from project.yml
-DietTracker.xcodeproj/
+Pulse.xcodeproj/
