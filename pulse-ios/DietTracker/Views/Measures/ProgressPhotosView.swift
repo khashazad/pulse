@@ -1,10 +1,11 @@
 /// Photos sub-tab of the Measures screen.
 ///
 /// Hosts `ProgressPhotosView`, which renders a date strip and the day's
-/// photos grouped by tag. The "Add" button opens `PhotoCaptureSession`
-/// directly — multi-photo selection + tag assignment happen inside the
-/// capture sheet. Also triggers `ProgressPhotoStore.reconcile` over a
-/// 30-day window when the selected date changes or on pull-to-refresh,
+/// photos as a flat 2-column grid. Each card shows its tag as a top-left
+/// badge; tapping a card expands it to fullscreen via `matchedGeometryEffect`,
+/// tapping again collapses back to the grid. The "Add" button opens
+/// `PhotoCaptureSession` directly. Also triggers `ProgressPhotoStore.reconcile`
+/// over a 30-day window when the selected date changes or on pull-to-refresh,
 /// and exposes a "Manage tags" entry point in the toolbar.
 import SwiftUI
 
@@ -14,6 +15,13 @@ struct ProgressPhotosView: View {
     @State private var selectedDate: Date = Calendar.current.startOfDay(for: Date())
     @State private var showCapture = false
     @State private var showManageTags = false
+    @State private var expandedId: UUID?
+    @Namespace private var photoNS
+
+    private let gridColumns = [
+        GridItem(.flexible(), spacing: 12),
+        GridItem(.flexible(), spacing: 12),
+    ]
 
     var body: some View {
         ZStack {
@@ -21,13 +29,25 @@ struct ProgressPhotosView: View {
             ScrollView {
                 VStack(spacing: Theme.Layout.sectionSpacing) {
                     dateStrip
-                    sections
+                    grid
                     addButton
                     syncFooter
                     Spacer(minLength: Theme.Layout.dockClearance)
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, 8)
+            }
+
+            if let id = expandedId,
+               let meta = sortedPhotos.first(where: { $0.id == id }) {
+                ProgressPhotoDetailView(
+                    meta: meta,
+                    tagName: tagName(for: meta.tagId),
+                    namespace: photoNS,
+                    onClose: { withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) { expandedId = nil } }
+                )
+                .transition(.opacity)
+                .zIndex(1)
             }
         }
         .toolbar {
@@ -83,58 +103,55 @@ struct ProgressPhotosView: View {
         }
     }
 
-    // MARK: sections
+    // MARK: grid
 
-    /// Photos for the selected date grouped by tag. Sections are driven by
-    /// the photos themselves (not the tag catalog) so a missing/empty
-    /// `tagStore` never hides photos that exist in `ProgressPhotoStore`.
-    /// When a tag is loaded we use its name and sort order; otherwise the
-    /// section header falls back to "Tag" and groups sort to the bottom.
-    private var sections: some View {
-        let photos = store.photos(on: selectedDate)
-        let groups: [(tagId: UUID, name: String, order: Int, photos: [ProgressPhotoMetadata])] =
-            Dictionary(grouping: photos, by: \.tagId)
-                .map { tagId, group in
-                    let tag = tagStore.tag(id: tagId)
-                    return (
-                        tagId: tagId,
-                        name: tag?.name ?? "Tag",
-                        order: tag?.sortOrder ?? Int.max,
-                        photos: group
-                    )
-                }
-                .sorted { ($0.order, $0.name) < ($1.order, $1.name) }
-        return VStack(alignment: .leading, spacing: 16) {
-            if groups.isEmpty {
+    /// Photos for the selected date, sorted by tag display order then by
+    /// capture time so the grid stays stable across re-renders. Tags that
+    /// aren't loaded sort to the end with `Int.max` ordering.
+    private var sortedPhotos: [ProgressPhotoMetadata] {
+        store.photos(on: selectedDate).sorted { a, b in
+            let oa = tagStore.tag(id: a.tagId)?.sortOrder ?? Int.max
+            let ob = tagStore.tag(id: b.tagId)?.sortOrder ?? Int.max
+            if oa != ob { return oa < ob }
+            return a.updatedAt < b.updatedAt
+        }
+    }
+
+    private var grid: some View {
+        let photos = sortedPhotos
+        return Group {
+            if photos.isEmpty {
                 Text("No photos for this day yet.")
                     .font(.system(size: 13))
                     .foregroundStyle(Theme.FG.tertiary)
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.top, 24)
             } else {
-                ForEach(groups, id: \.tagId) { group in
-                    tagSection(name: group.name, photos: group.photos)
+                LazyVGrid(columns: gridColumns, spacing: 12) {
+                    ForEach(photos) { meta in
+                        ProgressPhotoCell(
+                            meta: meta,
+                            tagName: tagName(for: meta.tagId),
+                            namespace: photoNS,
+                            isExpanded: expandedId == meta.id,
+                            onTap: {
+                                withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
+                                    expandedId = meta.id
+                                }
+                            }
+                        )
+                    }
                 }
             }
         }
     }
 
-    private func tagSection(name: String, photos: [ProgressPhotoMetadata]) -> some View {
-        // One photo gets the full width; multiple photos pack 2-up so the row
-        // is never half-empty.
-        let columnCount = photos.count == 1 ? 1 : 2
-        let cols = Array(repeating: GridItem(.flexible(), spacing: 12), count: columnCount)
-        return VStack(alignment: .leading, spacing: 8) {
-            Text(name)
-                .font(.system(size: 13, weight: .semibold))
-                .tracking(0.6)
-                .foregroundStyle(Theme.FG.secondary)
-            LazyVGrid(columns: cols, spacing: 12) {
-                ForEach(photos) { meta in
-                    ProgressPhotoCell(meta: meta)
-                }
-            }
-        }
+    /// Returns the display name for a tag id, falling back to "Tag" when the
+    /// tag catalog hasn't loaded the row yet.
+    /// - Parameter id: tag id referenced by a photo.
+    /// - Returns: tag display name or the literal "Tag".
+    private func tagName(for id: UUID) -> String {
+        tagStore.tag(id: id)?.name ?? "Tag"
     }
 
     // MARK: add + sync footer
