@@ -15,6 +15,7 @@ struct ProgressPhotosView: View {
     @State private var selectedDate: Date = Calendar.current.startOfDay(for: Date())
     @State private var showCapture = false
     @State private var showManageTags = false
+    @State private var showCompare = false
     @State private var expandedId: UUID?
     @Namespace private var photoNS
 
@@ -72,6 +73,9 @@ struct ProgressPhotosView: View {
         .sheet(isPresented: $showManageTags) {
             NavigationStack { ManageTagsView() }
         }
+        .sheet(isPresented: $showCompare) {
+            NavigationStack { ProgressPhotoComparisonView(initialDate: selectedDate) }
+        }
     }
 
     // MARK: date strip
@@ -79,8 +83,7 @@ struct ProgressPhotosView: View {
     private var dateStrip: some View {
         HStack(spacing: 8) {
             chip("Today") { selectedDate = Calendar.current.startOfDay(for: Date()) }
-            chip("−1") { shift(-1) }
-            chip("−7") { shift(-7) }
+            compareButton
             Spacer()
             DatePicker("", selection: $selectedDate, displayedComponents: .date)
                 .labelsHidden()
@@ -97,10 +100,17 @@ struct ProgressPhotosView: View {
             .foregroundStyle(Theme.FG.primary)
     }
 
-    private func shift(_ days: Int) {
-        if let d = Calendar.current.date(byAdding: .day, value: days, to: selectedDate) {
-            selectedDate = Calendar.current.startOfDay(for: d)
+    private var compareButton: some View {
+        Button { showCompare = true } label: {
+            Image(systemName: "rectangle.split.2x1")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Theme.CTP.mauve)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(Theme.BG.secondary, in: Capsule())
         }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Compare two days")
     }
 
     // MARK: grid
