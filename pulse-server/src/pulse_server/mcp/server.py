@@ -370,11 +370,15 @@ def _build_static_token_verifier(service_token: str):
     """
     from fastmcp.server.auth.providers.jwt import StaticTokenVerifier
 
+    # MultiAuth inherits required_scopes from GitHubProvider (defaults to ["user"])
+    # and enforces them on every verified token regardless of source. The service
+    # token represents a fully-authorized principal, so mirror the GitHub scope
+    # to clear the global check.
     return StaticTokenVerifier(
         tokens={
             service_token: {
                 "client_id": SERVICE_TOKEN_LOGIN,
-                "scopes": [],
+                "scopes": ["user"],
                 "login": SERVICE_TOKEN_LOGIN,
             }
         }
