@@ -6,3 +6,7 @@ __pycache__/
 .DS_Store
 .agent/
 .vault-agent/
+.claude/
+
+# Security scan artifacts (may contain credential snapshots) — never commit
+.deepsec/
