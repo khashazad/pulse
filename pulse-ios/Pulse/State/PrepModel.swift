@@ -115,37 +115,4 @@ final class PrepModel {
             return nw
         }
     }
-
-    // MARK: - Legacy single-container shims (PrepView compatibility, Task 1 → Task 2 cutover)
-
-    /// Single selected container for the legacy single-container PrepView.
-    /// Setting this updates `targets` to a single ×1 entry and `weighIns` to a single
-    /// entry without a gross; clearing it empties both. Removed when PrepView adopts
-    /// the multi-container API.
-    var selectedContainer: Container? {
-        get { targets.first?.container }
-        set {
-            if let c = newValue {
-                targets = [TargetEntry(container: c, count: 1)]
-                if weighIns.isEmpty || weighIns.first?.container.id != c.id {
-                    weighIns = [WeighIn(container: c)]
-                }
-            } else {
-                targets = []
-                weighIns = []
-            }
-        }
-    }
-
-    /// Gross grams entered via the legacy single-weigh-in TextField.
-    /// Bridges to `weighIns[0].grossGrams`. Removed when PrepView adopts the
-    /// multi-container API.
-    var totalGrams: Double? {
-        get { weighIns.first?.grossGrams }
-        set { if !weighIns.isEmpty { weighIns[0].grossGrams = newValue } }
-    }
-
-    /// Net grams for the legacy single-container result row.
-    /// Equivalent to `totalNetGrams` in the single-container case.
-    var netGrams: Double? { totalNetGrams }
 }
