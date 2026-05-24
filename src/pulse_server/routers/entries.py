@@ -27,6 +27,7 @@ from pulse_server.models import (
     FoodEntryResponse,
 )
 from pulse_server.repositories.entries import EntriesRepository
+from pulse_server.services.custom_foods_service import CrossTenantReferenceError
 from pulse_server.services.entries_service import create_entries_with_side_effects
 from pulse_server.services.log_ids import daily_log_id
 
@@ -57,18 +58,23 @@ async def create_entries(
       created rows.
 
     **Exceptions:**
+    - HTTPException(422): Raised when an item references a custom_food_id the
+      user does not own.
     - RuntimeError: Raised when the database pool is not initialized.
     - sqlalchemy.exc.SQLAlchemyError: Raised when SQL execution fails.
     """
     user_key = request.state.user_key
     now = DateTimeValue.now(tz=TZ)
 
-    created_rows, all_rows = await create_entries_with_side_effects(
-        session=session,
-        user_key=user_key,
-        items=body.items,
-        now=now,
-    )
+    try:
+        created_rows, all_rows = await create_entries_with_side_effects(
+            session=session,
+            user_key=user_key,
+            items=body.items,
+            now=now,
+        )
+    except CrossTenantReferenceError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     created = [FoodEntryResponse(**row) for row in created_rows]
     all_entries = [FoodEntryResponse(**row) for row in all_rows]
 

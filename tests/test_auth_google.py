@@ -124,11 +124,40 @@ def test_verify_id_token_returns_email_and_sub():
     """`verify_id_token` returns the lowercased email and Google subject from a valid JWT payload."""
     from pulse_server.auth import google as g
 
-    payload = {"email": "Khashzd@Gmail.com", "sub": "1234567890", "aud": "cid.apps.googleusercontent.com"}
+    payload = {
+        "email": "Khashzd@Gmail.com",
+        "email_verified": True,
+        "sub": "1234567890",
+        "aud": "cid.apps.googleusercontent.com",
+    }
     with patch("pulse_server.auth.google.id_token.verify_oauth2_token", return_value=payload):
         email, sub = g.verify_id_token("jwt-here")
     assert email == "khashzd@gmail.com"  # lowercased + stripped
     assert sub == "1234567890"
+
+
+def test_verify_id_token_accepts_stringified_email_verified():
+    """`verify_id_token` treats a "true" string `email_verified` as verified."""
+    from pulse_server.auth import google as g
+
+    payload = {"email": "x@example.com", "email_verified": "true", "sub": "1"}
+    with patch("pulse_server.auth.google.id_token.verify_oauth2_token", return_value=payload):
+        email, sub = g.verify_id_token("jwt-here")
+    assert email == "x@example.com"
+    assert sub == "1"
+
+
+def test_verify_id_token_rejects_unverified_email():
+    """`verify_id_token` raises when `email_verified` is false or absent."""
+    from pulse_server.auth import google as g
+
+    for payload in (
+        {"email": "x@example.com", "email_verified": False, "sub": "1"},
+        {"email": "x@example.com", "sub": "1"},  # claim absent
+    ):
+        with patch("pulse_server.auth.google.id_token.verify_oauth2_token", return_value=payload):
+            with pytest.raises(g.GoogleAuthError, match="not verified"):
+                g.verify_id_token("jwt-here")
 
 
 def test_verify_id_token_raises_on_invalid():

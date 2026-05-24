@@ -89,6 +89,21 @@ class Settings(BaseSettings):
         return {e.strip().lower() for e in self.allowed_emails.split(",") if e.strip()}
 
     @property
+    def github_users_allowlist(self) -> set[str]:
+        """Return the operator-configured GitHub usernames, without the synthetic login.
+
+        This is the raw ``ALLOWED_GITHUB_USERS`` parse used by the prod
+        fail-closed validator; it deliberately excludes the auto-injected
+        service-token login so an empty result means "operator set no human
+        allowlist."
+
+        **Outputs:**
+        - set[str]: Trimmed, lowercased entries parsed from
+          ``ALLOWED_GITHUB_USERS`` (empty when unset).
+        """
+        return {u.strip().lower() for u in self.allowed_github_users.split(",") if u.strip()}
+
+    @property
     def allowed_github_users_set(self) -> set[str]:
         """Return the allow-listed GitHub usernames for MCP OAuth as a lowercase set.
 
@@ -102,7 +117,7 @@ class Settings(BaseSettings):
           ``ALLOWED_GITHUB_USERS`` (empty when unset), plus the service-token
           synthetic login when ``mcp_service_token_enabled``.
         """
-        base = {u.strip().lower() for u in self.allowed_github_users.split(",") if u.strip()}
+        base = self.github_users_allowlist
         # Only auto-add when the operator already opted into gating; an empty
         # allowlist means open-mode and the middleware short-circuits anyway.
         if base and self.mcp_service_token_enabled:
@@ -181,6 +196,36 @@ class Settings(BaseSettings):
                 "MCP layer is unauthenticated: set GITHUB_CLIENT_ID/SECRET + PUBLIC_BASE_URL "
                 "to enable GitHub OAuth, set MCP_SERVICE_TOKEN for a static bearer, "
                 "or MCP_ALLOW_UNAUTH=true to opt in explicitly"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _require_github_allowlist_with_oauth(self) -> "Settings":
+        """Refuse to boot non-local deployments that enable GitHub OAuth with an empty allowlist.
+
+        ``GitHubAllowlistMiddleware`` runs in open-mode (passes every caller)
+        when the allowlist is empty, so GitHub OAuth without
+        ``ALLOWED_GITHUB_USERS`` lets any GitHub account invoke the
+        single-tenant MCP tools. ``/mcp`` is exempt from
+        ``SessionAuthMiddleware``, so the allowlist is the only owner check on
+        the OAuth path — it must be non-empty in production. Local/dev/test keep
+        open-mode for convenience; the service-token-only path is unaffected
+        because the static verifier already restricts callers to the token.
+
+        **Outputs:**
+        - Settings: This instance, unchanged, when validation passes.
+
+        **Exceptions:**
+        - ValueError: Raised when GitHub OAuth is enabled outside a local-style
+          environment but ``ALLOWED_GITHUB_USERS`` is empty.
+        """
+        if self.is_local_env:
+            return self
+        if self.mcp_oauth_enabled and not self.github_users_allowlist:
+            raise ValueError(
+                "GitHub OAuth is enabled but ALLOWED_GITHUB_USERS is empty: an empty "
+                "allowlist lets any GitHub account call the MCP tools. Set "
+                "ALLOWED_GITHUB_USERS to the permitted GitHub usernames."
             )
         return self
 

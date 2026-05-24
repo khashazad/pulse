@@ -128,8 +128,35 @@ def test_mcp_unauth_allowed_outside_local_with_explicit_optin(monkeypatch):
 
 
 def test_mcp_unauth_allowed_outside_local_with_github_oauth(monkeypatch):
-    """Configuring GitHub OAuth in prod enables MCP OAuth and clears the unauth gate."""
+    """Configuring GitHub OAuth (with an allowlist) in prod enables MCP OAuth and clears the unauth gate."""
     monkeypatch.setenv("APP_ENV", "prod")
+    monkeypatch.setenv("GITHUB_CLIENT_ID", "ghcid")
+    monkeypatch.setenv("GITHUB_CLIENT_SECRET", "ghsecret")
+    monkeypatch.setenv("PUBLIC_BASE_URL", "https://api.example.com")
+    monkeypatch.setenv("ALLOWED_GITHUB_USERS", "khashazad")
+    from pulse_server import config as cfg
+
+    cfg.get_settings.cache_clear()
+    s = cfg.get_settings()
+    assert s.mcp_oauth_enabled is True
+
+
+def test_github_oauth_without_allowlist_rejected_in_prod(monkeypatch):
+    """Prod GitHub OAuth with an empty ALLOWED_GITHUB_USERS fails closed at load time."""
+    monkeypatch.setenv("APP_ENV", "prod")
+    monkeypatch.setenv("GITHUB_CLIENT_ID", "ghcid")
+    monkeypatch.setenv("GITHUB_CLIENT_SECRET", "ghsecret")
+    monkeypatch.setenv("PUBLIC_BASE_URL", "https://api.example.com")
+    from pulse_server import config as cfg
+
+    cfg.get_settings.cache_clear()
+    with pytest.raises(ValueError, match="ALLOWED_GITHUB_USERS is empty"):
+        cfg.get_settings()
+
+
+def test_github_oauth_without_allowlist_allowed_in_local(monkeypatch):
+    """Local env keeps GitHub OAuth open-mode (empty allowlist) for dev convenience."""
+    monkeypatch.setenv("APP_ENV", "local")
     monkeypatch.setenv("GITHUB_CLIENT_ID", "ghcid")
     monkeypatch.setenv("GITHUB_CLIENT_SECRET", "ghsecret")
     monkeypatch.setenv("PUBLIC_BASE_URL", "https://api.example.com")
@@ -138,6 +165,7 @@ def test_mcp_unauth_allowed_outside_local_with_github_oauth(monkeypatch):
     cfg.get_settings.cache_clear()
     s = cfg.get_settings()
     assert s.mcp_oauth_enabled is True
+    assert s.github_users_allowlist == set()
 
 
 def test_mcp_unauth_allowed_in_local_without_github(monkeypatch):

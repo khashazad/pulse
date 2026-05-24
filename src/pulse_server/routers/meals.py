@@ -33,6 +33,10 @@ from pulse_server.models import (
     MealsListResponse,
 )
 from pulse_server.repositories.meals import MealsRepository
+from pulse_server.services.custom_foods_service import (
+    CrossTenantReferenceError,
+    assert_custom_foods_owned,
+)
 from pulse_server.services.meals_service import create_meal_with_items, log_meal
 from pulse_server.services.normalize import normalize_name
 from pydantic import BaseModel
@@ -291,7 +295,7 @@ async def add_meal_item(
     - MealItemResponse: The newly created item.
 
     **Exceptions:**
-    - HTTPException(422): Raised when food-pointer cardinality is wrong or USDA description is missing.
+    - HTTPException(422): Raised when food-pointer cardinality is wrong, USDA description is missing, or custom_food_id is not owned by the user.
     - HTTPException(404): Raised when the meal does not exist for this user.
     """
     user_key = request.state.user_key
@@ -313,6 +317,11 @@ async def add_meal_item(
         meal_row = await repo.get_meal(meal_id, user_key)
         if meal_row is None:
             raise HTTPException(status_code=404, detail="Meal not found")
+        if has_custom:
+            try:
+                await assert_custom_foods_owned(session, user_key, [body.custom_food_id])
+            except CrossTenantReferenceError as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
         position = await repo.next_position(meal_id)
         row = await repo.add_meal_item(
             meal_id=meal_id,

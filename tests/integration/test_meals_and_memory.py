@@ -334,6 +334,140 @@ async def test_delete_custom_food_blocked_when_referenced(session: AsyncSession)
 
 
 @pytest.mark.asyncio
+async def test_entries_reject_unowned_custom_food_id(session: AsyncSession) -> None:
+    """``create_entries_with_side_effects`` refuses a ``custom_food_id`` owned by another user."""
+    from fastapi import HTTPException
+
+    from pulse_server.models import FoodEntryCreate
+    from pulse_server.services.custom_foods_service import CrossTenantReferenceError
+    from pulse_server.services.entries_service import create_entries_with_side_effects
+
+    owner = f"user-{uuid.uuid4()}"
+    attacker = f"user-{uuid.uuid4()}"
+    now = DateTimeValue.now(tz=TimezoneValue.utc)
+
+    async with transaction(session):
+        cf = await CustomFoodsRepository(session).create(
+            user_key=owner,
+            name="Owner CF",
+            normalized_name="owner cf",
+            basis="per_serving",
+            serving_size=1,
+            serving_size_unit="unit",
+            calories=100,
+            protein_g=5,
+            carbs_g=10,
+            fat_g=2,
+            source="manual",
+            notes=None,
+            now=now,
+        )
+
+    item = FoodEntryCreate(
+        display_name="stolen",
+        quantity_text="1",
+        custom_food_id=cf["id"],
+        calories=100,
+        protein_g=5,
+        carbs_g=10,
+        fat_g=2,
+    )
+    with pytest.raises((CrossTenantReferenceError, HTTPException)):
+        await create_entries_with_side_effects(
+            session=session, user_key=attacker, items=[item], now=now
+        )
+
+
+@pytest.mark.asyncio
+async def test_entries_allow_owned_custom_food_id(session: AsyncSession) -> None:
+    """The owner can log an entry that references their own custom food."""
+    from pulse_server.models import FoodEntryCreate
+    from pulse_server.services.entries_service import create_entries_with_side_effects
+
+    owner = f"user-{uuid.uuid4()}"
+    now = DateTimeValue.now(tz=TimezoneValue.utc)
+
+    async with transaction(session):
+        cf = await CustomFoodsRepository(session).create(
+            user_key=owner,
+            name="Owner CF",
+            normalized_name="owner cf",
+            basis="per_serving",
+            serving_size=1,
+            serving_size_unit="unit",
+            calories=100,
+            protein_g=5,
+            carbs_g=10,
+            fat_g=2,
+            source="manual",
+            notes=None,
+            now=now,
+        )
+
+    item = FoodEntryCreate(
+        display_name="mine",
+        quantity_text="1",
+        custom_food_id=cf["id"],
+        calories=100,
+        protein_g=5,
+        carbs_g=10,
+        fat_g=2,
+    )
+    created_rows, _ = await create_entries_with_side_effects(
+        session=session, user_key=owner, items=[item], now=now
+    )
+    assert created_rows[0]["custom_food_id"] == cf["id"]
+
+
+@pytest.mark.asyncio
+async def test_meal_create_rejects_unowned_custom_food_id(session: AsyncSession) -> None:
+    """``create_meal_with_items`` rejects an item referencing another user's custom food (422)."""
+    from fastapi import HTTPException
+
+    owner = f"user-{uuid.uuid4()}"
+    attacker = f"user-{uuid.uuid4()}"
+    now = DateTimeValue.now(tz=TimezoneValue.utc)
+
+    async with transaction(session):
+        cf = await CustomFoodsRepository(session).create(
+            user_key=owner,
+            name="Owner CF",
+            normalized_name="owner cf",
+            basis="per_serving",
+            serving_size=1,
+            serving_size_unit="unit",
+            calories=100,
+            protein_g=5,
+            carbs_g=10,
+            fat_g=2,
+            source="manual",
+            notes=None,
+            now=now,
+        )
+
+    payload = MealCreate(
+        name="Stolen Meal",
+        items=[
+            MealItemCreate(
+                display_name="stolen item",
+                quantity_text="1",
+                custom_food_id=cf["id"],
+                calories=100,
+                protein_g=5,
+                carbs_g=10,
+                fat_g=2,
+            )
+        ],
+    )
+    with pytest.raises(HTTPException) as exc_info:
+        async with transaction(session):
+            await create_meal_with_items(
+                session=session, user_key=attacker, payload=payload, now=now
+            )
+    assert exc_info.value.status_code == 422
+
+
+@pytest.mark.asyncio
 async def test_meal_unique_name_per_user(session: AsyncSession) -> None:
     """``create_meal_with_items`` enforces unique normalized meal names per user."""
     user_key = f"user-{uuid.uuid4()}"

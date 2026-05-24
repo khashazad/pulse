@@ -123,3 +123,33 @@ def test_meal_summary_aliases_defaults_to_empty_list() -> None:
         item_count=0,
     )
     assert summary.aliases == []
+
+
+def test_custom_food_update_omitted_fields_are_noop() -> None:
+    """Omitting a field leaves it out of `model_dump(exclude_unset=True)`."""
+    from pulse_server.models import CustomFoodUpdate
+
+    patch = CustomFoodUpdate(notes="from a photo")
+    dumped = patch.model_dump(exclude_unset=True)
+    assert dumped == {"notes": "from a photo"}
+
+
+def test_custom_food_update_allows_null_for_nullable_fields() -> None:
+    """Explicit null is allowed for the nullable columns (serving_size, notes, unit)."""
+    from pulse_server.models import CustomFoodUpdate
+
+    patch = CustomFoodUpdate(serving_size=None, serving_size_unit=None, notes=None)
+    dumped = patch.model_dump(exclude_unset=True)
+    assert dumped == {"serving_size": None, "serving_size_unit": None, "notes": None}
+
+
+@pytest.mark.parametrize(
+    "field",
+    ["name", "basis", "calories", "protein_g", "carbs_g", "fat_g", "source"],
+)
+def test_custom_food_update_rejects_null_for_non_nullable_fields(field: str) -> None:
+    """Explicitly setting a NOT NULL column to null is rejected at the model layer."""
+    from pulse_server.models import CustomFoodUpdate
+
+    with pytest.raises(Exception, match="cannot be null"):
+        CustomFoodUpdate(**{field: None})
