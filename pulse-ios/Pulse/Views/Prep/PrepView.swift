@@ -71,7 +71,13 @@ struct PrepView: View {
                     }
 
                     section(header: "Portions") {
-                        Stepper(value: $model.portions, in: 1...50) {
+                        // Legacy bridge: Stepper writes portionsOverride; portions reads it back.
+                        // TODO(Task 2): replace with multi-container portions UI.
+                        let portionsBinding = Binding<Int>(
+                            get: { model.portions },
+                            set: { model.portionsOverride = $0 }
+                        )
+                        Stepper(value: portionsBinding, in: 1...50) {
                             Text("\(model.portions)")
                                 .font(.system(size: 14, weight: .medium))
                                 .monospacedDigit()

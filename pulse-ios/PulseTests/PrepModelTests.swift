@@ -1,22 +1,22 @@
-/// Unit tests for `PrepModel`, the view model behind the meal-prep screen.
-/// Verifies net-weight math (`total - tare`) and per-portion division,
-/// negative-net clamping, nil propagation when total weight is missing,
-/// the minimum-portions=1 contract, and that clearing the selected
-/// container zeroes the tare (regression for the deleted-container drift).
+/// Unit tests for `PrepModel`, the calculator behind the multi-container meal-prep screen.
+/// Verifies container-count math (list + multiplier), the decoupled portions divisor,
+/// summed weigh-in net with per-row negative clamping, even per-container split, target
+/// scale readings (uniform + mixed tare), nil propagation, and container reconcile.
 /// Part of the iOS app's view-model test suite.
 import XCTest
 @testable import Pulse
 
 final class PrepModelTests: XCTestCase {
 
-    /// Builds a `Container` fixture with the requested tare weight.
+    /// Builds a `Container` fixture with the requested tare weight and id.
     /// Inputs:
     ///   - tare: tare weight in grams.
     ///   - name: display name, defaulting to "X".
-    /// Outputs: a fully formed `Container` suitable for `PrepModel` selection.
-    private func mkContainer(tare: Double, name: String = "X") -> Container {
+    ///   - id: container id, defaulting to a fresh UUID.
+    /// Outputs: a fully formed `Container` for model setup.
+    private func mkContainer(tare: Double, name: String = "X", id: UUID = UUID()) -> Container {
         Container(
-            id: UUID(),
+            id: id,
             userKey: "khash",
             name: name,
             normalizedName: name.lowercased(),
@@ -27,75 +27,145 @@ final class PrepModelTests: XCTestCase {
         )
     }
 
-    /// Verifies net = total - tare with portions=1 makes net == perPortion.
-    func testNetEqualsTotalMinusTare() {
-        let m = PrepModel()
-        m.selectedContainer = mkContainer(tare: 412)
-        m.totalGrams = 1450
-        m.portions = 1
-        XCTAssertEqual(m.netGrams ?? 0, 1038, accuracy: 0.001)
-        XCTAssertEqual(m.perPortionGrams ?? 0, 1038, accuracy: 0.001)
+    /// Convenience: build a target entry.
+    private func target(_ c: Container, _ count: Int) -> PrepModel.TargetEntry {
+        .init(container: c, count: count)
     }
 
-    /// Verifies perPortion = net / portions for portions > 1.
-    func testPortionsDivision() {
-        let m = PrepModel()
-        m.selectedContainer = mkContainer(tare: 412)
-        m.totalGrams = 1450
-        m.portions = 5
-        XCTAssertEqual(m.netGrams ?? 0, 1038, accuracy: 0.001)
-        XCTAssertEqual(m.perPortionGrams ?? 0, 207.6, accuracy: 0.001)
+    /// Convenience: build a weigh-in.
+    private func weighIn(_ c: Container, _ gross: Double?) -> PrepModel.WeighIn {
+        .init(container: c, grossGrams: gross)
     }
 
-    /// Verifies a tare greater than the total clamps net (and per-portion)
-    /// to zero instead of going negative.
-    func testNegativeNetClampsToZero() {
+    /// containerCount comes from a single entry's multiplier.
+    func testContainerCountFromMultiplier() {
         let m = PrepModel()
-        m.selectedContainer = mkContainer(tare: 1000)
-        m.totalGrams = 500
-        m.portions = 2
-        XCTAssertEqual(m.netGrams, 0)
-        XCTAssertEqual(m.perPortionGrams, 0)
+        m.targets = [target(mkContainer(tare: 100), 5)]
+        XCTAssertEqual(m.containerCount, 5)
     }
 
-    /// Verifies a nil total propagates nil net and perPortion (no defaulting).
-    func testNoTotalReturnsNil() {
+    /// containerCount sums across multiple entries.
+    func testContainerCountSumsEntries() {
         let m = PrepModel()
-        m.selectedContainer = mkContainer(tare: 412)
-        m.totalGrams = nil
-        XCTAssertNil(m.netGrams)
+        m.targets = [target(mkContainer(tare: 80), 2), target(mkContainer(tare: 412), 3)]
+        XCTAssertEqual(m.containerCount, 5)
+    }
+
+    /// portions defaults to containerCount when no override is set.
+    func testPortionsDefaultsToContainerCount() {
+        let m = PrepModel()
+        m.targets = [target(mkContainer(tare: 100), 5)]
+        XCTAssertEqual(m.portions, 5)
+    }
+
+    /// portionsOverride decouples portions from containerCount.
+    func testPortionsOverrideDecouples() {
+        let m = PrepModel()
+        m.targets = [target(mkContainer(tare: 100), 5)]
+        m.portionsOverride = 10
+        XCTAssertEqual(m.portions, 10)
+        XCTAssertEqual(m.containerCount, 5)
+    }
+
+    /// portions is at least 1 even with no targets and no override (no divide-by-zero).
+    func testPortionsAtLeastOneWhenEmpty() {
+        let m = PrepModel()
+        XCTAssertEqual(m.portions, 1)
+    }
+
+    /// totalNet is the sum of (gross - tare) across weigh-ins.
+    func testTotalNetSumsWeighIns() {
+        let m = PrepModel()
+        let c = mkContainer(tare: 80)
+        m.weighIns = [weighIn(c, 500), weighIn(c, 600)]
+        XCTAssertEqual(m.totalNetGrams ?? -1, 940, accuracy: 0.001) // 420 + 520
+    }
+
+    /// totalNet, perPortion, and perContainerNet are nil until a gross is entered.
+    func testNilUntilGrossEntered() {
+        let m = PrepModel()
+        m.targets = [target(mkContainer(tare: 100), 3)]
+        m.weighIns = [weighIn(mkContainer(tare: 80), nil)]
+        XCTAssertNil(m.totalNetGrams)
         XCTAssertNil(m.perPortionGrams)
+        XCTAssertNil(m.perContainerNetGrams)
     }
 
-    /// Verifies portions = 0 is treated as 1 for the per-portion division.
-    func testPortionsAtLeastOne() {
+    /// A weigh-in whose tare exceeds its gross contributes 0, not a negative.
+    func testNegativeNetClampsPerRow() {
         let m = PrepModel()
-        m.selectedContainer = mkContainer(tare: 100)
-        m.totalGrams = 300
-        m.portions = 0
-        XCTAssertEqual(m.perPortionGrams, 200)
+        m.weighIns = [weighIn(mkContainer(tare: 1000), 500)]
+        XCTAssertEqual(m.totalNetGrams, 0)
     }
 
-    /// Verifies that with no container selected, tare is treated as 0 and
-    /// net equals total.
-    func testNoSelectionMeansZeroTare() {
-        // Regression for the deleted-container drift: with no selection,
-        // tare is 0, so net == total. Previously a stale tareWeightG could
-        // remain even after the selection was cleared.
+    /// perContainerNet is an even split of total net across containerCount.
+    func testPerContainerNetEvenSplit() {
         let m = PrepModel()
-        m.selectedContainer = nil
-        m.totalGrams = 500
-        XCTAssertEqual(m.netGrams, 500)
+        let c = mkContainer(tare: 100)
+        m.targets = [target(c, 5)]
+        m.weighIns = [weighIn(c, 1100)] // net 1000
+        XCTAssertEqual(m.perContainerNetGrams ?? -1, 200, accuracy: 0.001)
     }
 
-    /// Verifies that clearing the selected container after a non-zero tare
-    /// was applied resets the tare back to 0 (regression test).
-    func testClearingSelectionAlsoZeroesTare() {
+    /// perContainerNet is nil when there are no targets.
+    func testPerContainerNetNilWhenNoTargets() {
         let m = PrepModel()
-        m.selectedContainer = mkContainer(tare: 412)
-        m.totalGrams = 1000
-        XCTAssertEqual(m.netGrams, 588)
-        m.selectedContainer = nil
-        XCTAssertEqual(m.netGrams, 1000, "tare must drop to 0 when selection clears")
+        m.weighIns = [weighIn(mkContainer(tare: 100), 1100)]
+        XCTAssertNil(m.perContainerNetGrams)
+    }
+
+    /// Uniform-tare targets: targetGross = perContainerNet + tare; flag is true.
+    func testTargetGrossUniform() {
+        let m = PrepModel()
+        let c = mkContainer(tare: 100)
+        m.targets = [target(c, 5)]
+        m.weighIns = [weighIn(c, 1100)] // net 1000, perContainer 200
+        XCTAssertTrue(m.targetTaresAreUniform)
+        XCTAssertEqual(m.targetGross(for: m.targets[0]) ?? -1, 300, accuracy: 0.001)
+    }
+
+    /// Mixed-tare targets: per-entry targetGross differs; flag is false.
+    func testTargetGrossMixedTares() {
+        let m = PrepModel()
+        let small = mkContainer(tare: 80, name: "Small")
+        let pyrex = mkContainer(tare: 412, name: "Pyrex")
+        m.targets = [target(small, 2), target(pyrex, 1)] // containerCount 3
+        m.weighIns = [weighIn(small, 1079)] // net 999, perContainer 333
+        XCTAssertFalse(m.targetTaresAreUniform)
+        XCTAssertEqual(m.targetGross(for: m.targets[0]) ?? -1, 413, accuracy: 0.001)
+        XCTAssertEqual(m.targetGross(for: m.targets[1]) ?? -1, 745, accuracy: 0.001)
+    }
+
+    /// reconcile refreshes a target's container snapshot (e.g. tare edited).
+    func testReconcileRefreshesTare() {
+        let id = UUID()
+        let m = PrepModel()
+        m.targets = [target(mkContainer(tare: 100, id: id), 2)]
+        let updated = mkContainer(tare: 150, id: id)
+        m.reconcile(with: [updated])
+        XCTAssertEqual(m.targets.first?.container.tareWeightG, 150)
+    }
+
+    /// reconcile drops entries whose container was deleted.
+    func testReconcileDropsDeleted() {
+        let gone = mkContainer(tare: 100)
+        let m = PrepModel()
+        m.targets = [target(gone, 2)]
+        m.weighIns = [weighIn(gone, 500)]
+        m.reconcile(with: []) // container no longer exists
+        XCTAssertTrue(m.targets.isEmpty)
+        XCTAssertTrue(m.weighIns.isEmpty)
+    }
+
+    /// Parity with the old single-container flow: one target ×1, one weigh-in.
+    func testParitySingleContainerSingleWeighIn() {
+        let m = PrepModel()
+        let c = mkContainer(tare: 412)
+        m.targets = [target(c, 1)]
+        m.weighIns = [weighIn(c, 1450)]
+        XCTAssertEqual(m.totalNetGrams ?? -1, 1038, accuracy: 0.001)
+        XCTAssertEqual(m.perContainerNetGrams ?? -1, 1038, accuracy: 0.001)
+        XCTAssertEqual(m.portions, 1)
+        XCTAssertEqual(m.perPortionGrams ?? -1, 1038, accuracy: 0.001)
     }
 }
