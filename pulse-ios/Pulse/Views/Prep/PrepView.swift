@@ -8,18 +8,6 @@
 /// container-manager sheet, and persists in-progress state to `UserDefaults`.
 import SwiftUI
 
-/// Persisted shape of a target entry (container id + count) in `UserDefaults`.
-private struct PersistedPrepTarget: Codable {
-    let containerId: String
-    let count: Int
-}
-
-/// Persisted shape of a weigh-in (container id + optional gross) in `UserDefaults`.
-private struct PersistedPrepWeighIn: Codable {
-    let containerId: String
-    let grossGrams: Double?
-}
-
 /// Top-level screen for portioning one cooked batch across multiple containers.
 struct PrepView: View {
     @Environment(AuthSession.self) private var auth
@@ -28,6 +16,7 @@ struct PrepView: View {
     @State private var pickerMode: PickerMode?
     @State private var showManager = false
     @State private var hydrated = false
+    private let store = PrepStatePersistence()
 
     /// Identifies which selection the container picker is fulfilling.
     private enum PickerMode: Identifiable {
@@ -240,7 +229,7 @@ struct PrepView: View {
     private var fillTargetRows: some View {
         if model.containerCount > 0, model.perContainerNetGrams != nil {
             if model.targetTaresAreUniform, let entry = model.targets.first {
-                resultRow("Fill each container to", value: model.targetGross(for: entry))
+                resultRow("Fill each container to", value: model.targetGross(for: entry)) // Safe: targetTaresAreUniform guarantees every entry shares a tare, so any works.
             } else {
                 ForEach(model.targets) { entry in
                     resultRow("Fill \(entry.container.name) to", value: model.targetGross(for: entry))
@@ -267,11 +256,11 @@ struct PrepView: View {
             }
         case .addWeighIn:
             model.weighIns.append(.init(container: c))
-            rememberLastWeighIn(c)
+            store.rememberLastWeighIn(c)
         case .changeWeighIn(let id):
             if let idx = model.weighIns.firstIndex(where: { $0.id == id }) {
                 model.weighIns[idx].container = c
-                rememberLastWeighIn(c)
+                store.rememberLastWeighIn(c)
             }
         }
     }
@@ -282,7 +271,7 @@ struct PrepView: View {
     private func addWeighIn() {
         let distinct = Set(model.targets.map { $0.container.id })
         if distinct.count == 1, let c = model.targets.first?.container {
-            model.weighIns.append(.init(container: c))
+            model.weighIns.append(.init(container: c)) // The sole target is the obvious default; intentionally skip updating last-used here.
             return
         }
         if let last = lastWeighInContainer() {
@@ -314,56 +303,22 @@ struct PrepView: View {
         guard !hydrated else { return }
         hydrated = true
         guard case .loaded(let list) = listModel?.state ?? .idle else { return }
-        let d = UserDefaults.standard
-        if let data = d.data(forKey: "prep.targets"),
-           let saved = try? JSONDecoder().decode([PersistedPrepTarget].self, from: data) {
-            model.targets = saved.compactMap { s in
-                guard let uid = UUID(uuidString: s.containerId),
-                      let c = list.first(where: { $0.id == uid }) else { return nil }
-                return PrepModel.TargetEntry(container: c, count: max(1, s.count))
-            }
-        }
-        if let data = d.data(forKey: "prep.weighIns"),
-           let saved = try? JSONDecoder().decode([PersistedPrepWeighIn].self, from: data) {
-            model.weighIns = saved.compactMap { s in
-                guard let uid = UUID(uuidString: s.containerId),
-                      let c = list.first(where: { $0.id == uid }) else { return nil }
-                return PrepModel.WeighIn(container: c, grossGrams: s.grossGrams)
-            }
-        }
-        if d.object(forKey: "prep.portionsOverride") != nil {
-            model.portionsOverride = d.integer(forKey: "prep.portionsOverride")
-        }
+        let loaded = store.load(matching: list)
+        model.targets = loaded.targets
+        model.weighIns = loaded.weighIns
+        model.portionsOverride = loaded.portionsOverride
     }
 
     /// Writes the current targets/weigh-ins/portions to `UserDefaults`.
     private func persist() {
-        let d = UserDefaults.standard
-        let t = model.targets.map { PersistedPrepTarget(containerId: $0.container.id.uuidString, count: $0.count) }
-        let w = model.weighIns.map { PersistedPrepWeighIn(containerId: $0.container.id.uuidString, grossGrams: $0.grossGrams) }
-        if let td = try? JSONEncoder().encode(t) { d.set(td, forKey: "prep.targets") }
-        if let wd = try? JSONEncoder().encode(w) { d.set(wd, forKey: "prep.weighIns") }
-        if let p = model.portionsOverride {
-            d.set(p, forKey: "prep.portionsOverride")
-        } else {
-            d.removeObject(forKey: "prep.portionsOverride")
-        }
-    }
-
-    /// Stores the given container as the last-used weigh-in default.
-    /// Inputs:
-    ///   - c: the container to remember.
-    private func rememberLastWeighIn(_ c: Container) {
-        UserDefaults.standard.set(c.id.uuidString, forKey: "prep.lastWeighInContainerId")
+        store.save(targets: model.targets, weighIns: model.weighIns, portionsOverride: model.portionsOverride)
     }
 
     /// Resolves the last-used weigh-in container from the loaded list, if any.
     /// Outputs: the matching `Container`, or nil when unset/not loaded/deleted.
     private func lastWeighInContainer() -> Container? {
-        guard let raw = UserDefaults.standard.string(forKey: "prep.lastWeighInContainerId"),
-              let id = UUID(uuidString: raw),
-              case .loaded(let list) = listModel?.state ?? .idle else { return nil }
-        return list.first(where: { $0.id == id })
+        guard case .loaded(let list) = listModel?.state ?? .idle else { return nil }
+        return store.lastWeighInContainer(in: list)
     }
 
     /// Refreshes container snapshots and drops deleted ones using the loaded list.
