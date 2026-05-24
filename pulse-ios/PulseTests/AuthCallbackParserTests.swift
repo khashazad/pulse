@@ -1,21 +1,19 @@
 /// Unit tests for `AuthCallbackParser`.
-/// Verifies the parser extracts token/email from a successful OAuth callback
-/// URL and maps each documented `error=` value to the matching `signInFailed`
-/// reason, including the catch-all `invalid_callback` case when required
-/// parameters are missing.
+/// Verifies the parser extracts the one-time exchange `code` from a successful
+/// OAuth callback URL and maps each documented `error=` value to the matching
+/// `signInFailed` reason, including the catch-all `invalid_callback` case when
+/// the code is missing.
 /// Part of the iOS app's auth-layer test suite.
 import XCTest
 @testable import Pulse
 
 final class AuthCallbackParserTests: XCTestCase {
-    /// Verifies a callback with both token and email query items decodes into
-    /// credentials whose fields are URL-decoded correctly.
-    func testParsesTokenAndEmail() {
-        let url = URL(string: "diettracker://auth?token=abc123&email=khashzd%40gmail.com")!
+    /// Verifies a callback with a `code` query item decodes into that code.
+    func testParsesCode() {
+        let url = URL(string: "diettracker://auth?code=one-time-abc123")!
         switch AuthCallbackParser.parse(url) {
-        case .success(let creds):
-            XCTAssertEqual(creds.token, "abc123")
-            XCTAssertEqual(creds.email, "khashzd@gmail.com")
+        case .success(let code):
+            XCTAssertEqual(code, "one-time-abc123")
         case .failure(let e):
             XCTFail("Expected success, got \(e)")
         }
@@ -46,6 +44,14 @@ final class AuthCallbackParserTests: XCTestCase {
         } else { XCTFail() }
     }
 
+    /// Verifies `error=invalid_request` (missing PKCE) parses into a failure reason.
+    func testInvalidRequestError() {
+        let url = URL(string: "diettracker://auth?error=invalid_request")!
+        if case .failure(let e) = AuthCallbackParser.parse(url) {
+            XCTAssertEqual(e, .signInFailed(reason: "invalid_request"))
+        } else { XCTFail() }
+    }
+
     /// Verifies `error=server_error` parses into the matching failure reason.
     func testServerError() {
         let url = URL(string: "diettracker://auth?error=server_error")!
@@ -54,17 +60,17 @@ final class AuthCallbackParserTests: XCTestCase {
         } else { XCTFail() }
     }
 
-    /// Verifies a callback missing the token query item maps to `invalid_callback`.
-    func testMissingTokenIsInvalidCallback() {
-        let url = URL(string: "diettracker://auth?email=foo%40bar.com")!
+    /// Verifies a callback missing the `code` query item maps to `invalid_callback`.
+    func testMissingCodeIsInvalidCallback() {
+        let url = URL(string: "diettracker://auth?foo=bar")!
         if case .failure(let e) = AuthCallbackParser.parse(url) {
             XCTAssertEqual(e, .signInFailed(reason: "invalid_callback"))
         } else { XCTFail() }
     }
 
-    /// Verifies a callback missing the email query item maps to `invalid_callback`.
-    func testMissingEmailIsInvalidCallback() {
-        let url = URL(string: "diettracker://auth?token=abc")!
+    /// Verifies an empty `code` query item maps to `invalid_callback`.
+    func testEmptyCodeIsInvalidCallback() {
+        let url = URL(string: "diettracker://auth?code=")!
         if case .failure(let e) = AuthCallbackParser.parse(url) {
             XCTAssertEqual(e, .signInFailed(reason: "invalid_callback"))
         } else { XCTFail() }

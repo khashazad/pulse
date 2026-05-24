@@ -36,9 +36,11 @@ enum Constants {
     }
 
     /// Configuration for the Google OAuth round-trip: the custom URL scheme the
-    /// backend redirects back to and the server-side start path.
+    /// backend redirects back to, the server-side start path, and the PKCE
+    /// token-exchange endpoint the app redeems the one-time code against.
     enum Auth {
         static let callbackScheme = "diettracker"
         static let startPath = "/auth/google/start"
+        static let exchangePath = "/auth/google/exchange"
     }
 }

@@ -75,20 +75,85 @@ final class AuthSession {
         )
     }
 
-    /// Parses an OAuth callback URL and either persists the new session or surfaces an error.
+    /// Completes sign-in from an OAuth callback URL.
+    /// Parses the one-time exchange code, redeems it (with the PKCE verifier)
+    /// for a bearer session over TLS, and persists the session — or surfaces an
+    /// error. The token is never read from the callback URL itself.
     /// Inputs:
     ///   - url: callback URL delivered by ASWebAuthenticationSession.
-    func handleSignInCallback(url: URL) {
+    ///   - codeVerifier: the PKCE verifier generated when this sign-in started.
+    func completeSignIn(url: URL, codeVerifier: String) async {
         switch AuthCallbackParser.parse(url) {
-        case .success(let creds):
-            let stored = StoredSession(token: creds.token, email: creds.email)
-            if writeStored(stored) {
-                state = .signedIn(email: creds.email)
-            } else {
-                state = .error(.signInFailed(reason: "keychain_write_failed"))
-            }
         case .failure(let err):
             state = .error(err)
+        case .success(let code):
+            do {
+                let creds = try await exchangeCodeForSession(code: code, codeVerifier: codeVerifier)
+                let stored = StoredSession(token: creds.token, email: creds.email)
+                if writeStored(stored) {
+                    state = .signedIn(email: creds.email)
+                } else {
+                    state = .error(.signInFailed(reason: "keychain_write_failed"))
+                }
+            } catch let err as PulseError {
+                state = .error(err)
+            } catch {
+                state = .error(.signInFailed(reason: "exchange_failed"))
+            }
+        }
+    }
+
+    /// Redeems a one-time exchange code at `/auth/google/exchange` for a session.
+    /// Inputs:
+    ///   - code: the one-time code delivered via the OAuth callback URL.
+    ///   - codeVerifier: the PKCE verifier proving this app initiated the flow.
+    /// Outputs: the issued bearer `token` and the authenticated `email`.
+    /// Exceptions: `PulseError.network` on transport failure;
+    /// `PulseError.signInFailed(reason: "exchange_rejected")` on a 4xx
+    /// rejection (bad/expired code or verifier); `PulseError.server` on other
+    /// non-2xx; `PulseError.decoding` is surfaced as a thrown decode error.
+    private func exchangeCodeForSession(
+        code: String,
+        codeVerifier: String
+    ) async throws -> (token: String, email: String) {
+        let url = baseURL.appendingPathComponent(Constants.Auth.exchangePath)
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue("application/json", forHTTPHeaderField: "Accept")
+        req.httpBody = try JSONSerialization.data(
+            withJSONObject: ["code": code, "code_verifier": codeVerifier]
+        )
+
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await urlSession.data(for: req)
+        } catch let urlError as URLError {
+            throw PulseError.network(urlError)
+        }
+        guard let http = response as? HTTPURLResponse else {
+            throw PulseError.server(status: -1)
+        }
+        switch http.statusCode {
+        case 200..<300: break
+        case 400, 401, 403: throw PulseError.signInFailed(reason: "exchange_rejected")
+        default: throw PulseError.server(status: http.statusCode)
+        }
+        return try Self.decodeExchange(data)
+    }
+
+    /// Decodes a successful `/auth/google/exchange` response body.
+    /// Inputs:
+    ///   - data: response body bytes.
+    /// Outputs: the issued `token` and `email`.
+    /// Exceptions: `PulseError.decoding` when the body cannot be decoded.
+    private static func decodeExchange(_ data: Data) throws -> (token: String, email: String) {
+        do {
+            let decoded = try JSONDecoder().decode(ExchangeResponse.self, from: data)
+            return (decoded.token, decoded.email)
+        } catch {
+            throw PulseError.decoding(String(describing: error))
         }
     }
 
@@ -156,10 +221,32 @@ final class AuthSession {
         baseURL.appendingPathComponent(Constants.Auth.startPath)
     }
 
+    /// Builds the sign-in entry URL carrying the PKCE challenge query params.
+    /// Inputs:
+    ///   - codeChallenge: the S256 challenge for this sign-in attempt.
+    /// Outputs: the start URL with `code_challenge`/`code_challenge_method`, or
+    /// nil if URL composition fails.
+    func signInURL(codeChallenge: String) -> URL? {
+        guard var comps = URLComponents(url: startSignInURL(), resolvingAgainstBaseURL: false) else {
+            return nil
+        }
+        comps.queryItems = [
+            URLQueryItem(name: "code_challenge", value: codeChallenge),
+            URLQueryItem(name: "code_challenge_method", value: "S256"),
+        ]
+        return comps.url
+    }
+
     // MARK: - storage
 
     /// Codable record persisted in Keychain to remember the active session.
     private struct StoredSession: Codable {
+        let token: String
+        let email: String
+    }
+
+    /// Decoded body of a successful `/auth/google/exchange` response.
+    private struct ExchangeResponse: Decodable {
         let token: String
         let email: String
     }
@@ -210,14 +297,19 @@ extension AuthSession {
     ///   - presentationAnchor: window scene used to host the web-auth UI.
     func signInWithGoogle(presentationAnchor: ASPresentationAnchor) async {
         state = .signingIn
-        let url = startSignInURL()
+        let codeVerifier = PKCE.generateCodeVerifier()
+        let codeChallenge = PKCE.challenge(for: codeVerifier)
+        guard let url = signInURL(codeChallenge: codeChallenge) else {
+            state = .error(.signInFailed(reason: "invalid_start_url"))
+            return
+        }
         do {
             let callback = try await startWebAuth(
                 url: url,
                 callbackScheme: Constants.Auth.callbackScheme,
                 presentationAnchor: presentationAnchor
             )
-            handleSignInCallback(url: callback)
+            await completeSignIn(url: callback, codeVerifier: codeVerifier)
         } catch let asError as ASWebAuthenticationSessionError where asError.code == .canceledLogin {
             state = .signedOut
         } catch let asError as ASWebAuthenticationSessionError {

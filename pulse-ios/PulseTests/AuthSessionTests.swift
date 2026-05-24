@@ -76,17 +76,27 @@ final class AuthSessionTests: XCTestCase {
 }
 
 extension AuthSessionTests {
-    /// Verifies a successful sign-in callback URL transitions the session to
-    /// signed-in and persists the credentials so a fresh `AuthSession`
-    /// instance reading the same keychain slot also comes up signed-in.
-    func testHandleCallbackSuccessSignsInAndPersists() {
+    /// Verifies a successful callback `code` is redeemed at the exchange endpoint
+    /// and the returned session is persisted so a fresh `AuthSession` reading the
+    /// same keychain slot also comes up signed-in.
+    func testCompleteSignInRedeemsCodeAndPersists() async {
         clearStoredSession()
+        let session = makeStubSession { req in
+            XCTAssertTrue(req.url?.path.hasSuffix("/auth/google/exchange") == true)
+            let body = #"{"token":"sess-tok","email":"khashzd@gmail.com","expires_at":"2026-08-07T12:00:00Z"}"#
+            let resp = HTTPURLResponse(url: req.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            return (resp, body.data(using: .utf8)!)
+        }
         let auth = AuthSession(
             baseURL: URL(string: "https://example.test")!,
             keychainService: testService,
-            keychainAccount: testAccount
+            keychainAccount: testAccount,
+            urlSession: session
         )
-        auth.handleSignInCallback(url: URL(string: "diettracker://auth?token=t1&email=khashzd%40gmail.com")!)
+        await auth.completeSignIn(
+            url: URL(string: "diettracker://auth?code=one-time")!,
+            codeVerifier: "verifier-value"
+        )
         XCTAssertTrue(auth.isSignedIn)
         XCTAssertEqual(auth.email, "khashzd@gmail.com")
         // Persisted across a fresh AuthSession?
@@ -100,21 +110,77 @@ extension AuthSessionTests {
     }
 
     /// Verifies an `error=` callback URL moves the session into the `.error`
-    /// state with the right reason and leaves the user signed out.
-    func testHandleCallbackErrorTransitionsToError() {
+    /// state with the right reason, leaves the user signed out, and never calls
+    /// the exchange endpoint.
+    func testCompleteSignInErrorTransitionsToError() async {
         clearStoredSession()
+        var hit = false
+        let session = makeStubSession { req in
+            hit = true
+            let resp = HTTPURLResponse(url: req.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            return (resp, Data())
+        }
         let auth = AuthSession(
             baseURL: URL(string: "https://example.test")!,
             keychainService: testService,
-            keychainAccount: testAccount
+            keychainAccount: testAccount,
+            urlSession: session
         )
-        auth.handleSignInCallback(url: URL(string: "diettracker://auth?error=not_allowed")!)
+        await auth.completeSignIn(
+            url: URL(string: "diettracker://auth?error=not_allowed")!,
+            codeVerifier: "verifier-value"
+        )
         if case .error(let e) = auth.state {
             XCTAssertEqual(e, .signInFailed(reason: "not_allowed"))
         } else {
             XCTFail("Expected .error state, got \(auth.state)")
         }
         XCTAssertFalse(auth.isSignedIn)
+        XCTAssertFalse(hit)
+    }
+
+    /// Verifies a 400 from the exchange endpoint (bad/expired code or verifier)
+    /// surfaces an error and leaves the user signed out.
+    func testCompleteSignInExchangeRejectionSurfacesError() async {
+        clearStoredSession()
+        let session = makeStubSession { req in
+            let resp = HTTPURLResponse(url: req.url!, statusCode: 400, httpVersion: nil, headerFields: nil)!
+            return (resp, Data())
+        }
+        let auth = AuthSession(
+            baseURL: URL(string: "https://example.test")!,
+            keychainService: testService,
+            keychainAccount: testAccount,
+            urlSession: session
+        )
+        await auth.completeSignIn(
+            url: URL(string: "diettracker://auth?code=one-time")!,
+            codeVerifier: "verifier-value"
+        )
+        if case .error(let e) = auth.state {
+            XCTAssertEqual(e, .signInFailed(reason: "exchange_rejected"))
+        } else {
+            XCTFail("Expected .error state, got \(auth.state)")
+        }
+        XCTAssertFalse(auth.isSignedIn)
+    }
+}
+
+final class PKCETests: XCTestCase {
+    /// Verifies the generated verifier is non-trivial and unique per call.
+    func testVerifierIsHighEntropyAndUnique() {
+        let a = PKCE.generateCodeVerifier()
+        let b = PKCE.generateCodeVerifier()
+        XCTAssertGreaterThanOrEqual(a.count, 43)
+        XCTAssertNotEqual(a, b)
+    }
+
+    /// Verifies the S256 challenge matches a known-answer vector from RFC 7636.
+    func testChallengeMatchesRFC7636Vector() {
+        // RFC 7636 Appendix B worked example.
+        let verifier = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"
+        let expected = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
+        XCTAssertEqual(PKCE.challenge(for: verifier), expected)
     }
 }
 
