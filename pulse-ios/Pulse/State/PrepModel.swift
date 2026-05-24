@@ -70,6 +70,12 @@ final class PrepModel {
         return nets.isEmpty ? nil : nets.reduce(0, +)
     }
 
+    /// True when at least one weigh-in still has no gross reading, so the
+    /// computed total reflects only a partially-measured batch.
+    var hasUnenteredWeighIns: Bool {
+        weighIns.contains { $0.grossGrams == nil }
+    }
+
     /// Serving size: total net divided by `portions` (min 1).
     var perPortionGrams: Double? {
         totalNetGrams.map { $0 / Double(max(1, portions)) }

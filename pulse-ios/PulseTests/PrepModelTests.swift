@@ -168,4 +168,16 @@ final class PrepModelTests: XCTestCase {
         XCTAssertEqual(m.portions, 1)
         XCTAssertEqual(m.perPortionGrams ?? -1, 1038, accuracy: 0.001)
     }
+
+    /// hasUnenteredWeighIns is true when any weigh-in lacks a gross reading.
+    func testHasUnenteredWeighIns() {
+        let m = PrepModel()
+        let c = mkContainer(tare: 80)
+        m.weighIns = [weighIn(c, 500), weighIn(c, nil)]
+        XCTAssertTrue(m.hasUnenteredWeighIns)
+        m.weighIns = [weighIn(c, 500), weighIn(c, 600)]
+        XCTAssertFalse(m.hasUnenteredWeighIns)
+        m.weighIns = []
+        XCTAssertFalse(m.hasUnenteredWeighIns)
+    }
 }

@@ -16,6 +16,7 @@ struct PrepView: View {
     @State private var pickerMode: PickerMode?
     @State private var showManager = false
     @State private var hydrated = false
+    @State private var managerReloadTask: Task<Void, Never>?
     private let store = PrepStatePersistence()
 
     /// Identifies which selection the container picker is fulfilling.
@@ -67,8 +68,10 @@ struct PrepView: View {
             ContainersListView()
                 .environment(auth)
                 .onDisappear {
-                    Task {
+                    managerReloadTask?.cancel()
+                    managerReloadTask = Task {
                         await listModel?.load()
+                        if Task.isCancelled { return }
                         hydrateIfNeeded()
                         reconcile()
                     }
@@ -198,6 +201,18 @@ struct PrepView: View {
     private var resultSection: some View {
         section(header: "Result") {
             resultRow("Total net food", value: model.totalNetGrams)
+            if model.totalNetGrams != nil, model.hasUnenteredWeighIns {
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 10))
+                    Text("Some weigh-ins are blank, total is partial")
+                        .font(.system(size: 11))
+                    Spacer()
+                }
+                .foregroundStyle(Theme.FG.secondary)
+                .padding(.horizontal, 16)
+                .padding(.bottom, 10)
+            }
             divider
             HStack {
                 Text("Portions")
