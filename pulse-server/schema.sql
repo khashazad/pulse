@@ -187,6 +187,18 @@ create table if not exists sessions (
 create index if not exists idx_sessions_email on sessions (email);
 create index if not exists idx_sessions_expires_at on sessions (expires_at);
 
+-- Short-lived, single-use authorization codes bridging the OAuth callback and
+-- the app's PKCE token exchange. The callback stores sha256(code) + the PKCE
+-- code_challenge here instead of returning the bearer token in the redirect URL.
+create table if not exists auth_exchange_codes (
+  code_hash      bytea primary key,
+  email          text not null,
+  code_challenge text not null,
+  created_at     timestamptz not null default now(),
+  expires_at     timestamptz not null
+);
+create index if not exists idx_auth_exchange_codes_expires_at on auth_exchange_codes (expires_at);
+
 create table if not exists containers (
   id uuid primary key default gen_random_uuid(),
   user_key text not null,

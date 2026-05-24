@@ -14,10 +14,14 @@ from datetime import datetime as DateTimeValue
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 CustomFoodBasis = Literal["per_100g", "per_serving", "per_unit"]
 CustomFoodSource = Literal["manual", "photo", "corrected"]
+
+# Columns that are NOT NULL in the database. A PATCH may omit them (no-op) but
+# must never set them to null, which would raise an uncaught IntegrityError.
+_CUSTOM_FOOD_NON_NULLABLE = ("name", "basis", "calories", "protein_g", "carbs_g", "fat_g", "source")
 
 
 class CustomFoodCreate(BaseModel):
@@ -36,7 +40,12 @@ class CustomFoodCreate(BaseModel):
 
 
 class CustomFoodUpdate(BaseModel):
-    """Request body for ``PATCH /custom-foods/{id}`` — all fields optional for partial update."""
+    """Request body for ``PATCH /custom-foods/{id}`` — all fields optional for partial update.
+
+    A field may be omitted (no-op), but explicitly setting a NOT NULL column to
+    ``null`` is rejected: only the nullable columns (``serving_size``,
+    ``serving_size_unit``, ``notes``) accept ``null`` to clear them.
+    """
 
     name: str | None = None
     basis: CustomFoodBasis | None = None
@@ -48,6 +57,26 @@ class CustomFoodUpdate(BaseModel):
     fat_g: float | None = Field(default=None, ge=0)
     source: CustomFoodSource | None = None
     notes: str | None = None
+
+    @model_validator(mode="after")
+    def _reject_explicit_nulls(self) -> "CustomFoodUpdate":
+        """Reject an explicit ``null`` for any NOT NULL column.
+
+        Distinguishes "omitted" (absent from the request → no-op) from
+        "explicitly null" (present with value ``None``) via ``model_fields_set``,
+        so partial updates that simply leave a field out are unaffected.
+
+        **Outputs:**
+        - CustomFoodUpdate: This instance, unchanged, when validation passes.
+
+        **Raises:**
+        - ValueError: When a non-nullable field is explicitly set to ``null``;
+          surfaced by FastAPI as a 422 response.
+        """
+        for field in _CUSTOM_FOOD_NON_NULLABLE:
+            if field in self.model_fields_set and getattr(self, field) is None:
+                raise ValueError(f"{field} cannot be null")
+        return self
 
 
 class CustomFoodResponse(BaseModel):

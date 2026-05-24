@@ -26,6 +26,10 @@ from pulse_server.models import (
 )
 from pulse_server.repositories.meals import MealsRepository
 from pulse_server.repositories.tables import meals as meals_table
+from pulse_server.services.custom_foods_service import (
+    CrossTenantReferenceError,
+    assert_custom_foods_owned,
+)
 from pulse_server.services.entries_service import create_entries_with_side_effects
 from pulse_server.services.normalize import normalize_name
 
@@ -79,14 +83,24 @@ async def create_meal_with_items(
 
     **Exceptions:**
     - fastapi.HTTPException: Raised with 422 when an item violates the
-      exactly-one-of rule, or with 409 when an alias collides with an
-      existing meal name/alias.
+      exactly-one-of rule or references a custom_food_id the user does not
+      own, or with 409 when an alias collides with an existing meal
+      name/alias.
     - sqlalchemy.exc.IntegrityError: Raised on duplicate
       ``(user_key, normalized_name)`` meal name.
     """
     repo = MealsRepository(session)
     for item in payload.items:
         _validate_item_source(item)
+
+    # Custom-food references must belong to this user; the meal_items FK only
+    # proves the UUID exists, not its owner.
+    try:
+        await assert_custom_foods_owned(
+            session, user_key, (item.custom_food_id for item in payload.items)
+        )
+    except CrossTenantReferenceError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     normalized_aliases = normalize_alias_list(
         list(payload.aliases),

@@ -61,7 +61,11 @@ from pulse_server.repositories.entries import EntriesRepository
 from pulse_server.repositories.food_memory import FoodMemoryRepository
 from pulse_server.repositories.meals import MealsRepository
 from pulse_server.repositories.targets import TargetsRepository
-from pulse_server.services.custom_foods_service import upsert_custom_food_and_remember
+from pulse_server.services.custom_foods_service import (
+    CrossTenantReferenceError,
+    assert_custom_foods_owned,
+    upsert_custom_food_and_remember,
+)
 from pulse_server.services.entries_service import create_entries_with_side_effects
 from pulse_server.services.food_memory_service import (
     assert_food_alias_available,
@@ -454,6 +458,22 @@ def build_mcp(usda_getter) -> FastMCP:
     settings = get_settings()
     tz = ZoneInfo(settings.timezone)
 
+    # Belt-and-suspenders: Settings._require_github_allowlist_with_oauth already
+    # rejects this combo, but guard here too for callers that bypass Settings
+    # validation (e.g. tests constructing the server directly). An empty
+    # allowlist puts GitHubAllowlistMiddleware in open-mode, so GitHub OAuth
+    # outside local would otherwise admit any GitHub account.
+    if (
+        settings.mcp_oauth_enabled
+        and not settings.github_users_allowlist
+        and not settings.is_local_env
+    ):
+        raise RuntimeError(
+            "Refusing to build MCP with GitHub OAuth enabled and an empty "
+            "ALLOWED_GITHUB_USERS allowlist outside local env: the allowlist is "
+            "the only owner check on the OAuth path."
+        )
+
     auth_provider = _build_auth_provider(settings)
     if auth_provider is not None:
         mcp = FastMCP(name="diet", instructions=WORKFLOW_INSTRUCTIONS, auth=auth_provider)
@@ -575,12 +595,15 @@ def build_mcp(usda_getter) -> FastMCP:
         now = DateTimeValue.now(tz=tz)
 
         async with get_session() as session:
-            created_rows, day_rows = await create_entries_with_side_effects(
-                session=session,
-                user_key=user_key,
-                items=[item],
-                now=now,
-            )
+            try:
+                created_rows, day_rows = await create_entries_with_side_effects(
+                    session=session,
+                    user_key=user_key,
+                    items=[item],
+                    now=now,
+                )
+            except CrossTenantReferenceError as exc:
+                raise ToolError(str(exc)) from exc
             day_entries = [FoodEntryResponse(**row) for row in day_rows]
             day_totals = sum_food_entry_macros(day_entries)
 
@@ -755,18 +778,23 @@ def build_mcp(usda_getter) -> FastMCP:
         except ValueError as exc:
             raise ToolError(f"Invalid custom_food_id '{custom_food_id}'") from exc
 
-        payload = CustomFoodUpdate(
-            name=name,
-            basis=basis,
-            serving_size=serving_size,
-            serving_size_unit=serving_size_unit,
-            calories=calories,
-            protein_g=protein_g,
-            carbs_g=carbs_g,
-            fat_g=fat_g,
-            source=source,
-            notes=notes,
-        )
+        # In this tool `None` means "leave unchanged" for every field, so only
+        # forward the explicitly-provided ones. Constructing CustomFoodUpdate
+        # from the full kwargs would mark all fields as set and write nulls into
+        # the omitted (NOT NULL) columns.
+        provided = {
+            "name": name,
+            "basis": basis,
+            "serving_size": serving_size,
+            "serving_size_unit": serving_size_unit,
+            "calories": calories,
+            "protein_g": protein_g,
+            "carbs_g": carbs_g,
+            "fat_g": fat_g,
+            "source": source,
+            "notes": notes,
+        }
+        payload = CustomFoodUpdate(**{k: v for k, v in provided.items() if v is not None})
         fields = payload.model_dump(exclude_unset=True)
         if "name" in fields and fields["name"] is not None:
             fields["normalized_name"] = normalize_name(fields["name"])
@@ -774,8 +802,11 @@ def build_mcp(usda_getter) -> FastMCP:
         now = DateTimeValue.now(tz=tz)
         async with get_session() as session:
             repo = CustomFoodsRepository(session)
-            async with transaction(session):
-                row = await repo.update_fields(cf_uuid, user_key, fields, now)
+            try:
+                async with transaction(session):
+                    row = await repo.update_fields(cf_uuid, user_key, fields, now)
+            except IntegrityError as exc:
+                raise ToolError("A custom food with that name already exists") from exc
         if row is None:
             raise ToolError("Custom food not found")
         return _custom_food_response(row)
@@ -1149,6 +1180,13 @@ def build_mcp(usda_getter) -> FastMCP:
                 meal_row = await repo.get_meal(meal_uuid, user_key)
                 if meal_row is None:
                     raise ToolError("Meal not found")
+                if item.custom_food_id is not None:
+                    try:
+                        await assert_custom_foods_owned(
+                            session, user_key, [item.custom_food_id]
+                        )
+                    except CrossTenantReferenceError as exc:
+                        raise ToolError(str(exc)) from exc
                 position = await repo.next_position(meal_uuid)
                 row = await repo.add_meal_item(
                     meal_id=meal_uuid,

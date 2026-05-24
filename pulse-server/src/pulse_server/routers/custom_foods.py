@@ -129,7 +129,9 @@ async def update_custom_food(
     - CustomFoodResponse: The updated row.
 
     **Exceptions:**
+    - HTTPException(409): Raised when renaming would collide with another custom food's name.
     - HTTPException(404): Raised when no custom food with that id is owned by the user.
+    - HTTPException(422): Raised when a non-nullable field is explicitly set to null (model validation).
     """
     user_key = request.state.user_key
     fields = body.model_dump(exclude_unset=True)
@@ -137,8 +139,14 @@ async def update_custom_food(
         fields["normalized_name"] = normalize_name(fields["name"])
     now = DateTimeValue.now(tz=TZ)
     repo = CustomFoodsRepository(session)
-    async with transaction(session):
-        row = await repo.update_fields(custom_food_id, user_key, fields, now)
+    try:
+        async with transaction(session):
+            row = await repo.update_fields(custom_food_id, user_key, fields, now)
+    except IntegrityError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="A custom food with that name already exists",
+        ) from exc
     if row is None:
         raise HTTPException(status_code=404, detail="Custom food not found")
     return _to_response(row)

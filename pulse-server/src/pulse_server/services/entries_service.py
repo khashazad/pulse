@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from pulse_server.db import transaction
 from pulse_server.models import FoodEntryCreate
 from pulse_server.repositories.entries import EntriesRepository
+from pulse_server.services.custom_foods_service import assert_custom_foods_owned
 from pulse_server.services.log_ids import daily_log_id
 
 
@@ -103,6 +104,13 @@ async def _create_entries(
     **Exceptions:**
     - sqlalchemy.exc.SQLAlchemyError: Raised on any SQL failure.
     """
+    # Reject references to custom foods the user doesn't own before any insert.
+    # The food_entries FK only proves the UUID exists, not that it belongs to
+    # this user (see CrossTenantReferenceError).
+    await assert_custom_foods_owned(
+        session, user_key, (item.custom_food_id for item in items)
+    )
+
     entries_repo = EntriesRepository(session)
     created_rows: list[dict[str, Any]] = []
     batch_entry_group_id = uuid.uuid4()

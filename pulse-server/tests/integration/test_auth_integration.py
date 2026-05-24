@@ -60,6 +60,7 @@ def client():
             async def _truncate():
                 async with db.get_session() as s:
                     await s.execute(sa.text("truncate sessions"))
+                    await s.execute(sa.text("truncate auth_exchange_codes"))
                     await s.commit()
 
             asyncio.get_event_loop().run_until_complete(_truncate())
@@ -67,14 +68,27 @@ def client():
 
 
 def test_full_signin_flow(client):
-    """End-to-end OAuth start → callback → whoami → logout exercises the full session lifecycle."""
-    # /start
-    r = client.get("/auth/google/start", follow_redirects=False)
+    """End-to-end OAuth start → callback → PKCE exchange → whoami → logout."""
+    from urllib.parse import parse_qs, urlparse
+
+    from pulse_server.auth.sessions import pkce_s256_challenge
+
+    verifier = "verifier-" + "z" * 50
+    challenge = pkce_s256_challenge(verifier)
+
+    # /start (PKCE challenge required)
+    r = client.get(
+        "/auth/google/start",
+        params={"code_challenge": challenge, "code_challenge_method": "S256"},
+        follow_redirects=False,
+    )
     assert r.status_code == 302
     state_cookie = r.cookies.get("oauth_state")
+    pkce_cookie = r.cookies.get("oauth_pkce")
     assert state_cookie
+    assert pkce_cookie == challenge
 
-    # /callback (mock Google)
+    # /callback (mock Google) → returns a one-time code, not the token
     with patch(
         "pulse_server.routers.auth.exchange_code_for_id_token",
         new_callable=AsyncMock, return_value="jwt",
@@ -83,6 +97,7 @@ def test_full_signin_flow(client):
         return_value=("khashzd@gmail.com", "sub"),
     ):
         client.cookies.set("oauth_state", state_cookie, path="/auth/google")
+        client.cookies.set("oauth_pkce", pkce_cookie, path="/auth/google")
         r = client.get(
             "/auth/google/callback",
             params={"code": "x", "state": state_cookie},
@@ -90,9 +105,27 @@ def test_full_signin_flow(client):
         )
     assert r.status_code == 302
     loc = r.headers["location"]
-    assert loc.startswith("diettracker://auth?token=")
-    token = loc.split("token=")[1].split("&")[0]
+    assert loc.startswith("diettracker://auth?")
+    assert "token=" not in loc
+    one_time_code = parse_qs(urlparse(loc).query)["code"][0]
+    assert one_time_code
+
+    # exchange the one-time code (with the PKCE verifier) for the bearer token
+    r = client.post(
+        "/auth/google/exchange",
+        json={"code": one_time_code, "code_verifier": verifier},
+    )
+    assert r.status_code == 200
+    token = r.json()["token"]
     assert token
+    assert r.json()["email"] == "khashzd@gmail.com"
+
+    # the code is single-use: a replay fails
+    r_replay = client.post(
+        "/auth/google/exchange",
+        json={"code": one_time_code, "code_verifier": verifier},
+    )
+    assert r_replay.status_code == 400
 
     # whoami
     r = client.get("/auth/whoami", headers={"Authorization": f"Bearer {token}"})

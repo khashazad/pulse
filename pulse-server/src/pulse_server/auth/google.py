@@ -89,6 +89,11 @@ async def exchange_code_for_id_token(*, code: str) -> str:
 def verify_id_token(jwt_str: str) -> tuple[str, str]:
     """Verify a Google-issued ID token and return the authenticated identity.
 
+    Requires the ``email_verified`` claim to be true before trusting ``email``;
+    Google issues ID tokens for unverified email addresses (and for
+    non-Google-hosted domains the user has not proven ownership of), so the
+    allowlist check downstream must not rely on an unverified address.
+
     **Inputs:**
     - jwt_str (str): Compact-form JWT obtained from the token endpoint.
 
@@ -96,8 +101,8 @@ def verify_id_token(jwt_str: str) -> tuple[str, str]:
     - tuple[str, str]: ``(email_lower, sub)`` extracted from the verified payload.
 
     **Exceptions:**
-    - GoogleAuthError: On signature/claim verification failure or missing
-      ``email``/``sub``.
+    - GoogleAuthError: On signature/claim verification failure, missing
+      ``email``/``sub``, or when ``email_verified`` is not true.
     """
     settings = get_settings()
     try:
@@ -113,4 +118,10 @@ def verify_id_token(jwt_str: str) -> tuple[str, str]:
     sub = payload.get("sub")
     if not email or not sub:
         raise GoogleAuthError("id_token payload missing email or sub")
+    # Google encodes email_verified as a bool, but some token sources stringify
+    # it ("true"/"false"); accept either form of true and reject everything else.
+    email_verified = payload.get("email_verified")
+    is_verified = email_verified is True or str(email_verified).strip().lower() == "true"
+    if not is_verified:
+        raise GoogleAuthError("id_token email is not verified")
     return email.strip().lower(), sub

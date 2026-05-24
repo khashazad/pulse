@@ -49,8 +49,12 @@ def client():
 
 
 def test_start_redirects_to_google_with_state_cookie(client):
-    """`/auth/google/start` 302s to Google's authorize URL and sets an HttpOnly `oauth_state` cookie."""
-    r = client.get("/auth/google/start", follow_redirects=False)
+    """`/auth/google/start` with a PKCE challenge 302s to Google and sets HttpOnly state + pkce cookies."""
+    r = client.get(
+        "/auth/google/start",
+        params={"code_challenge": "abc123challenge", "code_challenge_method": "S256"},
+        follow_redirects=False,
+    )
     assert r.status_code == 302
     location = r.headers["location"]
     assert location.startswith("https://accounts.google.com/o/oauth2/v2/auth?")
@@ -61,8 +65,16 @@ def test_start_redirects_to_google_with_state_cookie(client):
     assert qs["state"][0]
     set_cookie = r.headers.get("set-cookie", "")
     assert "oauth_state=" in set_cookie
+    assert "oauth_pkce=" in set_cookie
     assert "HttpOnly" in set_cookie
     assert "Path=/auth/google" in set_cookie
+
+
+def test_start_without_pkce_challenge_redirects_invalid_request(client):
+    """`/auth/google/start` without a PKCE challenge aborts back to the app with `invalid_request`."""
+    r = client.get("/auth/google/start", follow_redirects=False)
+    assert r.status_code == 302
+    assert r.headers["location"] == "diettracker://auth?error=invalid_request"
 
 
 from datetime import datetime, timezone
@@ -72,20 +84,24 @@ from pulse_server.auth.google import GoogleAuthError
 
 @pytest.fixture
 def _patch_db_repo():
-    """Patch SessionsRepository so ``create()`` succeeds without a real DB.
+    """Patch the exchange-code and session repos so the callback succeeds without a real DB.
 
     **Outputs:**
-    - AsyncMock: The repo mock, with ``create`` patched to return ``None``.
+    - AsyncMock: The ``AuthExchangeCodesRepository`` mock (the callback's writer),
+      with ``create`` patched to return ``None``.
     """
-    fake_repo = AsyncMock()
-    fake_repo.create.return_value = None
+    exchange_repo = AsyncMock()
+    exchange_repo.create.return_value = None
+    sessions_repo = AsyncMock()
+    sessions_repo.create.return_value = None
     fake_session = AsyncMock()
     fake_session_ctx = AsyncMock()
     fake_session_ctx.__aenter__.return_value = fake_session
     fake_session_ctx.__aexit__.return_value = None
     with patch("pulse_server.routers.auth.get_session", return_value=fake_session_ctx), \
-         patch("pulse_server.routers.auth.SessionsRepository", return_value=fake_repo):
-        yield fake_repo
+         patch("pulse_server.routers.auth.AuthExchangeCodesRepository", return_value=exchange_repo), \
+         patch("pulse_server.routers.auth.SessionsRepository", return_value=sessions_repo):
+        yield exchange_repo
 
 
 def test_callback_google_denial_redirects_with_access_denied(client):
@@ -123,8 +139,9 @@ def test_callback_state_mismatch_redirects_invalid_state(client):
 
 
 def test_callback_disallowed_email_redirects_not_allowed(client, _patch_db_repo):
-    """Verified email outside `ALLOWED_EMAILS` redirects with `error=not_allowed` and skips session creation."""
+    """Verified email outside `ALLOWED_EMAILS` redirects with `error=not_allowed` and skips code creation."""
     client.cookies.set("oauth_state", "s", path="/auth/google")
+    client.cookies.set("oauth_pkce", "challenge", path="/auth/google")
     with patch(
         "pulse_server.routers.auth.exchange_code_for_id_token",
         new_callable=AsyncMock, return_value="jwt",
@@ -142,9 +159,10 @@ def test_callback_disallowed_email_redirects_not_allowed(client, _patch_db_repo)
     _patch_db_repo.create.assert_not_called()
 
 
-def test_callback_happy_path_creates_session_and_redirects_with_token(client, _patch_db_repo):
-    """Successful callback creates a session and redirects to the app scheme with `token` + `email`."""
+def test_callback_happy_path_stores_exchange_code_and_redirects_with_code(client, _patch_db_repo):
+    """Successful callback stores a one-time code and redirects with `code` only (no token/email)."""
     client.cookies.set("oauth_state", "s", path="/auth/google")
+    client.cookies.set("oauth_pkce", "challenge", path="/auth/google")
     with patch(
         "pulse_server.routers.auth.exchange_code_for_id_token",
         new_callable=AsyncMock, return_value="jwt",
@@ -160,14 +178,28 @@ def test_callback_happy_path_creates_session_and_redirects_with_token(client, _p
     assert r.status_code == 302
     loc = r.headers["location"]
     assert loc.startswith("diettracker://auth?")
-    assert "token=" in loc
-    assert "email=khashzd%40gmail.com" in loc
+    assert "code=" in loc
+    assert "token=" not in loc
+    assert "email=" not in loc
     _patch_db_repo.create.assert_awaited_once()
+
+
+def test_callback_without_pkce_cookie_redirects_invalid_request(client):
+    """A callback missing the PKCE cookie (set at start) redirects with `error=invalid_request`."""
+    client.cookies.set("oauth_state", "s", path="/auth/google")
+    r = client.get(
+        "/auth/google/callback",
+        params={"code": "x", "state": "s"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 302
+    assert "error=invalid_request" in r.headers["location"]
 
 
 def test_callback_token_exchange_failure_redirects_server_error(client):
     """`GoogleAuthError` from token exchange redirects with `error=server_error`."""
     client.cookies.set("oauth_state", "s", path="/auth/google")
+    client.cookies.set("oauth_pkce", "challenge", path="/auth/google")
     with patch(
         "pulse_server.routers.auth.exchange_code_for_id_token",
         new_callable=AsyncMock, side_effect=GoogleAuthError("boom"),
@@ -184,6 +216,7 @@ def test_callback_token_exchange_failure_redirects_server_error(client):
 def test_callback_missing_code_redirects_invalid_callback(client):
     """Callback without the `code` query param redirects with `error=invalid_callback`."""
     client.cookies.set("oauth_state", "s", path="/auth/google")
+    client.cookies.set("oauth_pkce", "challenge", path="/auth/google")
     r = client.get(
         "/auth/google/callback",
         params={"state": "s"},  # no code
@@ -191,6 +224,135 @@ def test_callback_missing_code_redirects_invalid_callback(client):
     )
     assert r.status_code == 302
     assert "error=invalid_callback" in r.headers["location"]
+
+
+def test_exchange_valid_code_returns_token(client):
+    """`POST /auth/google/exchange` with a valid code + matching verifier returns a bearer token."""
+    from datetime import datetime as DT, timezone as TZ, timedelta as TD
+
+    from pulse_server.auth.sessions import pkce_s256_challenge
+
+    verifier = "v" * 48
+    challenge = pkce_s256_challenge(verifier)
+    fut = DT.now(TZ.utc) + TD(seconds=120)
+
+    exchange_repo = AsyncMock()
+    exchange_repo.consume.return_value = {
+        "email": "khashzd@gmail.com",
+        "code_challenge": challenge,
+        "expires_at": fut,
+    }
+    sessions_repo = AsyncMock()
+    sessions_repo.create.return_value = None
+
+    fake_session = AsyncMock()
+    ctx = AsyncMock()
+    ctx.__aenter__.return_value = fake_session
+    ctx.__aexit__.return_value = None
+    with patch("pulse_server.routers.auth.get_session", return_value=ctx), \
+         patch("pulse_server.routers.auth.AuthExchangeCodesRepository", return_value=exchange_repo), \
+         patch("pulse_server.routers.auth.SessionsRepository", return_value=sessions_repo):
+        r = client.post(
+            "/auth/google/exchange",
+            json={"code": "one-time", "code_verifier": verifier},
+        )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["email"] == "khashzd@gmail.com"
+    assert body["token"]
+    sessions_repo.create.assert_awaited_once()
+
+
+def test_exchange_wrong_verifier_rejected(client):
+    """A verifier that doesn't match the stored challenge is rejected and no session is created."""
+    from datetime import datetime as DT, timezone as TZ, timedelta as TD
+
+    from pulse_server.auth.sessions import pkce_s256_challenge
+
+    fut = DT.now(TZ.utc) + TD(seconds=120)
+    exchange_repo = AsyncMock()
+    exchange_repo.consume.return_value = {
+        "email": "khashzd@gmail.com",
+        "code_challenge": pkce_s256_challenge("the-real-verifier"),
+        "expires_at": fut,
+    }
+    sessions_repo = AsyncMock()
+
+    fake_session = AsyncMock()
+    ctx = AsyncMock()
+    ctx.__aenter__.return_value = fake_session
+    ctx.__aexit__.return_value = None
+    with patch("pulse_server.routers.auth.get_session", return_value=ctx), \
+         patch("pulse_server.routers.auth.AuthExchangeCodesRepository", return_value=exchange_repo), \
+         patch("pulse_server.routers.auth.SessionsRepository", return_value=sessions_repo):
+        r = client.post(
+            "/auth/google/exchange",
+            json={"code": "one-time", "code_verifier": "w" * 43},  # valid length, wrong value
+        )
+    assert r.status_code == 400
+    sessions_repo.create.assert_not_called()
+
+
+def test_exchange_unknown_code_rejected(client):
+    """An unknown/already-used code (consume returns None) is rejected with 400."""
+    exchange_repo = AsyncMock()
+    exchange_repo.consume.return_value = None
+
+    fake_session = AsyncMock()
+    ctx = AsyncMock()
+    ctx.__aenter__.return_value = fake_session
+    ctx.__aexit__.return_value = None
+    with patch("pulse_server.routers.auth.get_session", return_value=ctx), \
+         patch("pulse_server.routers.auth.AuthExchangeCodesRepository", return_value=exchange_repo):
+        r = client.post(
+            "/auth/google/exchange",
+            json={"code": "nope", "code_verifier": "v" * 43},
+        )
+    assert r.status_code == 400
+
+
+def test_exchange_non_ascii_verifier_rejected_not_500(client):
+    """A non-ASCII (but valid-length) verifier is rejected with 400, never a 500."""
+    from datetime import datetime as DT, timezone as TZ, timedelta as TD
+
+    fut = DT.now(TZ.utc) + TD(seconds=120)
+    exchange_repo = AsyncMock()
+    exchange_repo.consume.return_value = {
+        "email": "khashzd@gmail.com",
+        "code_challenge": "anything",
+        "expires_at": fut,
+    }
+    sessions_repo = AsyncMock()
+
+    fake_session = AsyncMock()
+    ctx = AsyncMock()
+    ctx.__aenter__.return_value = fake_session
+    ctx.__aexit__.return_value = None
+    with patch("pulse_server.routers.auth.get_session", return_value=ctx), \
+         patch("pulse_server.routers.auth.AuthExchangeCodesRepository", return_value=exchange_repo), \
+         patch("pulse_server.routers.auth.SessionsRepository", return_value=sessions_repo):
+        r = client.post(
+            "/auth/google/exchange",
+            json={"code": "one-time", "code_verifier": "é" * 50},  # non-ASCII, length 50
+        )
+    assert r.status_code == 400
+    sessions_repo.create.assert_not_called()
+
+
+def test_exchange_too_short_verifier_rejected_422(client):
+    """A verifier shorter than RFC 7636's 43-char minimum is rejected at the model (422)."""
+    r = client.post(
+        "/auth/google/exchange",
+        json={"code": "one-time", "code_verifier": "tooshort"},
+    )
+    assert r.status_code == 422
+
+
+def test_verify_pkce_s256_non_ascii_returns_false():
+    """`verify_pkce_s256` returns False (not raises) for a non-ASCII verifier."""
+    from pulse_server.auth.sessions import verify_pkce_s256
+
+    assert verify_pkce_s256("é" * 43, "any-challenge") is False
 
 
 def test_whoami_unauthenticated_returns_401(client):

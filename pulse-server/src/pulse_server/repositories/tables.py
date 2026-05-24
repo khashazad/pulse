@@ -235,6 +235,17 @@ sessions = Table(
     Index("idx_sessions_expires_at", "expires_at"),
 )
 
+auth_exchange_codes = Table(
+    "auth_exchange_codes",
+    metadata,
+    Column("code_hash", LargeBinary, primary_key=True),
+    Column("email", Text, nullable=False),
+    Column("code_challenge", Text, nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("expires_at", DateTime(timezone=True), nullable=False),
+    Index("idx_auth_exchange_codes_expires_at", "expires_at"),
+)
+
 containers = Table(
     "containers",
     metadata,
