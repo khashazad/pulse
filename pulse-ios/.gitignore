@@ -27,3 +27,6 @@ Package.resolved
 
 # xcodegen — regenerate from project.yml
 Pulse.xcodeproj/
+
+# Security scan artifacts (may contain credential snapshots) — never commit
+.deepsec/

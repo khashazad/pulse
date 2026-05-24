@@ -25,13 +25,13 @@ enum Constants {
     /// Keychain service/account identifiers used by `KeychainStore` to persist
     /// the session token and to one-shot delete legacy API-key items.
     enum Keychain {
-        static let sessionService = "com.khxsh.diettracker.session"
+        static let sessionService = "com.pulseapp.pulse.session"
         static let sessionAccount = "default"
 
         // Legacy API-key item identifiers, kept here ONLY so a one-shot deletion
         // in AuthSession.init can clean up old installs. Reference is removed in
         // the next release.
-        static let legacyService = "com.khxsh.diettracker.apikey"
+        static let legacyService = "com.pulseapp.pulse.apikey"
         static let legacyAccount = "default"
     }
 

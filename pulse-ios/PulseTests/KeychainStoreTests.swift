@@ -7,7 +7,7 @@ import XCTest
 @testable import Pulse
 
 final class KeychainStoreTests: XCTestCase {
-    private let service = "com.khxsh.diettracker.test"
+    private let service = "com.pulseapp.pulse.test"
     private let account = "kc-test-\(UUID().uuidString)"
 
     /// Removes the test keychain entry after each test.

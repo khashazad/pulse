@@ -66,6 +66,3 @@ The `build/` directory in the repo root is the local DerivedData (gitignored).
 
 `PulseTests/` uses `StubURLProtocol` injected into an ephemeral `URLSession` to intercept requests and return JSON fixtures from `PulseTests/Fixtures/`. When adding endpoints, add a fixture and a client test rather than mocking the model layer.
 
-## Design docs
-
-`docs/superpowers/specs/` and `docs/superpowers/plans/` contain the brainstorming/design + implementation plans for shipped features (nutrition core, meal-prep containers). Read the relevant spec before extending those areas — they capture decisions that aren't in the code.

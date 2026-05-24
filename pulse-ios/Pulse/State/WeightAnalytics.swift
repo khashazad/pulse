@@ -6,7 +6,7 @@
 import Foundation
 import os.log
 
-private let analyticsDiagLog = Logger(subsystem: "com.khxsh.diettracker", category: "AnalyticsDiag")
+private let analyticsDiagLog = Logger(subsystem: "com.pulseapp.pulse", category: "AnalyticsDiag")
 
 /// Outcome of projecting current trend against a target weight.
 enum WeightETA: Hashable {

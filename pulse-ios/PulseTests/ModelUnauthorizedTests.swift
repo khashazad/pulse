@@ -7,7 +7,7 @@ import XCTest
 @testable import Pulse
 
 final class ModelUnauthorizedTests: XCTestCase {
-    private let testService = "com.khxsh.diettracker.session.test"
+    private let testService = "com.pulseapp.pulse.session.test"
     private let testAccount = "model-unauth-\(UUID().uuidString)"
     private var activeStubs: [StubURLProtocol.Registration] = []
 

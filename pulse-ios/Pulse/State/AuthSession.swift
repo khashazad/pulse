@@ -8,7 +8,7 @@ import Observation
 import AuthenticationServices
 import os.log
 
-private let authDiagLog = Logger(subsystem: "com.khxsh.diettracker", category: "AuthDiag")
+private let authDiagLog = Logger(subsystem: "com.pulseapp.pulse", category: "AuthDiag")
 
 /// Observable session manager that owns auth state, token storage, and OAuth orchestration.
 @Observable

@@ -10,7 +10,7 @@ import XCTest
 @testable import Pulse
 
 final class AuthSessionTests: XCTestCase {
-    private let testService = "com.khxsh.diettracker.session.test"
+    private let testService = "com.pulseapp.pulse.session.test"
     private let testAccount = "auth-test-\(UUID().uuidString)"
     private var activeStubs: [StubURLProtocol.Registration] = []
 
