@@ -6,7 +6,10 @@
 import Foundation
 import Observation
 
-/// View-model backing `FoodSearchSheet`.
+/// View-model backing `FoodSearchSheet`. Main-actor isolated so its observable
+/// state is only ever published from the main thread (search runs in a detached
+/// debounce `Task`, which inherits this actor).
+@MainActor
 @Observable
 final class FoodSearchModel {
     /// Current results for the active query (idle until the user types).
@@ -19,6 +22,9 @@ final class FoodSearchModel {
     }
 
     private var myFoods: [FoodSearchResult] = []
+    /// Whether `loadMyFoods()` has run (success or failure) at least once, so a
+    /// search never merges against an un-loaded my-foods set.
+    private var didLoadMyFoods = false
     private weak var auth: AuthSession?
     private var searchTask: Task<Void, Never>?
     private let debounce: Duration
@@ -36,6 +42,7 @@ final class FoodSearchModel {
     /// my-foods set. Call once when the sheet appears. USDA is not touched here.
     func loadMyFoods() async {
         guard let client = auth?.makeClient() else { return }
+        defer { didLoadMyFoods = true }
         async let custom = client.listCustomFoods()
         async let memory = client.listFoodMemory()
         do {
@@ -73,6 +80,10 @@ final class FoodSearchModel {
             state = .idle
             return
         }
+        // Ensure my-foods are loaded before merging, so an early keystroke
+        // doesn't produce USDA-only results.
+        if !didLoadMyFoods { await loadMyFoods() }
+        if Task.isCancelled { return }
         state = .loading
         var usda: [USDAFoodResult] = []
         usdaUnavailable = false
