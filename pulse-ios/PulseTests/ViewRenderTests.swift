@@ -84,6 +84,10 @@ final class ViewRenderTests: XCTestCase {
             if path == "/usda/search" { return ok(self.fixture("usda_search")) }
             if path == "/weight" { return ok(self.fixture("weight_entries")) }
             if path == "/containers" { return method == "POST" ? ok(self.fixture("container")) : ok(self.fixture("containers")) }
+            if path == "/measures/photos" { return ok(self.fixture("progress_photos")) }
+            if path.hasPrefix("/measures/photos/") { return method == "DELETE" ? (r(204), Data()) : ok(Data()) }
+            if path == "/measures/photo-tags" { return ok(self.fixture("photo_tags")) }
+            if path.hasPrefix("/measures/photo-tags/") { return ok(#"{"id":"b2b2b2b2-2222-2222-2222-222222222222","name":"Back","normalized_name":"back","sort_order":0,"created_at":"2026-05-01T00:00:00Z","updated_at":"2026-05-01T00:00:00Z"}"#.data(using: .utf8)!) }
             return (r(404), Data())
         }
         activeStubs.append(stub)

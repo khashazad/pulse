@@ -70,6 +70,16 @@ final class ViewModelLoadTests: XCTestCase {
                 if path.hasSuffix("/photo") { return (resp(200), Data()) }
                 return ok(self.fixture("container"))
             }
+            if path == "/measures/photos" { return ok(self.fixture("progress_photos")) }
+            if path.hasPrefix("/measures/photos/") { return method == "DELETE" ? (resp(204), Data()) : ok(Data()) }
+            if path == "/measures/photo-tags" {
+                return method == "POST"
+                    ? ok(#"{"id":"c3c3c3c3-3333-3333-3333-333333333333","name":"Side","normalized_name":"side","sort_order":1,"created_at":"2026-05-01T00:00:00Z","updated_at":"2026-05-01T00:00:00Z"}"#.data(using: .utf8)!)
+                    : ok(self.fixture("photo_tags"))
+            }
+            if path.hasPrefix("/measures/photo-tags/") {
+                return ok(#"{"id":"b2b2b2b2-2222-2222-2222-222222222222","name":"Back","normalized_name":"back","sort_order":0,"created_at":"2026-05-01T00:00:00Z","updated_at":"2026-05-01T00:00:00Z"}"#.data(using: .utf8)!)
+            }
             return (resp(404), Data())
         }
         activeStubs.append(stub)
@@ -290,5 +300,33 @@ final class ViewModelLoadTests: XCTestCase {
         await m.save()
         XCTAssertNotNil(m.error)
         XCTAssertNil(m.savedContainerId)
+    }
+
+    // MARK: - progress photo stores
+
+    @MainActor
+    func test_progressPhotoStore_reconcileThumbFullDelete() async {
+        let store = ProgressPhotoStore(auth: makeAuth())
+        await store.reconcile(from: Date(timeIntervalSince1970: 1_747_000_000), to: Date())
+        _ = store.photos(on: Date())
+        let meta = ProgressPhotoMetadata(
+            id: UUID(uuidString: "a1a1a1a1-1111-1111-1111-111111111111")!, date: Date(),
+            tagId: UUID(uuidString: "b2b2b2b2-2222-2222-2222-222222222222")!, mime: "image/jpeg",
+            bytes: 1234, sha256: "x", updatedAt: Date())
+        _ = await store.thumb(meta)
+        _ = await store.full(meta)
+        await store.delete(meta)
+    }
+
+    @MainActor
+    func test_progressPhotoTagStore_reloadCreateRename() async {
+        let store = ProgressPhotoTagStore(auth: makeAuth())
+        await store.reload()
+        XCTAssertFalse(store.tags.isEmpty)
+        if let first = store.tags.first {
+            _ = store.tag(id: first.id)
+            _ = await store.rename(id: first.id, name: "Back")
+        }
+        _ = await store.create(name: "Side")
     }
 }
