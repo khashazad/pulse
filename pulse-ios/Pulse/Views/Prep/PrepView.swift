@@ -17,6 +17,10 @@ struct PrepView: View {
     @State private var showManager = false
     @State private var hydrated = false
     @State private var managerReloadTask: Task<Void, Never>?
+    /// Tracks which weigh-in's gross-grams field holds the decimal-pad keyboard,
+    /// so the keyboard toolbar's Done button can resign it (the decimal pad has
+    /// no return key and this screen is not a dismissible sheet).
+    @FocusState private var focusedWeighIn: UUID?
     private let store = PrepStatePersistence()
 
     /// Identifies which selection the container picker is fulfilling.
@@ -47,6 +51,7 @@ struct PrepView: View {
                 .padding(.top, 16)
                 .padding(.bottom, Theme.Layout.dockClearance)
             }
+            .scrollDismissesKeyboard(.interactively)
         }
         .navigationTitle("Prep")
         .navigationBarTitleDisplayMode(.inline)
@@ -58,6 +63,11 @@ struct PrepView: View {
                     Image(systemName: "slider.horizontal.3")
                         .foregroundStyle(Theme.CTP.mauve)
                 }
+            }
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("Done") { focusedWeighIn = nil }
+                    .foregroundStyle(Theme.CTP.mauve)
             }
         }
         .sheet(item: $pickerMode) { mode in
@@ -177,6 +187,7 @@ struct PrepView: View {
                         .keyboardType(.decimalPad)
                         .multilineTextAlignment(.trailing)
                         .frame(width: 80)
+                        .focused($focusedWeighIn, equals: w.id)
                         Text("g")
                             .font(.system(size: 12))
                             .foregroundStyle(Theme.FG.secondary)
