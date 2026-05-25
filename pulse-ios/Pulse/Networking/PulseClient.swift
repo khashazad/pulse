@@ -189,6 +189,41 @@ actor PulseClient {
         return req
     }
 
+    // MARK: - food search
+
+    /// Searches USDA FoodData Central via the server proxy.
+    /// Inputs:
+    ///   - query: search phrase (sent as `q`).
+    ///   - limit: max results, 1...25.
+    /// Outputs: normalized USDA hits (macros per-100g).
+    /// Exceptions: `PulseError` on transport/auth/decoding; `.server(status: 429)` when rate-limited.
+    func searchUSDA(query: String, limit: Int) async throws -> [USDAFoodResult] {
+        let url = try makeURL(path: "/usda/search", query: [
+            URLQueryItem(name: "q", value: query),
+            URLQueryItem(name: "limit", value: String(limit)),
+        ])
+        let resp: USDASearchResponse = try await fetch(url: url)
+        return resp.results
+    }
+
+    /// Lists the user's custom foods.
+    /// Outputs: the array unwrapped from the `CustomFoodList` envelope.
+    /// Exceptions: `PulseError` on transport/auth/decoding failure.
+    func listCustomFoods() async throws -> [CustomFood] {
+        let url = try makeURL(path: "/custom-foods", query: [])
+        let list: CustomFoodList = try await fetch(url: url)
+        return list.customFoods
+    }
+
+    /// Lists the user's food-memory entries.
+    /// Outputs: the array unwrapped from the `FoodMemoryList` envelope.
+    /// Exceptions: `PulseError` on transport/auth/decoding failure.
+    func listFoodMemory() async throws -> [FoodMemoryEntry] {
+        let url = try makeURL(path: "/food-memory", query: [])
+        let list: FoodMemoryList = try await fetch(url: url)
+        return list.entries
+    }
+
     // MARK: - weight
 
     /// Lists weight entries between two dates inclusive.
