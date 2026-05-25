@@ -70,7 +70,12 @@ final class ViewModelLoadTests: XCTestCase {
                 if path.hasSuffix("/photo") { return (resp(200), Data()) }
                 return ok(self.fixture("container"))
             }
-            if path == "/measures/photos" { return ok(self.fixture("progress_photos")) }
+            if path == "/auth/whoami" { return ok(self.fixture("whoami")) }
+            if path == "/measures/photos" {
+                return method == "POST"
+                    ? ok(#"{"id":"a1a1a1a1-1111-1111-1111-111111111111","date":"2026-05-20","tag_id":"b2b2b2b2-2222-2222-2222-222222222222","mime":"image/jpeg","bytes":1234,"sha256":"x","updated_at":"2026-05-20T10:00:00Z"}"#.data(using: .utf8)!)
+                    : ok(self.fixture("progress_photos"))
+            }
             if path.hasPrefix("/measures/photos/") { return method == "DELETE" ? (resp(204), Data()) : ok(Data()) }
             if path == "/measures/photo-tags" {
                 return method == "POST"
@@ -328,5 +333,43 @@ final class ViewModelLoadTests: XCTestCase {
             _ = await store.rename(id: first.id, name: "Back")
         }
         _ = await store.create(name: "Side")
+    }
+
+    @MainActor
+    func test_progressPhotoStore_upload() async {
+        let store = ProgressPhotoStore(auth: makeAuth())
+        await store.upload(date: Date(),
+                           tagId: UUID(uuidString: "b2b2b2b2-2222-2222-2222-222222222222")!,
+                           imageData: Data([0x01, 0x02, 0x03, 0x04]))
+        // Let the fire-and-forget upload worker drain.
+        try? await Task.sleep(for: .milliseconds(250))
+    }
+
+    // MARK: - auth session
+
+    func test_authSession_signOutClearsState() async {
+        let auth = makeAuth()
+        XCTAssertTrue(auth.isSignedIn)
+        await auth.signOut()
+        XCTAssertFalse(auth.isSignedIn)
+        XCTAssertNil(KeychainStore.read(service: testService, account: testAccount))
+    }
+
+    func test_authSession_bootstrapKeepsValidSession() async {
+        let auth = makeAuth()
+        await auth.bootstrap()
+        XCTAssertTrue(auth.isSignedIn)
+    }
+
+    func test_authSession_completeSignInWithBadURLErrors() async {
+        let auth = makeAuth()
+        await auth.completeSignIn(url: URL(string: "https://example.test/callback")!, codeVerifier: "verifier")
+        XCTAssertFalse(auth.isSignedIn)
+    }
+
+    func test_authSession_signInURLBuilders() {
+        let auth = makeAuth()
+        XCTAssertFalse(auth.startSignInURL().absoluteString.isEmpty)
+        XCTAssertNotNil(auth.signInURL(codeChallenge: "challenge"))
     }
 }
