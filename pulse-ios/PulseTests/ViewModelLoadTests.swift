@@ -223,4 +223,72 @@ final class ViewModelLoadTests: XCTestCase {
         guard case .loaded(let results) = m.state else { return XCTFail("got \(m.state)") }
         XCTAssertFalse(results.isEmpty)
     }
+
+    // MARK: - error paths
+
+    /// Builds a signed-in AuthSession whose client returns HTTP 500 for everything,
+    /// driving the view-models' catch/`.failed` branches.
+    private func makeFailingAuth() -> AuthSession {
+        _ = KeychainStore.write(#"{"token":"tok","email":"k@e.com"}"#, service: testService, account: testAccount)
+        let stub = StubURLProtocol.makeSession { req in
+            (HTTPURLResponse(url: req.url!, statusCode: 500, httpVersion: nil, headerFields: nil)!, Data())
+        }
+        activeStubs.append(stub)
+        let auth = AuthSession(baseURL: URL(string: "https://example.test")!,
+                               keychainService: testService, keychainAccount: testAccount, urlSession: stub.session)
+        retainedAuths.append(auth)
+        return auth
+    }
+
+    func test_models_serverErrorFailStates() async {
+        let auth = makeFailingAuth()
+
+        let day = DayMacroModel(date: Date(), auth: auth); await day.load()
+        if case .failed = day.state {} else { XCTFail("day: \(day.state)") }
+
+        let week = WeekModel(auth: auth); await week.loadLast7Days()
+        if case .failed = week.state {} else { XCTFail("week: \(week.state)") }
+
+        let month = MonthModel(auth: auth); await month.loadCurrentMonth()
+        if case .failed = month.state {} else { XCTFail("month: \(month.state)") }
+
+        let year = YearModel(auth: auth); await year.loadCurrentYear()
+        if case .failed = year.state {} else { XCTFail("year: \(year.state)") }
+
+        let meals = MealsModel(auth: auth); await meals.load()
+        if case .failed = meals.state {} else { XCTFail("meals: \(meals.state)") }
+
+        let containers = ContainersListModel(auth: auth); await containers.load()
+        if case .failed = containers.state {} else { XCTFail("containers: \(containers.state)") }
+    }
+
+    func test_weightLogModel_errorPaths() async {
+        let auth = makeFailingAuth()
+        let m = WeightLogModel(auth: auth)
+        await m.load()
+        if case .failed = m.state {} else { XCTFail("load: \(m.state)") }
+        await m.upsert(date: Date(), weight: 180, unit: .lb)
+        if case .failed = m.state {} else { XCTFail("upsert: \(m.state)") }
+        await m.delete(date: Date())
+        if case .failed = m.state {} else { XCTFail("delete: \(m.state)") }
+    }
+
+    func test_weightTrendsAndDetail_errorPaths() async {
+        let auth = makeFailingAuth()
+        let trends = WeightTrendsModel(auth: auth, targetsStore: UserTargetsStore())
+        await trends.load()
+        if case .failed = trends.analytics {} else { XCTFail("trends: \(trends.analytics)") }
+
+        let detail = MealDetailModel(mealId: UUID(), auth: auth)
+        await detail.load()
+        if case .failed = detail.state {} else { XCTFail("detail: \(detail.state)") }
+    }
+
+    func test_containerEditModel_errorPath() async {
+        let m = ContainerEditModel(existing: nil, auth: makeFailingAuth())
+        m.name = "X"; m.tareWeightText = "100"
+        await m.save()
+        XCTAssertNotNil(m.error)
+        XCTAssertNil(m.savedContainerId)
+    }
 }
