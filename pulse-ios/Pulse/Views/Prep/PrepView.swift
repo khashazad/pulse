@@ -21,6 +21,9 @@ struct PrepView: View {
     /// so the keyboard toolbar's Done button can resign it (the decimal pad has
     /// no return key and this screen is not a dismissible sheet).
     @FocusState private var focusedWeighIn: UUID?
+    @State private var batchModel = BatchCompositionModel()
+    @State private var foodSearchModel: FoodSearchModel?
+    @State private var showFoodSearch = false
     private let store = PrepStatePersistence()
 
     /// Identifies which selection the container picker is fulfilling.
@@ -47,6 +50,7 @@ struct PrepView: View {
                     targetsSection
                     weighInsSection
                     resultSection
+                    foodsSection
                 }
                 .padding(.top, 16)
                 .padding(.bottom, Theme.Layout.dockClearance)
@@ -74,6 +78,14 @@ struct PrepView: View {
             ContainerPickerSheet { picked in handlePick(picked, mode: mode) }
                 .environment(auth)
         }
+        .sheet(isPresented: $showFoodSearch) {
+            if let fm = foodSearchModel {
+                FoodSearchSheet(model: fm, containers: loadedContainers) { item in
+                    batchModel.add(item)
+                    store.saveBatchItems(batchModel.items)
+                }
+            }
+        }
         .sheet(isPresented: $showManager) {
             ContainersListView()
                 .environment(auth)
@@ -89,6 +101,7 @@ struct PrepView: View {
         }
         .task {
             if listModel == nil { listModel = ContainersListModel(auth: auth) }
+            if foodSearchModel == nil { foodSearchModel = FoodSearchModel(auth: auth) }
             await listModel?.load()
             hydrateIfNeeded()
             reconcile()
@@ -267,6 +280,71 @@ struct PrepView: View {
         }
     }
 
+    /// "Foods in this batch" card: searched food items with per-item macros, a
+    /// running batch total, and an add button that opens the food search sheet.
+    @ViewBuilder
+    private var foodsSection: some View {
+        section(header: "Foods in this batch") {
+            if batchModel.items.isEmpty {
+                emptyRow("Search and add foods to this batch")
+            } else {
+                ForEach(batchModel.items) { item in
+                    HStack(spacing: 12) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(item.displayName)
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundStyle(Theme.FG.primary)
+                                .lineLimit(1)
+                            Text(macroLine(item.macros))
+                                .font(.system(size: 12, design: .monospaced))
+                                .foregroundStyle(Theme.FG.secondary)
+                        }
+                        Spacer()
+                        Button {
+                            batchModel.remove(id: item.id)
+                            store.saveBatchItems(batchModel.items)
+                        } label: {
+                            Image(systemName: "minus.circle.fill")
+                                .font(.system(size: 18))
+                                .foregroundStyle(Theme.FG.tertiary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    divider
+                }
+                HStack {
+                    Text("Batch total")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(Theme.FG.primary)
+                    Spacer()
+                    Text(macroLine(batchModel.total))
+                        .font(.system(size: 12, design: .monospaced))
+                        .foregroundStyle(Theme.CTP.mauve)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                divider
+            }
+            addButton("Add food") { showFoodSearch = true }
+        }
+    }
+
+    /// The loaded container list, or empty when not yet loaded.
+    private var loadedContainers: [Container] {
+        if case .loaded(let list) = listModel?.state ?? .idle { return list }
+        return []
+    }
+
+    /// Formats a macro total as a compact single line.
+    /// Inputs:
+    ///   - m: the macros to format.
+    /// Outputs: e.g. "260 kcal · P 5 · C 56 · F 1".
+    private func macroLine(_ m: MacroTotals) -> String {
+        "\(m.calories) kcal · P \(Int(m.proteinG)) · C \(Int(m.carbsG)) · F \(Int(m.fatG))"
+    }
+
     // MARK: - Actions
 
     /// Routes a picked container to the target list or a weigh-in per the mode.
@@ -324,6 +402,7 @@ struct PrepView: View {
         model.targets = loaded.targets
         model.weighIns = loaded.weighIns
         model.portionsOverride = loaded.portionsOverride
+        batchModel = BatchCompositionModel(items: store.loadBatchItems())
     }
 
     /// Writes the current targets/weigh-ins/portions to `UserDefaults`.
