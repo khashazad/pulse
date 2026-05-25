@@ -4,9 +4,17 @@
 /// responses to fixtures by path, then drives the model's load/mutate methods and
 /// asserts the resulting `LoadState`. Complements `ModelUnauthorizedTests` (failure path).
 import XCTest
+import UIKit
 @testable import Pulse
 
 final class ViewModelLoadTests: XCTestCase {
+    /// A tiny valid PNG so photo-download stubs decode to a real image (exercises
+    /// the image-decode + cache-write success branches rather than just nil).
+    static let samplePNG: Data = {
+        let r = UIGraphicsImageRenderer(size: CGSize(width: 2, height: 2))
+        return r.pngData { ctx in UIColor.gray.setFill(); ctx.fill(CGRect(x: 0, y: 0, width: 2, height: 2)) }
+    }()
+
     private let testService = "com.pulseapp.pulse.session.test"
     private var testAccount = ""
     private var activeStubs: [StubURLProtocol.Registration] = []
@@ -76,7 +84,7 @@ final class ViewModelLoadTests: XCTestCase {
                     ? ok(#"{"id":"a1a1a1a1-1111-1111-1111-111111111111","date":"2026-05-20","tag_id":"b2b2b2b2-2222-2222-2222-222222222222","mime":"image/jpeg","bytes":1234,"sha256":"x","updated_at":"2026-05-20T10:00:00Z"}"#.data(using: .utf8)!)
                     : ok(self.fixture("progress_photos"))
             }
-            if path.hasPrefix("/measures/photos/") { return method == "DELETE" ? (resp(204), Data()) : ok(Data()) }
+            if path.hasPrefix("/measures/photos/") { return method == "DELETE" ? (resp(204), Data()) : ok(Self.samplePNG) }
             if path == "/measures/photo-tags" {
                 return method == "POST"
                     ? ok(#"{"id":"c3c3c3c3-3333-3333-3333-333333333333","name":"Side","normalized_name":"side","sort_order":1,"created_at":"2026-05-01T00:00:00Z","updated_at":"2026-05-01T00:00:00Z"}"#.data(using: .utf8)!)
