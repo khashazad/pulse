@@ -162,7 +162,9 @@ final class ViewRenderTests: XCTestCase {
         render(ContainerEditView(existing: sampleContainer(), onSaved: { _ in }))
         render(ContainerPickerSheet(onPick: { _ in }))
         render(ContainersListView())
-        render(FoodSearchSheet(model: FoodSearchModel(auth: auth), containers: [sampleContainer()], onAdd: { _ in }))
+        let fsModel = FoodSearchModel(auth: auth, debounce: .milliseconds(1))
+        fsModel.query = "rice"
+        render(FoodSearchSheet(model: fsModel, containers: [sampleContainer()], onAdd: { _ in }), pump: 0.5)
         render(QuantityEntryView(result: sampleResult(), containers: [sampleContainer()], onAdd: { _ in }))
     }
 
