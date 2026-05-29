@@ -1,6 +1,6 @@
 name: Pulse
 options:
-  bundleIdPrefix: com.pulseapp
+  bundleIdPrefix: com.khashazad
   deploymentTarget:
     iOS: "17.0"
   createIntermediateGroups: true
@@ -53,7 +53,7 @@ targets:
         basedOnDependencyAnalysis: false
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.pulseapp.pulse
+        PRODUCT_BUNDLE_IDENTIFIER: com.khashazad.pulse
         TARGETED_DEVICE_FAMILY: "1"  # iPhone only
         # xcodegen interpolates ${PULSE_BASE_URL} from the shell at
         # generation time, baking a literal build setting into the pbxproj.
@@ -71,10 +71,10 @@ targets:
     info:
       path: PulseTests/Info.plist
       properties:
-        CFBundleIdentifier: com.pulseapp.pulse.tests
+        CFBundleIdentifier: com.khashazad.pulse.tests
         BaseURL: https://example.test
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.pulseapp.pulse.tests
+        PRODUCT_BUNDLE_IDENTIFIER: com.khashazad.pulse.tests
         BUNDLE_LOADER: "$(TEST_HOST)"
         TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Pulse.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Pulse"
