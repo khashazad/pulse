@@ -1,0 +1,16 @@
+# Monorepo root — see pulse-server/.gitignore and pulse-ios/.gitignore for subproject rules
+
+# OS / editor
+.DS_Store
+
+# Local tooling & agent scratch (not part of the product)
+.claude/
+.superpowers/
+.deepsec/
+.clawpatch/
+
+# Ad-hoc reports
+report.md
+
+# Python coverage (root-level stray)
+.coverage
