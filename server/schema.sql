@@ -318,20 +318,25 @@ begin
 end
 $body$;
 
+-- search_path is pinned to '' and all table references are schema-qualified to
+-- satisfy Supabase linter 0011 (function_search_path_mutable). pg_catalog is
+-- still implicitly searched, so built-ins resolve without qualification.
 create or replace function check_food_memory_alias_uniqueness() returns trigger
-language plpgsql as $$
+language plpgsql
+set search_path = ''
+as $$
 declare
   collision_name text;
 begin
   if NEW.aliases is not null and array_length(NEW.aliases, 1) is not null then
-    select normalized_name into collision_name from food_memory
+    select normalized_name into collision_name from public.food_memory
     where user_key = NEW.user_key and id is distinct from NEW.id
       and normalized_name = ANY(NEW.aliases)
     limit 1;
     if collision_name is not null then
       raise exception 'alias collides with canonical name %', collision_name using errcode = '23505';
     end if;
-    select normalized_name into collision_name from food_memory
+    select normalized_name into collision_name from public.food_memory
     where user_key = NEW.user_key and id is distinct from NEW.id
       and aliases && NEW.aliases
     limit 1;
@@ -339,7 +344,7 @@ begin
       raise exception 'alias collides with alias of %', collision_name using errcode = '23505';
     end if;
   end if;
-  select normalized_name into collision_name from food_memory
+  select normalized_name into collision_name from public.food_memory
   where user_key = NEW.user_key and id is distinct from NEW.id
     and NEW.normalized_name = ANY(aliases)
   limit 1;
@@ -350,20 +355,23 @@ begin
 end;
 $$;
 
+-- search_path pinned to '' with schema-qualified table refs (Supabase lint 0011).
 create or replace function check_meals_alias_uniqueness() returns trigger
-language plpgsql as $$
+language plpgsql
+set search_path = ''
+as $$
 declare
   collision_name text;
 begin
   if NEW.aliases is not null and array_length(NEW.aliases, 1) is not null then
-    select normalized_name into collision_name from meals
+    select normalized_name into collision_name from public.meals
     where user_key = NEW.user_key and id is distinct from NEW.id
       and normalized_name = ANY(NEW.aliases)
     limit 1;
     if collision_name is not null then
       raise exception 'alias collides with canonical name %', collision_name using errcode = '23505';
     end if;
-    select normalized_name into collision_name from meals
+    select normalized_name into collision_name from public.meals
     where user_key = NEW.user_key and id is distinct from NEW.id
       and aliases && NEW.aliases
     limit 1;
@@ -371,7 +379,7 @@ begin
       raise exception 'alias collides with alias of %', collision_name using errcode = '23505';
     end if;
   end if;
-  select normalized_name into collision_name from meals
+  select normalized_name into collision_name from public.meals
   where user_key = NEW.user_key and id is distinct from NEW.id
     and NEW.normalized_name = ANY(aliases)
   limit 1;
@@ -407,3 +415,20 @@ create index if not exists idx_weight_entries_user_key_log_date
 
 alter table daily_target_profile
   add column if not exists target_weight_lb numeric(6,2);
+
+-- Keep public tables off the Supabase Data API surface (lints 0026/0027,
+-- pg_graphql anon/authenticated table exposed). The backend connects as the
+-- `postgres` owner, which is unaffected by these grants. Guarded on role
+-- existence so this is a no-op on local/test Postgres, which has no `anon`/
+-- `authenticated` roles and would otherwise fail to boot here. RLS is enabled
+-- separately on each table on the live database.
+do $$
+begin
+  if exists (select 1 from pg_roles where rolname = 'anon')
+     and exists (select 1 from pg_roles where rolname = 'authenticated') then
+    execute 'revoke all on all tables in schema public from anon, authenticated';
+    execute 'alter default privileges for role postgres in schema public '
+         || 'revoke all on tables from anon, authenticated';
+  end if;
+end
+$$;

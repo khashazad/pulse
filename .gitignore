@@ -8,6 +8,8 @@
 .superpowers/
 .deepsec/
 .clawpatch/
+.agents/
+skills-lock.json
 
 # Ad-hoc reports
 report.md
