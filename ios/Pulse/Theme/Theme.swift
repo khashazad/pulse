@@ -113,13 +113,20 @@ extension View {
     /// Inputs:
     /// - `radius`: corner radius applied to both fill and border; defaults to
     ///   `Theme.Layout.cardRadius`.
+    /// - `tint`: optional translucent color layered over the base fill to give the
+    ///   card a colored wash (e.g. to distinguish adjacent groupings). `nil` (the
+    ///   default) yields the plain surface.
     ///
     /// Outputs: the receiver with a rounded filled background and a hairline
     /// separator-colored stroke overlay.
-    func ctpCard(radius: CGFloat = Theme.Layout.cardRadius) -> some View {
+    func ctpCard(radius: CGFloat = Theme.Layout.cardRadius, tint: Color? = nil) -> some View {
         background(
             RoundedRectangle(cornerRadius: radius, style: .continuous)
                 .fill(Theme.BG.tertiary)
+                .overlay(
+                    RoundedRectangle(cornerRadius: radius, style: .continuous)
+                        .fill(tint ?? .clear)
+                )
         )
         .overlay(
             RoundedRectangle(cornerRadius: radius, style: .continuous)

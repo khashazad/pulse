@@ -130,7 +130,7 @@ struct DayMacroView: View {
                         .padding(.horizontal, 16)
                         .padding(.top, 4)
                 } else {
-                    entriesCard(rows)
+                    clusteredEntries(rows)
                         .padding(.horizontal, 16)
                 }
 
@@ -256,13 +256,31 @@ struct DayMacroView: View {
         }
     }
 
-    /// Card listing entries for the day, grouping multi-item meals into `MealGroupRow`.
+    /// Stack of per-occasion cards, one per time-proximity cluster. Cards alternate
+    /// between a mauve-tinted and a plain surface so adjacent logging bursts read as
+    /// distinct blocks, making mis-timed or duplicate entries easy to spot.
     /// Inputs:
-    ///   - rows: the day's entries already folded into `DayRow`s by `groupDayEntries`.
+    ///   - rows: the day's entries already folded into `DayRow`s by `groupDayEntries`
+    ///     (sorted ascending by representative time).
+    /// Outputs: composed stack of cluster cards.
+    private func clusteredEntries(_ rows: [DayRow]) -> some View {
+        let clusters = clusterByProximity(rows)
+        return VStack(spacing: 10) {
+            ForEach(Array(clusters.enumerated()), id: \.element.id) { idx, cluster in
+                clusterCard(cluster, tinted: idx.isMultiple(of: 2))
+            }
+        }
+    }
+
+    /// One cluster's card: its rows (single foods + meal groups) stacked with
+    /// hairline separators, on a tinted or plain surface.
+    /// Inputs:
+    ///   - cluster: the proximity cluster to render.
+    ///   - tinted: whether to apply the mauve wash (alternated by the caller).
     /// Outputs: composed card view.
-    private func entriesCard(_ rows: [DayRow]) -> some View {
+    private func clusterCard(_ cluster: DayCluster, tinted: Bool) -> some View {
         VStack(spacing: 0) {
-            ForEach(Array(rows.enumerated()), id: \.element.id) { idx, row in
+            ForEach(Array(cluster.rows.enumerated()), id: \.element.id) { idx, row in
                 Group {
                     switch row {
                     case .single(let entry):
@@ -271,13 +289,13 @@ struct DayMacroView: View {
                         MealGroupRow(group: group)
                     }
                 }
-                if idx < rows.count - 1 {
+                if idx < cluster.rows.count - 1 {
                     Rectangle().fill(Theme.separator).frame(height: 0.5)
                 }
             }
         }
         .padding(.horizontal, 14)
-        .ctpCard()
+        .ctpCard(tint: tinted ? Theme.CTP.mauve.opacity(0.10) : nil)
     }
 
     /// Body for the failed state. Renders a "no targets set" hint for `.notFound`,
