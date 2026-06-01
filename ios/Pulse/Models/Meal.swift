@@ -60,6 +60,19 @@ struct MealsListResponse: Codable {
     let meals: [MealSummary]
 }
 
+/// Request body for `POST /meals/{id}/log`. `consumedAt` drives backdated
+/// logging of a saved meal's items; encode it through `JSONEncoder.pulseDefault()`
+/// so it serializes as a naive wall-clock datetime the server can project onto
+/// the owning calendar day. Leave `consumedAt` `nil` to log against the server's
+/// "now" (the key is then omitted from the request body).
+struct LogMealRequest: Encodable, Equatable {
+    let consumedAt: Date?
+
+    enum CodingKeys: String, CodingKey {
+        case consumedAt = "consumed_at"
+    }
+}
+
 /// Full meal returned by `GET /meals/{id}`, including all items.
 struct Meal: Codable, Identifiable, Hashable {
     let id: UUID

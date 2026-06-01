@@ -10,6 +10,7 @@ struct MealDetailView: View {
     @Environment(AuthSession.self) private var auth
     let summary: MealSummary
     @State private var model: MealDetailModel?
+    @State private var showLogSheet = false
 
     var body: some View {
         ZStack {
@@ -42,6 +43,11 @@ struct MealDetailView: View {
             await model?.load()
         }
         .refreshable { await model?.load() }
+        .sheet(isPresented: $showLogSheet) {
+            if let model {
+                MealLogSheet(model: model, mealName: summary.name)
+            }
+        }
     }
 
     /// Body for the loaded state: hero card + ingredients section.
@@ -71,12 +77,47 @@ struct MealDetailView: View {
                 } else {
                     ingredientsCard(meal.items)
                         .padding(.horizontal, 16)
+                    logButton(disabled: false)
+                        .padding(.horizontal, 16)
+                        .padding(.top, 4)
                 }
 
                 Spacer(minLength: Theme.Layout.dockClearance)
             }
             .padding(.top, 6)
         }
+    }
+
+    /// Primary "Log meal" button that presents the backdating log sheet.
+    /// Inputs:
+    ///   - disabled: when true, the button is dimmed and non-interactive.
+    /// Outputs: composed button view.
+    private func logButton(disabled: Bool) -> some View {
+        Button {
+            model?.resetLogState()
+            showLogSheet = true
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "plus.circle.fill")
+                    .font(.system(size: 16, weight: .semibold))
+                Text("Log meal")
+                    .font(.system(size: 15, weight: .semibold))
+            }
+            .foregroundStyle(Theme.CTP.mauve)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 13)
+            .background(
+                RoundedRectangle(cornerRadius: Theme.Layout.cardRadius, style: .continuous)
+                    .fill(Theme.CTP.mauve.opacity(0.16))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: Theme.Layout.cardRadius, style: .continuous)
+                    .strokeBorder(Theme.CTP.mauve.opacity(0.30), lineWidth: 0.5)
+            )
+        }
+        .buttonStyle(.plain)
+        .disabled(disabled)
+        .opacity(disabled ? 0.5 : 1)
     }
 
     /// Top card showing meal totals, notes, macro distribution bar, and per-macro chips.
@@ -192,5 +233,101 @@ private struct QuantityBadge: View {
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
                     .strokeBorder(Theme.separator, lineWidth: 0.5)
             )
+    }
+}
+
+/// Modal sheet for logging a saved meal against a chosen day. Wraps the shared
+/// `BackdateSelector` and a confirm button that calls `MealDetailModel.logMeal`,
+/// then reports progress / success / failure inline and auto-dismisses on success.
+struct MealLogSheet: View {
+    @Bindable var model: MealDetailModel
+    let mealName: String
+    @Environment(\.dismiss) private var dismiss
+    @State private var date: Date = Date()
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                Theme.BG.primary.ignoresSafeArea()
+                VStack(alignment: .leading, spacing: 18) {
+                    Text("When did you have this?")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Theme.FG.secondary)
+
+                    BackdateSelector(date: $date)
+                        .padding(14)
+                        .ctpCard()
+
+                    statusRow
+
+                    Spacer()
+
+                    confirmButton
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
+            }
+            .navigationTitle("Log \(mealName)")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(Theme.BG.primary, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Cancel") { dismiss() }
+                        .foregroundStyle(Theme.CTP.mauve)
+                }
+            }
+        }
+    }
+
+    /// Inline status line reflecting the model's `logState` (error feedback only;
+    /// success dismisses the sheet from the confirm action's completion).
+    @ViewBuilder
+    private var statusRow: some View {
+        switch model.logState {
+        case .failed(let error):
+            Label(error.userMessage, systemImage: "exclamationmark.triangle")
+                .font(.system(size: 12))
+                .foregroundStyle(Theme.CTP.red)
+        default:
+            EmptyView()
+        }
+    }
+
+    /// Confirm button that triggers the log action; shows a spinner while logging
+    /// and dismisses the sheet once the meal is logged.
+    private var confirmButton: some View {
+        let isLogging = model.logState == .logging
+        return Button {
+            Task {
+                await model.logMeal(consumedAt: date)
+                if case .logged = model.logState {
+                    await model.load()
+                    dismiss()
+                }
+            }
+        } label: {
+            HStack(spacing: 8) {
+                if isLogging {
+                    ProgressView().tint(Theme.CTP.mauve)
+                }
+                Text(isLogging ? "Logging…" : "Log meal")
+                    .font(.system(size: 15, weight: .semibold))
+            }
+            .foregroundStyle(Theme.CTP.mauve)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 14)
+            .background(
+                RoundedRectangle(cornerRadius: Theme.Layout.cardRadius, style: .continuous)
+                    .fill(Theme.CTP.mauve.opacity(0.16))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: Theme.Layout.cardRadius, style: .continuous)
+                    .strokeBorder(Theme.CTP.mauve.opacity(0.30), lineWidth: 0.5)
+            )
+        }
+        .buttonStyle(.plain)
+        .disabled(isLogging)
+        .padding(.bottom, 12)
     }
 }

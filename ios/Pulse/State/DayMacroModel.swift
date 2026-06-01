@@ -10,7 +10,24 @@ import Observation
 final class DayMacroModel {
     let date: Date
     private(set) var state: LoadState<DailySummary> = .idle
+    /// Outcome of the most recent "copy entries to another day" action.
+    private(set) var copyState: CopyState = .idle
     private weak var auth: AuthSession?
+
+    /// Discrete states of a copy-entries action, kept separate from `state` so the
+    /// copy sheet can show progress / success / failure without disturbing the
+    /// day's displayed summary.
+    ///
+    /// `failed` carries the number of entries that were already persisted before
+    /// the failure (`copied`) so the UI never presents a total failure that hides
+    /// committed writes — and so a retry can resume from the remainder instead of
+    /// re-sending (and duplicating) what already succeeded.
+    enum CopyState: Equatable {
+        case idle
+        case copying
+        case finished(copied: Int, skipped: Int)
+        case failed(copied: Int, error: PulseError)
+    }
 
     /// Initializes the model for a specific calendar day.
     /// Inputs:
@@ -37,5 +54,113 @@ final class DayMacroModel {
         } catch {
             state = .failed(.server(status: -1))
         }
+    }
+
+    /// Copies the given existing entries onto a target day as fresh food entries.
+    ///
+    /// Each entry is recreated from its own source (USDA or custom food) with
+    /// `consumedAt` set to `targetDay`, so the server attributes them to that
+    /// day's log. Entries are sent one per request (rather than as one batch) so
+    /// each lands as a standalone entry instead of being grouped into an anonymous
+    /// "Meal" row. Entries that reference neither a USDA food nor a custom food
+    /// are skipped and counted.
+    ///
+    /// The loop stops at the first request failure rather than aborting the whole
+    /// batch: everything already created stays created, `copyState` records how
+    /// many succeeded, and the **returned array is the entries still needing to be
+    /// copied** (the one that failed plus any not yet attempted). Callers should
+    /// retry with exactly that array so a transient failure mid-batch never
+    /// duplicates the entries that already succeeded. Routes a 401 through
+    /// `AuthSession`.
+    /// - Parameters:
+    ///   - entries: The source entries to copy (a full set, or a remainder from a
+    ///     prior partial run).
+    ///   - targetDay: The day to attribute the copies to (used as `consumed_at`).
+    /// - Returns: The entries that were **not** copied and remain safe to retry —
+    ///   empty when every recreatable entry was copied. (Unrecreatable entries are
+    ///   counted as `skipped`, not returned, since retrying them cannot help.)
+    @discardableResult
+    func copyEntries(_ entries: [FoodEntry], to targetDay: Date) async -> [FoodEntry] {
+        guard let client = auth?.makeClient() else {
+            copyState = .failed(copied: 0, error: .notSignedIn)
+            return entries
+        }
+        copyState = .copying
+        var copied = 0
+        var skipped = 0
+        var index = 0
+        while index < entries.count {
+            let entry = entries[index]
+            guard let payload = Self.makeCreate(from: entry, consumedAt: targetDay) else {
+                skipped += 1
+                index += 1
+                continue
+            }
+            do {
+                _ = try await client.createEntries([payload])
+                copied += 1
+                index += 1
+            } catch let error as PulseError {
+                if error == .unauthorized { auth?.handleUnauthorized() }
+                copyState = .failed(copied: copied, error: error)
+                return Array(entries[index...])
+            } catch {
+                copyState = .failed(copied: copied, error: .server(status: -1))
+                return Array(entries[index...])
+            }
+        }
+        copyState = .finished(copied: copied, skipped: skipped)
+        return []
+    }
+
+    /// Resets the copy action back to idle so stale success/failure state doesn't
+    /// leak across sheet presentations (called before each present).
+    /// - Returns: Nothing.
+    func resetCopyState() {
+        copyState = .idle
+    }
+
+    /// Builds a `FoodEntryCreate` that reproduces an existing entry on a new day.
+    ///
+    /// Preserves the display name, quantity text, normalized quantity, and macros
+    /// verbatim, choosing the USDA or custom-food factory based on which source the
+    /// entry carries.
+    /// - Parameters:
+    ///   - entry: The source entry to reproduce.
+    ///   - consumedAt: The backdated consumption time for the copy.
+    /// - Returns: A `FoodEntryCreate` mirroring `entry`, or `nil` when the entry
+    ///   references neither a USDA food nor a custom food (and thus cannot be
+    ///   recreated through `POST /entries`).
+    static func makeCreate(from entry: FoodEntry, consumedAt: Date) -> FoodEntryCreate? {
+        if let fdcId = entry.usdaFdcId, let description = entry.usdaDescription {
+            return .usda(
+                displayName: entry.displayName,
+                quantityText: entry.quantityText,
+                fdcId: fdcId,
+                usdaDescription: description,
+                calories: entry.calories,
+                proteinG: entry.proteinG,
+                carbsG: entry.carbsG,
+                fatG: entry.fatG,
+                normalizedQuantityValue: entry.normalizedQuantityValue,
+                normalizedQuantityUnit: entry.normalizedQuantityUnit,
+                consumedAt: consumedAt
+            )
+        }
+        if let customFoodId = entry.customFoodId {
+            return .custom(
+                displayName: entry.displayName,
+                quantityText: entry.quantityText,
+                customFoodId: customFoodId,
+                calories: entry.calories,
+                proteinG: entry.proteinG,
+                carbsG: entry.carbsG,
+                fatG: entry.fatG,
+                normalizedQuantityValue: entry.normalizedQuantityValue,
+                normalizedQuantityUnit: entry.normalizedQuantityUnit,
+                consumedAt: consumedAt
+            )
+        }
+        return nil
     }
 }

@@ -75,6 +75,40 @@ actor PulseClient {
         return try await fetch(url: url)
     }
 
+    // MARK: - entry / meal logging (writes)
+
+    /// Creates one or more food entries in a single atomic batch (`POST /entries`).
+    /// When an item carries `consumedAt`, the server backdates it to the owning
+    /// calendar day derived from that value; the client never computes the log
+    /// date itself. All items in the batch share one server-assigned entry group.
+    /// Inputs:
+    ///   - items: the food entries to create (each built via `FoodEntryCreate.usda`/`.custom`).
+    /// Outputs: an `EntryWriteResponse` with the created entries and the affected day's macro totals.
+    /// Exceptions: `PulseError` on transport, status (e.g. `.server(status: 422)` for an
+    /// unowned `customFoodId`), or decoding failure.
+    func createEntries(_ items: [FoodEntryCreate]) async throws -> EntryWriteResponse {
+        let url = try makeURL(path: "/entries", query: [])
+        let body = try JSONEncoder.pulseDefault().encode(EntriesCreateRequest(items: items))
+        return try await sendJSON(url: url, method: "POST", body: body)
+    }
+
+    /// Logs a saved meal's items as food entries (`POST /meals/{id}/log`). The
+    /// meal's items are logged at their saved quantities (no scaling). When
+    /// `consumedAt` is set, the server backdates the entries to the owning
+    /// calendar day derived from that value; the client never computes the log
+    /// date itself.
+    /// Inputs:
+    ///   - id: the saved meal's id.
+    ///   - consumedAt: backdated consumption time, or `nil` to log against the server's "now".
+    /// Outputs: an `EntryWriteResponse` with the created entries and the affected day's macro totals.
+    /// Exceptions: `PulseError` on transport, status (e.g. `.notFound` for an unknown meal),
+    /// or decoding failure.
+    func logMeal(id: UUID, consumedAt: Date?) async throws -> EntryWriteResponse {
+        let url = try makeURL(path: "/meals/\(id.uuidString.lowercased())/log", query: [])
+        let body = try JSONEncoder.pulseDefault().encode(LogMealRequest(consumedAt: consumedAt))
+        return try await sendJSON(url: url, method: "POST", body: body)
+    }
+
     // MARK: - containers
 
     /// Lists all containers for the current user.
