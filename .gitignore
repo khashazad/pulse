@@ -4,7 +4,9 @@
 .DS_Store
 
 # Local tooling & agent scratch (not part of the product)
-.claude/
+.claude/*
+# ...but shared agent skills are checked in
+!.claude/skills/
 .superpowers/
 .deepsec/
 .clawpatch/
