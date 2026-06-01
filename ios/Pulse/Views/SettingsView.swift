@@ -1,8 +1,8 @@
 /// Settings sheet.
-/// Account info + sign-out, theme palette display, macro-target entry (calories +
-/// protein/carbs/fat), weight-goal entry (both saved to the server's `MacroTargets`),
-/// and the display-unit toggle stored in `@AppStorage`. Reuses the private `section`
-/// and `row` helpers for layout.
+/// Account info + sign-out, theme palette display, the display-unit toggle stored in
+/// `@AppStorage`, and macro-target + weight-goal entry. The macro and weight fields are
+/// committed together by a single "Save targets" button that PUTs one `MacroTargets`.
+/// Reuses the private `section` and `row` helpers for layout.
 import SwiftUI
 
 /// User-facing settings sheet shown over any tab via the gear toolbar button.
@@ -17,38 +17,10 @@ struct SettingsView: View {
     @State private var fatInput: String = ""
     @State private var targetWeightInput: String = ""
     @State private var targetUnit: WeightUnit = .lb
+    @State private var isSaving = false
+    @State private var saveFailed = false
     @AppStorage(WeightUnit.displayPreferenceKey)
     private var displayUnitRaw: String = WeightUnit.defaultDisplayUnit.rawValue
-
-    /// Whether `targetWeightInput` parses to a positive value under 2000.
-    /// Outputs: `true` when the input is a valid weight in the chosen unit.
-    private var isTargetValid: Bool {
-        guard let v = Double(targetWeightInput.replacingOccurrences(of: ",", with: ".")) else { return false }
-        return v > 0 && v < 2000
-    }
-
-    /// Persists the target weight by converting the user's input to lb, fetching the
-    /// current macro targets, and PUTting an updated copy. Updates the in-memory
-    /// `targetsStore` on success; failures are swallowed so the user can retry.
-    private func saveTarget() async {
-        guard let v = Double(targetWeightInput.replacingOccurrences(of: ",", with: ".")) else { return }
-        let lb = WeightFormatter.toLb(v, from: targetUnit)
-        guard let client = auth.makeClient() else { return }
-        do {
-            let current = try await client.fetchTargets()
-            let updated = MacroTargets(
-                calories: current.calories,
-                proteinG: current.proteinG,
-                carbsG: current.carbsG,
-                fatG: current.fatG,
-                targetWeightLb: lb
-            )
-            _ = try await client.upsertTargets(updated)
-            targetsStore.update(updated)
-        } catch {
-            // Silent failure on save — user can retry. Matches existing macro-target save behavior.
-        }
-    }
 
     /// Parses a macro-gram input, tolerating a comma decimal separator.
     /// Outputs: the parsed value, or `nil` when the text isn't a number.
@@ -60,6 +32,17 @@ struct SettingsView: View {
     /// ".0" so whole-number targets read as "180" rather than "180.0".
     private func macroString(_ value: Double) -> String {
         value == value.rounded() ? String(Int(value)) : String(format: "%.1f", value)
+    }
+
+    /// Converts the weight input to pounds, or `nil` when the field is left blank —
+    /// target weight is optional. Unparseable text also returns `nil`; overall validity
+    /// is gated separately by `isWeightValidOrEmpty`.
+    private func parseWeightLb() -> Double? {
+        let trimmed = targetWeightInput.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty,
+              let v = Double(trimmed.replacingOccurrences(of: ",", with: "."))
+        else { return nil }
+        return WeightFormatter.toLb(v, from: targetUnit)
     }
 
     /// Whether the four macro inputs parse to a valid target set: positive calories
@@ -74,29 +57,47 @@ struct SettingsView: View {
         return [protein, carbs, fat].allSatisfy { $0 >= 0 && $0 <= 10_000 }
     }
 
-    /// Persists the calorie/macro targets, fetching the current profile to preserve the
-    /// existing target weight, then PUTting an updated copy. Updates the in-memory
-    /// `targetsStore` on success; failures are swallowed so the user can retry.
-    private func saveMacros() async {
+    /// Whether the optional target-weight field is either blank or a positive value
+    /// under 2000 (in the selected unit).
+    private var isWeightValidOrEmpty: Bool {
+        let trimmed = targetWeightInput.trimmingCharacters(in: .whitespaces)
+        if trimmed.isEmpty { return true }
+        guard let v = Double(trimmed.replacingOccurrences(of: ",", with: ".")) else { return false }
+        return v > 0 && v < 2000
+    }
+
+    /// Whether the combined macro + weight inputs can be committed right now.
+    private var canSave: Bool {
+        areMacrosValid && isWeightValidOrEmpty && !isSaving
+    }
+
+    /// Commits every editable target — calories, protein, carbs, fat, and the optional
+    /// goal weight — in a single `PUT /targets`. Updates the in-memory `targetsStore`
+    /// and dismisses on success; surfaces `saveFailed` so the user can retry.
+    private func saveAll() async {
         guard let cals = Int(caloriesInput.trimmingCharacters(in: .whitespaces)),
               let protein = parseMacro(proteinInput),
               let carbs = parseMacro(carbsInput),
               let fat = parseMacro(fatInput),
               let client = auth.makeClient()
         else { return }
+        isSaving = true
+        saveFailed = false
+        let updated = MacroTargets(
+            calories: cals,
+            proteinG: protein,
+            carbsG: carbs,
+            fatG: fat,
+            targetWeightLb: parseWeightLb()
+        )
         do {
-            let current = try await client.fetchTargets()
-            let updated = MacroTargets(
-                calories: cals,
-                proteinG: protein,
-                carbsG: carbs,
-                fatG: fat,
-                targetWeightLb: current.targetWeightLb
-            )
             _ = try await client.upsertTargets(updated)
             targetsStore.update(updated)
+            isSaving = false
+            dismiss()
         } catch {
-            // Silent failure on save — user can retry. Matches existing weight-target save behavior.
+            isSaving = false
+            saveFailed = true
         }
     }
 
@@ -159,6 +160,17 @@ struct SettingsView: View {
                             }
                         }
 
+                        section(header: "Display unit") {
+                            row(label: "Weight unit") {
+                                Picker("Display unit", selection: $displayUnitRaw) {
+                                    Text("lb").tag(WeightUnit.lb.rawValue)
+                                    Text("kg").tag(WeightUnit.kg.rawValue)
+                                }
+                                .pickerStyle(.segmented)
+                                .frame(width: 110)
+                            }
+                        }
+
                         section(header: "Macro targets") {
                             row(label: "Calories") {
                                 macroField($caloriesInput, placeholder: "e.g. 2200", decimal: false, unit: "kcal")
@@ -175,19 +187,9 @@ struct SettingsView: View {
                             row(label: "Fat") {
                                 macroField($fatInput, placeholder: "e.g. 70", decimal: true, unit: "g")
                             }
-                            Rectangle().fill(Theme.separator).frame(height: 0.5)
-                            HStack {
-                                Spacer()
-                                Button("Save targets") { Task { await saveMacros() } }
-                                    .font(.system(size: 14, weight: .semibold))
-                                    .foregroundStyle(areMacrosValid ? Theme.CTP.mauve : Theme.FG.tertiary)
-                                    .disabled(!areMacrosValid)
-                                    .padding(.horizontal, 16)
-                                    .padding(.vertical, 12)
-                            }
                         }
 
-                        section(header: "Weight goal") {
+                        section(header: "Weight goal", footer: "Leave blank to clear your goal weight.") {
                             row(label: "Target weight") {
                                 HStack(spacing: 8) {
                                     TextField("e.g. 170", text: $targetWeightInput)
@@ -211,28 +213,30 @@ struct SettingsView: View {
                                     }
                                 }
                             }
-                            Rectangle().fill(Theme.separator).frame(height: 0.5)
-                            HStack {
-                                Spacer()
-                                Button("Save target") { Task { await saveTarget() } }
-                                    .font(.system(size: 14, weight: .semibold))
-                                    .foregroundStyle(isTargetValid ? Theme.CTP.mauve : Theme.FG.tertiary)
-                                    .disabled(!isTargetValid)
-                                    .padding(.horizontal, 16)
-                                    .padding(.vertical, 12)
-                            }
                         }
 
-                        section(header: "Display unit") {
-                            row(label: "Weight unit") {
-                                Picker("Display unit", selection: $displayUnitRaw) {
-                                    Text("lb").tag(WeightUnit.lb.rawValue)
-                                    Text("kg").tag(WeightUnit.kg.rawValue)
-                                }
-                                .pickerStyle(.segmented)
-                                .frame(width: 110)
+                        VStack(spacing: 8) {
+                            Button {
+                                Task { await saveAll() }
+                            } label: {
+                                Text(isSaving ? "Saving…" : "Save targets")
+                                    .font(.system(size: 15, weight: .semibold))
+                                    .foregroundStyle(.white)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 14)
+                                    .background(canSave ? Theme.CTP.mauve : Theme.CTP.mauve.opacity(0.4))
+                                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            }
+                            .disabled(!canSave)
+
+                            if saveFailed {
+                                Text("Couldn't save. Check your connection and try again.")
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(Theme.CTP.red)
+                                    .frame(maxWidth: .infinity, alignment: .center)
                             }
                         }
+                        .padding(.horizontal, 16)
                     }
                     .padding(.vertical, 16)
                 }
