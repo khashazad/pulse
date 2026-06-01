@@ -42,7 +42,19 @@ final class MealsModel {
 final class MealDetailModel {
     let mealId: UUID
     private(set) var state: LoadState<Meal> = .idle
+    /// Outcome of the most recent log attempt, surfaced to the log sheet.
+    private(set) var logState: LogActionState = .idle
     private weak var auth: AuthSession?
+
+    /// Discrete states of a meal-log action, separate from the detail-load state
+    /// so the log sheet can show progress / success / failure without disturbing
+    /// the underlying meal display.
+    enum LogActionState: Equatable {
+        case idle
+        case logging
+        case logged(MacroTotals)
+        case failed(PulseError)
+    }
 
     /// Initializes the detail model for a specific meal id.
     /// Inputs:
@@ -71,5 +83,38 @@ final class MealDetailModel {
             if case .loaded = state { return }
             state = .failed(.server(status: -1))
         }
+    }
+
+    /// Logs this meal's items as food entries, optionally backdated.
+    ///
+    /// The server logs the meal's items at their saved quantities (no scaling)
+    /// and derives the owning calendar day from `consumedAt`; the client never
+    /// computes the log date. Updates `logState` for the caller's UI; routes a
+    /// 401 through `AuthSession`.
+    /// - Parameter consumedAt: Backdated consumption time, or `nil` to log
+    ///   against the server's "now".
+    /// - Returns: Nothing; the result is reflected in `logState`.
+    func logMeal(consumedAt: Date?) async {
+        guard let client = auth?.makeClient() else {
+            logState = .failed(.notSignedIn)
+            return
+        }
+        logState = .logging
+        do {
+            let response = try await client.logMeal(id: mealId, consumedAt: consumedAt)
+            logState = .logged(response.dailyTotals)
+        } catch let error as PulseError {
+            if error == .unauthorized { auth?.handleUnauthorized() }
+            logState = .failed(error)
+        } catch {
+            logState = .failed(.server(status: -1))
+        }
+    }
+
+    /// Resets the log action back to idle (e.g. when the log sheet is dismissed
+    /// or reopened) so stale success/failure state doesn't leak across presentations.
+    /// - Returns: Nothing.
+    func resetLogState() {
+        logState = .idle
     }
 }

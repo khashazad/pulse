@@ -39,6 +39,35 @@ enum DateOnly {
     static func string(from date: Date) -> String {
         formatter.string(from: date)
     }
+
+    /// Formatter for naive wall-clock datetimes (`yyyy-MM-dd'T'HH:mm:ss`, no
+    /// timezone designator) in the device's current time zone. Used when
+    /// encoding `consumed_at` for write requests: the server reads the literal
+    /// wall-clock value to derive the owning calendar day, so the string must
+    /// carry no offset.
+    static let wallClockFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = .current
+        f.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
+        return f
+    }()
+}
+
+/// `JSONEncoder` factory for diet-tracker wire format.
+extension JSONEncoder {
+    /// Builds a `JSONEncoder` whose `dateEncodingStrategy` emits naive
+    /// wall-clock datetimes (`yyyy-MM-dd'T'HH:mm:ss`, current time zone, no
+    /// offset). This matches what the backend expects for `consumed_at`: a
+    /// timezone-less value it interprets as wall-clock in its configured zone
+    /// to resolve the owning daily-log date. All request bodies carrying a
+    /// `Date` should encode through this factory.
+    /// Outputs: a configured `JSONEncoder` for diet-tracker request bodies.
+    static func pulseDefault() -> JSONEncoder {
+        let e = JSONEncoder()
+        e.dateEncodingStrategy = .formatted(DateOnly.wallClockFormatter)
+        return e
+    }
 }
 
 /// `JSONDecoder` factory for diet-tracker wire format.

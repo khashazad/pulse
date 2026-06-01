@@ -1,0 +1,47 @@
+{
+  "entries": [
+    {
+      "id": "aaaaaaaa-0000-0000-0000-000000000010",
+      "daily_log_id": "bbbbbbbb-0000-0000-0000-000000000010",
+      "user_key": "khash",
+      "entry_group_id": "cccccccc-0000-0000-0000-000000000010",
+      "display_name": "oatmeal",
+      "quantity_text": "1 serving",
+      "normalized_quantity_value": null,
+      "normalized_quantity_unit": null,
+      "usda_fdc_id": 173904,
+      "usda_description": "Oats, regular, cooked",
+      "custom_food_id": null,
+      "calories": 150,
+      "protein_g": 5.0,
+      "carbs_g": 27.0,
+      "fat_g": 2.5,
+      "meal_id": "11111111-1111-1111-1111-111111111111",
+      "meal_name": "Breakfast",
+      "consumed_at": "2026-05-29T12:00:00Z",
+      "created_at": "2026-05-31T09:00:00Z"
+    },
+    {
+      "id": "aaaaaaaa-0000-0000-0000-000000000011",
+      "daily_log_id": "bbbbbbbb-0000-0000-0000-000000000010",
+      "user_key": "khash",
+      "entry_group_id": "cccccccc-0000-0000-0000-000000000010",
+      "display_name": "blueberries",
+      "quantity_text": "1 cup",
+      "normalized_quantity_value": 148.0,
+      "normalized_quantity_unit": "g",
+      "usda_fdc_id": 171711,
+      "usda_description": "Blueberries, raw",
+      "custom_food_id": null,
+      "calories": 84,
+      "protein_g": 1.1,
+      "carbs_g": 21.0,
+      "fat_g": 0.5,
+      "meal_id": "11111111-1111-1111-1111-111111111111",
+      "meal_name": "Breakfast",
+      "consumed_at": "2026-05-29T12:00:00Z",
+      "created_at": "2026-05-31T09:00:00Z"
+    }
+  ],
+  "daily_totals": { "calories": 234, "protein_g": 6.1, "carbs_g": 48.0, "fat_g": 3.0 }
+}
