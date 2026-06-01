@@ -1,7 +1,8 @@
 /// Settings sheet.
-/// Account info + sign-out, theme palette display, weight-goal entry (saved to the
-/// server's `MacroTargets.targetWeightLb`), and the display-unit toggle stored in
-/// `@AppStorage`. Reuses the private `section` and `row` helpers for layout.
+/// Account info + sign-out, theme palette display, macro-target entry (calories +
+/// protein/carbs/fat), weight-goal entry (both saved to the server's `MacroTargets`),
+/// and the display-unit toggle stored in `@AppStorage`. Reuses the private `section`
+/// and `row` helpers for layout.
 import SwiftUI
 
 /// User-facing settings sheet shown over any tab via the gear toolbar button.
@@ -10,6 +11,10 @@ struct SettingsView: View {
     @Environment(UserTargetsStore.self) private var targetsStore
     @Environment(\.dismiss) private var dismiss
 
+    @State private var caloriesInput: String = ""
+    @State private var proteinInput: String = ""
+    @State private var carbsInput: String = ""
+    @State private var fatInput: String = ""
     @State private var targetWeightInput: String = ""
     @State private var targetUnit: WeightUnit = .lb
     @AppStorage(WeightUnit.displayPreferenceKey)
@@ -42,6 +47,56 @@ struct SettingsView: View {
             targetsStore.update(updated)
         } catch {
             // Silent failure on save — user can retry. Matches existing macro-target save behavior.
+        }
+    }
+
+    /// Parses a macro-gram input, tolerating a comma decimal separator.
+    /// Outputs: the parsed value, or `nil` when the text isn't a number.
+    private func parseMacro(_ text: String) -> Double? {
+        Double(text.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: ",", with: "."))
+    }
+
+    /// Formats a stored macro-gram value for an input field, dropping a trailing
+    /// ".0" so whole-number targets read as "180" rather than "180.0".
+    private func macroString(_ value: Double) -> String {
+        value == value.rounded() ? String(Int(value)) : String(format: "%.1f", value)
+    }
+
+    /// Whether the four macro inputs parse to a valid target set: positive calories
+    /// and non-negative protein/carbs/fat within sane bounds.
+    private var areMacrosValid: Bool {
+        guard let cals = Int(caloriesInput.trimmingCharacters(in: .whitespaces)),
+              cals > 0, cals <= 100_000,
+              let protein = parseMacro(proteinInput),
+              let carbs = parseMacro(carbsInput),
+              let fat = parseMacro(fatInput)
+        else { return false }
+        return [protein, carbs, fat].allSatisfy { $0 >= 0 && $0 <= 10_000 }
+    }
+
+    /// Persists the calorie/macro targets, fetching the current profile to preserve the
+    /// existing target weight, then PUTting an updated copy. Updates the in-memory
+    /// `targetsStore` on success; failures are swallowed so the user can retry.
+    private func saveMacros() async {
+        guard let cals = Int(caloriesInput.trimmingCharacters(in: .whitespaces)),
+              let protein = parseMacro(proteinInput),
+              let carbs = parseMacro(carbsInput),
+              let fat = parseMacro(fatInput),
+              let client = auth.makeClient()
+        else { return }
+        do {
+            let current = try await client.fetchTargets()
+            let updated = MacroTargets(
+                calories: cals,
+                proteinG: protein,
+                carbsG: carbs,
+                fatG: fat,
+                targetWeightLb: current.targetWeightLb
+            )
+            _ = try await client.upsertTargets(updated)
+            targetsStore.update(updated)
+        } catch {
+            // Silent failure on save — user can retry. Matches existing weight-target save behavior.
         }
     }
 
@@ -104,6 +159,34 @@ struct SettingsView: View {
                             }
                         }
 
+                        section(header: "Macro targets") {
+                            row(label: "Calories") {
+                                macroField($caloriesInput, placeholder: "e.g. 2200", decimal: false, unit: "kcal")
+                            }
+                            Rectangle().fill(Theme.separator).frame(height: 0.5)
+                            row(label: "Protein") {
+                                macroField($proteinInput, placeholder: "e.g. 180", decimal: true, unit: "g")
+                            }
+                            Rectangle().fill(Theme.separator).frame(height: 0.5)
+                            row(label: "Carbs") {
+                                macroField($carbsInput, placeholder: "e.g. 200", decimal: true, unit: "g")
+                            }
+                            Rectangle().fill(Theme.separator).frame(height: 0.5)
+                            row(label: "Fat") {
+                                macroField($fatInput, placeholder: "e.g. 70", decimal: true, unit: "g")
+                            }
+                            Rectangle().fill(Theme.separator).frame(height: 0.5)
+                            HStack {
+                                Spacer()
+                                Button("Save targets") { Task { await saveMacros() } }
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundStyle(areMacrosValid ? Theme.CTP.mauve : Theme.FG.tertiary)
+                                    .disabled(!areMacrosValid)
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 12)
+                            }
+                        }
+
                         section(header: "Weight goal") {
                             row(label: "Target weight") {
                                 HStack(spacing: 8) {
@@ -158,6 +241,10 @@ struct SettingsView: View {
                 guard let client = auth.makeClient() else { return }
                 if let current = try? await client.fetchTargets() {
                     targetsStore.update(current)
+                    caloriesInput = String(current.calories)
+                    proteinInput = macroString(current.proteinG)
+                    carbsInput = macroString(current.carbsG)
+                    fatInput = macroString(current.fatG)
                     if let lb = current.targetWeightLb {
                         targetWeightInput = String(format: "%.1f", WeightFormatter.fromLb(lb, to: targetUnit))
                     }
@@ -231,6 +318,34 @@ struct SettingsView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
+    }
+
+    /// Trailing numeric input used by the macro-target rows: a right-aligned monospaced
+    /// text field followed by a fixed unit caption.
+    /// Inputs:
+    ///   - text: binding to the field's string contents.
+    ///   - placeholder: hint shown when the field is empty.
+    ///   - decimal: `true` for gram fields (`.decimalPad`), `false` for calories (`.numberPad`).
+    ///   - unit: unit caption rendered after the field (e.g. "g", "kcal").
+    /// Outputs: composed trailing control for use inside a `row`.
+    private func macroField(
+        _ text: Binding<String>,
+        placeholder: String,
+        decimal: Bool,
+        unit: String
+    ) -> some View {
+        HStack(spacing: 8) {
+            TextField(placeholder, text: text)
+                .keyboardType(decimal ? .decimalPad : .numberPad)
+                .multilineTextAlignment(.trailing)
+                .frame(width: 80)
+                .font(.system(size: 14, weight: .medium, design: .monospaced))
+                .foregroundStyle(Theme.FG.primary)
+            Text(unit)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(Theme.FG.tertiary)
+                .frame(width: 34, alignment: .leading)
+        }
     }
 }
 
