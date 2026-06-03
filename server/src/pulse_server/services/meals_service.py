@@ -15,7 +15,6 @@ from typing import Any
 from uuid import UUID
 
 from fastapi import HTTPException
-from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pulse_server.db import transaction
@@ -26,12 +25,17 @@ from pulse_server.models import (
 )
 from pulse_server.repositories.meals import MealsRepository
 from pulse_server.repositories.tables import meals as meals_table
+from pulse_server.services.alias_utils import (
+    assert_alias_available,
+    normalize_alias_list,
+)
 from pulse_server.services.custom_foods_service import (
     CrossTenantReferenceError,
     assert_custom_foods_owned,
 )
 from pulse_server.services.entries_service import create_entries_with_side_effects
 from pulse_server.services.normalize import normalize_name
+from pulse_server.services.normalize import optional_float
 
 
 def _validate_item_source(item: MealItemCreate) -> None:
@@ -192,7 +196,7 @@ async def log_meal(
             FoodEntryCreate(
                 display_name=item["display_name"],
                 quantity_text=item["quantity_text"],
-                normalized_quantity_value=_optional_float(item["normalized_quantity_value"]),
+                normalized_quantity_value=optional_float(item["normalized_quantity_value"]),
                 normalized_quantity_unit=item["normalized_quantity_unit"],
                 usda_fdc_id=item["usda_fdc_id"],
                 usda_description=item["usda_description"],
@@ -216,41 +220,6 @@ async def log_meal(
         )
 
 
-def _optional_float(value: Any) -> float | None:
-    """Coerce a possibly-``None`` numeric value to ``float | None``.
-
-    **Inputs:**
-    - value (Any): Numeric value or ``None``.
-
-    **Outputs:**
-    - float | None: ``None`` when input is ``None``, otherwise ``float(value)``.
-    """
-    return None if value is None else float(value)
-
-
-def normalize_alias_list(aliases: list[str], canonical_normalized_name: str) -> list[str]:
-    """Normalize aliases, drop empties, dedupe, and drop the alias equal to the canonical name.
-
-    **Inputs:**
-    - aliases (list[str]): Raw, user-supplied alias strings.
-    - canonical_normalized_name (str): Already-normalized canonical name;
-      an alias equal to this value is discarded.
-
-    **Outputs:**
-    - list[str]: Order-preserving list of normalized, unique aliases that do
-      not collide with the canonical name.
-    """
-    seen: set[str] = set()
-    out: list[str] = []
-    for raw in aliases:
-        norm = normalize_name(raw)
-        if not norm or norm == canonical_normalized_name or norm in seen:
-            continue
-        seen.add(norm)
-        out.append(norm)
-    return out
-
-
 async def assert_meal_alias_available(
     session: AsyncSession,
     user_key: str,
@@ -259,6 +228,8 @@ async def assert_meal_alias_available(
 ) -> None:
     """Verify an alias is not already used as a meal name or alias on another meal.
 
+    Thin wrapper over :func:`assert_alias_available` bound to the ``meals`` table.
+
     **Inputs:**
     - session (AsyncSession): Active SQLAlchemy session.
     - user_key (str): Owning user's scoping key.
@@ -266,25 +237,21 @@ async def assert_meal_alias_available(
     - exclude_meal_id (UUID | None): Meal id to exclude from the check (the
       meal being edited).
 
-    **Exceptions:**
+    **Outputs:**
+    - None: Returns nothing when no collision is found.
+
+    **Raises:**
     - ValueError: Raised when ``alias`` collides with another meal.
     - sqlalchemy.exc.SQLAlchemyError: Raised when SQL execution fails.
     """
-    stmt = (
-        select(meals_table.c.normalized_name)
-        .where(meals_table.c.user_key == user_key)
-        .where(
-            or_(
-                meals_table.c.normalized_name == alias,
-                meals_table.c.aliases.any(alias),
-            )
-        )
+    await assert_alias_available(
+        session,
+        table=meals_table,
+        name_column=meals_table.c.normalized_name,
+        aliases_column=meals_table.c.aliases,
+        user_key=user_key,
+        alias=alias,
+        exclude_value=exclude_meal_id,
+        exclude_column=meals_table.c.id,
+        entity_label="meal",
     )
-    if exclude_meal_id is not None:
-        stmt = stmt.where(meals_table.c.id != exclude_meal_id)
-    result = await session.execute(stmt)
-    existing = result.scalar_one_or_none()
-    if existing is not None:
-        raise ValueError(
-            f"alias '{alias}' is already used by meal '{existing}'"
-        )

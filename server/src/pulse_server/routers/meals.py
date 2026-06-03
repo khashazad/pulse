@@ -28,9 +28,11 @@ from pulse_server.models import (
     MealItemCreate,
     MealItemResponse,
     MealResponse,
-    MealSummary,
     MealUpdate,
     MealsListResponse,
+    meal_item_response,
+    meal_response,
+    meal_summary,
 )
 from pulse_server.repositories.meals import MealsRepository
 from pulse_server.services.custom_foods_service import (
@@ -63,58 +65,6 @@ class LogMealResponse(BaseModel):
     daily_totals: MacroTotals
 
 
-def _item_to_response(row: dict) -> MealItemResponse:
-    """Project a raw ``meal_items`` row into the public response model.
-
-    **Inputs:**
-    - row (dict): Column→value mapping returned by :class:`MealsRepository`.
-
-    **Outputs:**
-    - MealItemResponse: Pydantic DTO with numeric fields normalized.
-    """
-    return MealItemResponse(
-        id=row["id"],
-        meal_id=row["meal_id"],
-        position=int(row["position"]),
-        display_name=row["display_name"],
-        quantity_text=row["quantity_text"],
-        normalized_quantity_value=None
-        if row["normalized_quantity_value"] is None
-        else float(row["normalized_quantity_value"]),
-        normalized_quantity_unit=row["normalized_quantity_unit"],
-        usda_fdc_id=None if row["usda_fdc_id"] is None else int(row["usda_fdc_id"]),
-        usda_description=row["usda_description"],
-        custom_food_id=row["custom_food_id"],
-        calories=int(row["calories"]),
-        protein_g=float(row["protein_g"]),
-        carbs_g=float(row["carbs_g"]),
-        fat_g=float(row["fat_g"]),
-        created_at=row["created_at"],
-    )
-
-
-def _meal_to_response(meal_row: dict, item_rows: list[dict]) -> MealResponse:
-    """Combine a ``meals`` row and its ``meal_items`` rows into the public response model.
-
-    **Inputs:**
-    - meal_row (dict): The parent meal row.
-    - item_rows (list[dict]): The meal's items, in display order.
-
-    **Outputs:**
-    - MealResponse: Pydantic DTO with embedded item list.
-    """
-    return MealResponse(
-        id=meal_row["id"],
-        user_key=meal_row["user_key"],
-        name=meal_row["name"],
-        normalized_name=meal_row["normalized_name"],
-        notes=meal_row["notes"],
-        created_at=meal_row["created_at"],
-        updated_at=meal_row["updated_at"],
-        items=[_item_to_response(r) for r in item_rows],
-    )
-
-
 @router.get("/meals", response_model=MealsListResponse)
 async def list_meals(
     request: Request,
@@ -132,22 +82,7 @@ async def list_meals(
     user_key = request.state.user_key
     repo = MealsRepository(session)
     rows = await repo.list_meals(user_key)
-    return MealsListResponse(
-        meals=[
-            MealSummary(
-                id=row["id"],
-                name=row["name"],
-                normalized_name=row["normalized_name"],
-                notes=row["notes"],
-                item_count=int(row["item_count"]),
-                total_calories=int(row["total_calories"]),
-                total_protein_g=float(row["total_protein_g"]),
-                total_carbs_g=float(row["total_carbs_g"]),
-                total_fat_g=float(row["total_fat_g"]),
-            )
-            for row in rows
-        ]
-    )
+    return MealsListResponse(meals=[meal_summary(row) for row in rows])
 
 
 @router.post("/meals", status_code=201, response_model=MealResponse)
@@ -178,7 +113,7 @@ async def create_meal(
             )
     except IntegrityError as exc:
         raise HTTPException(status_code=409, detail="Meal name already exists") from exc
-    return _meal_to_response(meal_row, item_rows)
+    return meal_response(meal_row, item_rows)
 
 
 @router.get("/meals/{meal_id}", response_model=MealResponse)
@@ -206,7 +141,7 @@ async def get_meal(
     if meal_row is None:
         raise HTTPException(status_code=404, detail="Meal not found")
     item_rows = await repo.list_items(meal_id)
-    return _meal_to_response(meal_row, item_rows)
+    return meal_response(meal_row, item_rows)
 
 
 @router.patch("/meals/{meal_id}", response_model=MealResponse)
@@ -245,7 +180,7 @@ async def update_meal(
     if meal_row is None:
         raise HTTPException(status_code=404, detail="Meal not found")
     item_rows = await repo.list_items(meal_id)
-    return _meal_to_response(meal_row, item_rows)
+    return meal_response(meal_row, item_rows)
 
 
 @router.delete("/meals/{meal_id}", status_code=204)
@@ -339,7 +274,7 @@ async def add_meal_item(
             fat_g=body.fat_g,
             now=now,
         )
-    return _item_to_response(row)
+    return meal_item_response(row)
 
 
 @router.delete("/meals/{meal_id}/items/{item_id}", status_code=204)

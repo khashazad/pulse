@@ -1,12 +1,12 @@
 /// Intake → Year sub-tab.
-/// Renders the current year's daily logs as monthly buckets via `YearModel`,
-/// plus an `AverageMacrosTable` summary.
+/// Renders the current year's daily logs as monthly buckets via
+/// `PeriodIntakeModel(range: .year)`, plus an `AverageMacrosTable` summary.
 import SwiftUI
 
 /// Year-period summary screen: monthly kcal bars + average macros table.
 struct YearView: View {
     @Environment(AuthSession.self) private var auth
-    @State private var model: YearModel?
+    @State private var model: PeriodIntakeModel?
 
     var body: some View {
         ZStack {
@@ -24,7 +24,7 @@ struct YearView: View {
                         icon: "exclamationmark.triangle",
                         title: "Couldn't load",
                         description: error.userMessage,
-                        action: { Task { await model?.loadCurrentYear() } },
+                        action: { Task { await model?.load() } },
                         actionLabel: "Retry"
                     )
                 }
@@ -35,10 +35,10 @@ struct YearView: View {
         .toolbarBackground(Theme.BG.primary, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
         .task {
-            if model == nil { model = YearModel(auth: auth) }
-            await model?.loadCurrentYear()
+            if model == nil { model = PeriodIntakeModel(range: .year, auth: auth) }
+            await model?.load()
         }
-        .refreshable { await model?.loadCurrentYear() }
+        .refreshable { await model?.load() }
     }
 
     /// Body for the loaded state. Computes monthly buckets and yearly averages from
@@ -48,29 +48,26 @@ struct YearView: View {
     /// Outputs: composed scrollable view.
     private func loadedBody(_ logs: [DailyLog]) -> some View {
         let chronological = logs.sorted { $0.date < $1.date }
-        let buckets = YearModel.monthlyBuckets(chronological)
-        let avgKcal = WeekModel.avgCalories(chronological)
+        let buckets = PeriodIntakeModel.monthlyBuckets(chronological)
+        let avgKcal = chronological.avgCalories
         let dailyTarget = model?.targets?.calories
-        let pct: Int? = {
-            guard let dailyTarget, dailyTarget > 0, avgKcal > 0 else { return nil }
-            return Int((Double(avgKcal) / Double(dailyTarget) * 100).rounded())
-        }()
 
         return ScrollView {
             VStack(spacing: Theme.Layout.sectionSpacing) {
-                summaryCard(
+                PeriodSummaryCard(
+                    title: "Year avg / day",
                     avgKcal: avgKcal,
-                    pct: pct,
                     buckets: buckets,
+                    barsHeader: "Monthly avg",
                     dailyTarget: dailyTarget
                 )
                 .padding(.horizontal, 16)
 
                 AverageMacrosTable(
                     avgKcal: avgKcal,
-                    avgProteinG: Int(WeekModel.avgProtein(chronological).rounded()),
-                    avgCarbsG: Int(WeekModel.avgCarbs(chronological).rounded()),
-                    avgFatG: Int(WeekModel.avgFat(chronological).rounded())
+                    avgProteinG: Int(chronological.avgProtein.rounded()),
+                    avgCarbsG: Int(chronological.avgCarbs.rounded()),
+                    avgFatG: Int(chronological.avgFat.rounded())
                 )
                 .padding(.horizontal, 16)
 
@@ -78,56 +75,5 @@ struct YearView: View {
             }
             .padding(.top, 4)
         }
-    }
-
-    /// Top summary card with year avg/day kcal, percent-of-target chip, and monthly bars.
-    /// Inputs:
-    ///   - avgKcal: average daily kcal over the year.
-    ///   - pct: percent of daily target reached on average (nil if no target).
-    ///   - buckets: monthly buckets for the bar chart.
-    ///   - dailyTarget: daily kcal target used for the bar threshold line.
-    /// Outputs: composed card view.
-    private func summaryCard(
-        avgKcal: Int,
-        pct: Int?,
-        buckets: [PeriodBucket],
-        dailyTarget: Int?
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .firstTextBaseline) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Year avg / day")
-                        .font(.system(size: 11, weight: .semibold))
-                        .tracking(0.8)
-                        .textCase(.uppercase)
-                        .foregroundStyle(Theme.FG.secondary)
-                    HStack(alignment: .firstTextBaseline, spacing: 4) {
-                        Text(avgKcal.formatted())
-                            .font(.system(size: 28, weight: .bold, design: .rounded))
-                            .monospacedDigit()
-                            .foregroundStyle(Theme.FG.primary)
-                        Text("cal")
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundStyle(Theme.FG.tertiary)
-                    }
-                }
-                Spacer()
-                if let pct {
-                    Text("\(pct)% of target")
-                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                        .tracking(0.4)
-                        .foregroundStyle(Theme.CTP.green)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 4)
-                        .background(Capsule().fill(Theme.CTP.green.opacity(0.14)))
-                }
-            }
-
-            BucketKcalBars(buckets: buckets, header: "Monthly avg", targetCalories: dailyTarget)
-        }
-        .padding(.horizontal, 16)
-        .padding(.top, 14)
-        .padding(.bottom, 16)
-        .ctpCard()
     }
 }

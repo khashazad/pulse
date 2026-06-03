@@ -17,6 +17,7 @@ from pulse_server.auth import require_session
 from pulse_server.db import get_session_dependency, transaction
 from pulse_server.models.progress_photo import (
     ProgressPhotoTagCreate,
+    ProgressPhotoTagResponse,
     ProgressPhotoTagUpdate,
 )
 from pulse_server.repositories.progress_photo_tag import (
@@ -31,31 +32,32 @@ from pulse_server.services.progress_photo_tag_service import (
 router = APIRouter(prefix="/measures", dependencies=[Depends(require_session)])
 
 
-def _row_to_response(row: dict) -> dict:
-    """Project a raw ``progress_photo_tags`` row into the public payload.
+def _row_to_response(row: dict) -> ProgressPhotoTagResponse:
+    """Project a raw ``progress_photo_tags`` row into its typed response DTO.
 
     **Inputs:**
     - row (dict): Column→value mapping returned by the repository.
 
     **Outputs:**
-    - dict: ``{id, name, normalized_name, sort_order, created_at, updated_at}``
-      with ``id`` stringified for transport.
+    - ProgressPhotoTagResponse: Typed model whose serialized JSON is
+      byte-identical to the prior dict payload (``id``, ``name``,
+      ``normalized_name``, ``sort_order``, ``created_at``, ``updated_at``).
     """
-    return {
-        "id": str(row["id"]),
-        "name": row["name"],
-        "normalized_name": row["normalized_name"],
-        "sort_order": row["sort_order"],
-        "created_at": row["created_at"],
-        "updated_at": row["updated_at"],
-    }
+    return ProgressPhotoTagResponse(
+        id=row["id"],
+        name=row["name"],
+        normalized_name=row["normalized_name"],
+        sort_order=row["sort_order"],
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+    )
 
 
-@router.get("/photo-tags")
+@router.get("/photo-tags", response_model=list[ProgressPhotoTagResponse])
 async def list_photo_tags(
     request: Request,
     session: AsyncSession = Depends(get_session_dependency),
-) -> list[dict]:
+) -> list[ProgressPhotoTagResponse]:
     """List the user's progress-photo tags, seeding the defaults on first call.
 
     **Inputs:**
@@ -63,7 +65,7 @@ async def list_photo_tags(
     - session (AsyncSession): DB session dependency.
 
     **Outputs:**
-    - list[dict]: Tag rows ordered by ``(sort_order, normalized_name)``.
+    - list[ProgressPhotoTagResponse]: Tag rows ordered by ``(sort_order, normalized_name)``.
     """
     user_key = request.state.user_key
     repo = ProgressPhotoTagRepository(session)
@@ -72,12 +74,12 @@ async def list_photo_tags(
     return [_row_to_response(r) for r in rows]
 
 
-@router.post("/photo-tags", status_code=201)
+@router.post("/photo-tags", status_code=201, response_model=ProgressPhotoTagResponse)
 async def create_photo_tag(
     request: Request,
     body: ProgressPhotoTagCreate,
     session: AsyncSession = Depends(get_session_dependency),
-) -> dict:
+) -> ProgressPhotoTagResponse:
     """Create a new progress-photo tag.
 
     **Inputs:**
@@ -86,7 +88,7 @@ async def create_photo_tag(
     - session (AsyncSession): DB session dependency.
 
     **Outputs:**
-    - dict: The newly inserted tag row.
+    - ProgressPhotoTagResponse: The newly inserted tag row.
 
     **Exceptions:**
     - HTTPException(400): Raised when the name is blank after trimming.
@@ -99,13 +101,13 @@ async def create_photo_tag(
     return _row_to_response(row)
 
 
-@router.patch("/photo-tags/{tag_id}")
+@router.patch("/photo-tags/{tag_id}", response_model=ProgressPhotoTagResponse)
 async def update_photo_tag(
     request: Request,
     tag_id: UUID,
     body: ProgressPhotoTagUpdate,
     session: AsyncSession = Depends(get_session_dependency),
-) -> dict:
+) -> ProgressPhotoTagResponse:
     """Rename or reorder an existing progress-photo tag.
 
     **Inputs:**
@@ -115,7 +117,7 @@ async def update_photo_tag(
     - session (AsyncSession): DB session dependency.
 
     **Outputs:**
-    - dict: The updated tag row.
+    - ProgressPhotoTagResponse: The updated tag row.
 
     **Exceptions:**
     - HTTPException(400): Raised when the new name is blank.

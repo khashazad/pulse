@@ -262,7 +262,7 @@ def test_upload_photo_rejects_oversize_via_streaming_cap(
     with patch(
         "pulse_server.routers.containers.ContainersRepository"
     ) as MockRepo, patch(
-        "pulse_server.routers.containers.process_container_photo",
+        "pulse_server.routers.containers.process_photo",
         side_effect=process_spy,
     ):
         instance = MockRepo.return_value

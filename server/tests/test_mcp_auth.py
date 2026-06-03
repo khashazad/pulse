@@ -123,3 +123,84 @@ async def test_build_mcp_accepts_service_token_in_prod(monkeypatch):
     mcp = build_mcp(lambda: MagicMock())
     tools = await mcp.list_tools()
     assert any(t.name == "log_food" for t in tools)
+
+
+def _token(login: str | None):
+    """Build a fake access token whose claims carry the given GitHub login.
+
+    **Inputs:**
+    - login (str | None): GitHub login to place in the ``login`` claim, or
+      ``None`` to omit it.
+
+    **Outputs:**
+    - MagicMock: An object exposing ``.claims`` like a FastMCP access token.
+    """
+    tok = MagicMock()
+    tok.claims = {"login": login} if login is not None else {}
+    return tok
+
+
+@pytest.mark.asyncio
+async def test_allowlist_middleware_open_mode_passes_through():
+    """An empty allowlist lets every tool call through without checking a token."""
+    from pulse_server.mcp.auth import GitHubAllowlistMiddleware
+
+    mw = GitHubAllowlistMiddleware(set())
+    ctx = MagicMock()
+
+    async def call_next(received_ctx):
+        assert received_ctx is ctx
+        return "ok"
+
+    assert await mw.on_call_tool(ctx, call_next) == "ok"
+
+
+@pytest.mark.asyncio
+async def test_allowlist_middleware_allows_listed_login(monkeypatch):
+    """A token whose `login` is in the allowlist (case-insensitive) is allowed."""
+    from pulse_server.mcp import auth as auth_module
+    from pulse_server.mcp.auth import GitHubAllowlistMiddleware
+
+    monkeypatch.setattr(auth_module, "get_access_token", lambda: _token("OctoCat"))
+    mw = GitHubAllowlistMiddleware({"octocat"})
+
+    async def call_next(_ctx):
+        return "allowed"
+
+    assert await mw.on_call_tool(MagicMock(), call_next) == "allowed"
+
+
+@pytest.mark.asyncio
+async def test_allowlist_middleware_rejects_unlisted_login(monkeypatch):
+    """A token whose `login` is not in the allowlist raises a ToolError."""
+    from fastmcp.exceptions import ToolError
+
+    from pulse_server.mcp import auth as auth_module
+    from pulse_server.mcp.auth import GitHubAllowlistMiddleware
+
+    monkeypatch.setattr(auth_module, "get_access_token", lambda: _token("intruder"))
+    mw = GitHubAllowlistMiddleware({"octocat"})
+
+    async def call_next(_ctx):  # pragma: no cover - must not be reached
+        return "should not run"
+
+    with pytest.raises(ToolError):
+        await mw.on_call_tool(MagicMock(), call_next)
+
+
+@pytest.mark.asyncio
+async def test_allowlist_middleware_rejects_when_no_token(monkeypatch):
+    """A configured allowlist with no access token available raises a ToolError."""
+    from fastmcp.exceptions import ToolError
+
+    from pulse_server.mcp import auth as auth_module
+    from pulse_server.mcp.auth import GitHubAllowlistMiddleware
+
+    monkeypatch.setattr(auth_module, "get_access_token", lambda: None)
+    mw = GitHubAllowlistMiddleware({"octocat"})
+
+    async def call_next(_ctx):  # pragma: no cover - must not be reached
+        return "should not run"
+
+    with pytest.raises(ToolError):
+        await mw.on_call_tool(MagicMock(), call_next)

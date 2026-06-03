@@ -30,31 +30,13 @@ struct EntryRow: View {
             }
 
             HStack(spacing: 14) {
-                macroLine(.protein, grams: entry.proteinG)
-                macroLine(.carbs,   grams: entry.carbsG)
-                macroLine(.fat,     grams: entry.fatG)
+                MacroLineView(macro: .protein, grams: entry.proteinG)
+                MacroLineView(macro: .carbs,   grams: entry.carbsG)
+                MacroLineView(macro: .fat,     grams: entry.fatG)
             }
             .font(.system(size: 11, design: .monospaced))
         }
         .padding(.vertical, 10)
-    }
-
-    /// Inline macro readout: colored dot + short label + grams.
-    /// Inputs:
-    ///   - macro: which macro determines color and short label.
-    ///   - grams: grams to display (rounded for output).
-    /// Outputs: composed inline view.
-    private func macroLine(_ macro: Theme.Macro, grams: Double) -> some View {
-        HStack(spacing: 4) {
-            Circle()
-                .fill(macro.color)
-                .frame(width: 5, height: 5)
-            Text(macro.short)
-                .foregroundStyle(Theme.FG.secondary)
-            Text("\(Int(grams.rounded()))g")
-                .monospacedDigit()
-                .foregroundStyle(Theme.FG.primary)
-        }
     }
 }
 

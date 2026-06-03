@@ -22,6 +22,22 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from pulse_server.repositories.tables import custom_foods, food_memory
 
+# Columns of a USDA-pointer memory row whose value carries over from the INSERT
+# into the ON CONFLICT update. Declared once and reused to build both the
+# ``.values()`` payload and the ``SET`` mapping so each column is named once.
+_USDA_UPSERT_COLUMNS: tuple[str, ...] = (
+    "name",
+    "usda_fdc_id",
+    "usda_description",
+    "basis",
+    "serving_size",
+    "serving_size_unit",
+    "calories",
+    "protein_g",
+    "carbs_g",
+    "fat_g",
+)
+
 
 def _row_columns() -> tuple[Any, ...]:
     """Return the canonical column projection for ``food_memory`` rows.
@@ -104,40 +120,34 @@ class FoodMemoryRepository:
         **Exceptions:**
         - sqlalchemy.exc.SQLAlchemyError: Raised when SQL execution fails.
         """
+        column_values: dict[str, Any] = {
+            "name": name,
+            "usda_fdc_id": usda_fdc_id,
+            "usda_description": usda_description,
+            "basis": basis,
+            "serving_size": serving_size,
+            "serving_size_unit": serving_size_unit,
+            "calories": calories,
+            "protein_g": protein_g,
+            "carbs_g": carbs_g,
+            "fat_g": fat_g,
+        }
         values: dict[str, Any] = dict(
             user_key=user_key,
-            name=name,
             normalized_name=normalized_name,
-            usda_fdc_id=usda_fdc_id,
-            usda_description=usda_description,
             custom_food_id=None,
-            basis=basis,
-            serving_size=serving_size,
-            serving_size_unit=serving_size_unit,
-            calories=calories,
-            protein_g=protein_g,
-            carbs_g=carbs_g,
-            fat_g=fat_g,
             created_at=now,
             updated_at=now,
+            **{col: column_values[col] for col in _USDA_UPSERT_COLUMNS},
         )
         if aliases is not None:
             values["aliases"] = aliases
         insert_stmt = pg_insert(food_memory).values(**values)
         set_: dict[str, Any] = {
-            "name": insert_stmt.excluded.name,
-            "usda_fdc_id": insert_stmt.excluded.usda_fdc_id,
-            "usda_description": insert_stmt.excluded.usda_description,
-            "custom_food_id": None,
-            "basis": insert_stmt.excluded.basis,
-            "serving_size": insert_stmt.excluded.serving_size,
-            "serving_size_unit": insert_stmt.excluded.serving_size_unit,
-            "calories": insert_stmt.excluded.calories,
-            "protein_g": insert_stmt.excluded.protein_g,
-            "carbs_g": insert_stmt.excluded.carbs_g,
-            "fat_g": insert_stmt.excluded.fat_g,
-            "updated_at": now,
+            col: getattr(insert_stmt.excluded, col) for col in _USDA_UPSERT_COLUMNS
         }
+        set_["custom_food_id"] = None
+        set_["updated_at"] = now
         if aliases is not None:
             set_["aliases"] = insert_stmt.excluded.aliases
         stmt = insert_stmt.on_conflict_do_update(

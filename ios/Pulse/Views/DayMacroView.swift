@@ -1,7 +1,6 @@
 /// Day-detail screen for a single date.
 /// Hosts the kcal hero ring, macro totals, and grouped entries (single foods + meal groups)
-/// for one day, driven by `DayMacroModel`. Also defines the reusable `EmptyStateView`
-/// used by the other intake/meals screens for empty/error states.
+/// for one day, driven by `DayMacroModel`.
 import SwiftUI
 
 /// Renders a single day's summary: hero ring, macro chips, and grouped entries list.
@@ -176,31 +175,14 @@ struct DayMacroView: View {
     /// entry is selected.
     private var copyActionBar: some View {
         let count = selectedIds.count
-        return Button {
+        return PrimaryActionButton(
+            title: count == 0 ? "Select items to copy" : "Copy \(count) to day…",
+            leading: .icon("calendar.badge.plus"),
+            disabled: count == 0
+        ) {
             model?.resetCopyState()
             showCopySheet = true
-        } label: {
-            HStack(spacing: 8) {
-                Image(systemName: "calendar.badge.plus")
-                    .font(.system(size: 16, weight: .semibold))
-                Text(count == 0 ? "Select items to copy" : "Copy \(count) to day…")
-                    .font(.system(size: 15, weight: .semibold))
-            }
-            .foregroundStyle(Theme.CTP.mauve)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 13)
-            .background(
-                RoundedRectangle(cornerRadius: Theme.Layout.cardRadius, style: .continuous)
-                    .fill(Theme.CTP.mauve.opacity(0.16))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: Theme.Layout.cardRadius, style: .continuous)
-                    .strokeBorder(Theme.CTP.mauve.opacity(0.30), lineWidth: 0.5)
-            )
         }
-        .buttonStyle(.plain)
-        .disabled(count == 0)
-        .opacity(count == 0 ? 0.5 : 1)
     }
 
     /// Toggles whether the entry with the given id is part of the copy selection.
@@ -328,172 +310,3 @@ struct DayMacroView: View {
     }
 }
 
-/// Modal sheet for copying a set of existing entries onto a chosen day. Wraps the
-/// shared `BackdateSelector` (defaulting to Today, since the common case is
-/// "carry yesterday's items into today") and a confirm button that calls
-/// `DayMacroModel.copyEntries`, reporting progress / partial-skip / failure
-/// inline and dismissing on success.
-struct CopyEntriesSheet: View {
-    @Bindable var model: DayMacroModel
-    let entries: [FoodEntry]
-    /// Invoked after a successful copy so the host can leave select mode and refresh.
-    let onCopied: () -> Void
-    @Environment(\.dismiss) private var dismiss
-    @State private var date: Date = Date()
-    /// Entries still needing to be copied. Seeded from `entries` on first appear,
-    /// then narrowed to the remainder after a partial failure so a retry only
-    /// re-sends what hasn't already succeeded (no duplication).
-    @State private var pending: [FoodEntry]?
-
-    /// Whether a prior attempt failed partway, so the action becomes a retry of
-    /// just the remaining entries.
-    private var isRetry: Bool {
-        if case .failed = model.copyState { return true }
-        return false
-    }
-
-    /// The entries the next confirm will attempt (the full set on the first run,
-    /// the remainder after a partial failure).
-    private var work: [FoodEntry] { pending ?? entries }
-
-    var body: some View {
-        NavigationStack {
-            ZStack {
-                Theme.BG.primary.ignoresSafeArea()
-                VStack(alignment: .leading, spacing: 18) {
-                    Text("Copy \(work.count) item\(work.count == 1 ? "" : "s") to which day?")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Theme.FG.secondary)
-
-                    BackdateSelector(date: $date)
-                        .padding(14)
-                        .ctpCard()
-
-                    statusRow
-
-                    Spacer()
-
-                    confirmButton
-                }
-                .padding(.horizontal, 16)
-                .padding(.top, 12)
-            }
-            .navigationTitle("Copy entries")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(Theme.BG.primary, for: .navigationBar)
-            .toolbarBackground(.visible, for: .navigationBar)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("Cancel") { dismiss() }
-                        .foregroundStyle(Theme.CTP.mauve)
-                }
-            }
-            .onAppear { if pending == nil { pending = entries } }
-        }
-    }
-
-    /// Inline status line reflecting the model's `copyState`: a partial-failure
-    /// notice (telling the user how many already saved, so a retry is understood
-    /// to resume rather than duplicate) or an "all skipped" notice. Full success
-    /// dismisses the sheet via the confirm action, so it shows nothing here.
-    @ViewBuilder
-    private var statusRow: some View {
-        switch model.copyState {
-        case .failed(let copied, let error):
-            VStack(alignment: .leading, spacing: 4) {
-                Label(error.userMessage, systemImage: "exclamationmark.triangle")
-                    .foregroundStyle(Theme.CTP.red)
-                if copied > 0 {
-                    Text("\(copied) already saved — retry copies only the remaining \(work.count).")
-                        .foregroundStyle(Theme.FG.tertiary)
-                }
-            }
-            .font(.system(size: 12))
-        case .finished(let copied, let skipped) where copied == 0 && skipped > 0:
-            Label("Nothing to copy — \(skipped) item\(skipped == 1 ? "" : "s") had no recreatable source.", systemImage: "info.circle")
-                .font(.system(size: 12))
-                .foregroundStyle(Theme.CTP.peach)
-        default:
-            EmptyView()
-        }
-    }
-
-    /// Confirm button that triggers the copy; shows a spinner while copying,
-    /// narrows `pending` to the remainder on partial failure, and dismisses only
-    /// once at least one entry has actually been copied.
-    private var confirmButton: some View {
-        let isCopying = model.copyState == .copying
-        let label = isCopying ? "Copying…" : (isRetry ? "Retry \(work.count) remaining" : "Copy entries")
-        return Button {
-            Task {
-                let remaining = await model.copyEntries(work, to: date)
-                pending = remaining
-                if case .finished(let copied, _) = model.copyState, copied > 0 {
-                    onCopied()
-                    dismiss()
-                }
-            }
-        } label: {
-            HStack(spacing: 8) {
-                if isCopying {
-                    ProgressView().tint(Theme.CTP.mauve)
-                }
-                Text(label)
-                    .font(.system(size: 15, weight: .semibold))
-            }
-            .foregroundStyle(Theme.CTP.mauve)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 14)
-            .background(
-                RoundedRectangle(cornerRadius: Theme.Layout.cardRadius, style: .continuous)
-                    .fill(Theme.CTP.mauve.opacity(0.16))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: Theme.Layout.cardRadius, style: .continuous)
-                    .strokeBorder(Theme.CTP.mauve.opacity(0.30), lineWidth: 0.5)
-            )
-        }
-        .buttonStyle(.plain)
-        .disabled(isCopying || work.isEmpty)
-        .padding(.bottom, 12)
-    }
-}
-
-/// Reusable empty/error placeholder with an icon glyph, title, description, and optional action button.
-/// Used by every list-style screen for the empty / load-failed states.
-struct EmptyStateView: View {
-    let icon: String
-    let title: String
-    let description: String
-    var action: (() -> Void)? = nil
-    var actionLabel: String = "Retry"
-
-    var body: some View {
-        VStack(spacing: 10) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(Theme.CTP.mauve.opacity(0.10))
-                    .frame(width: 64, height: 64)
-                Image(systemName: icon)
-                    .font(.system(size: 28, weight: .regular))
-                    .foregroundStyle(Theme.CTP.mauve)
-            }
-            Text(title)
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(Theme.FG.primary)
-            Text(description)
-                .font(.system(size: 14))
-                .foregroundStyle(Theme.FG.secondary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 280)
-            if let action {
-                Button(actionLabel, action: action)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(Theme.CTP.mauve)
-                    .padding(.top, 4)
-            }
-        }
-        .padding(32)
-        .frame(maxWidth: .infinity)
-    }
-}

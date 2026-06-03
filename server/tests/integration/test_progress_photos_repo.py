@@ -258,6 +258,10 @@ async def test_tag_create_list_rename(session: AsyncSession) -> None:
     rows = await repo.list_for_user(user_key)
     assert [r["normalized_name"] for r in rows] == ["morning", "evening"]
 
+    # The bare read above autobegins a transaction on the session; close it so the
+    # explicit transaction() block below can open its own (in production each request
+    # uses a fresh session, so this interleaving only arises in tests).
+    await session.rollback()
     morning_id = rows[0]["id"]
     async with transaction(session):
         updated = await repo.update_fields(
@@ -280,3 +284,74 @@ async def test_bulk_seed_if_empty_is_idempotent(session: AsyncSession) -> None:
         await repo.bulk_seed_if_empty(user_key=user_key, defaults=defaults, now=_now())
     rows = await repo.list_for_user(user_key)
     assert len(rows) == 2
+
+
+@pytest.mark.asyncio
+async def test_bulk_seed_if_empty_no_op_for_empty_defaults(session: AsyncSession) -> None:
+    """``bulk_seed_if_empty`` with an empty defaults list inserts nothing (early return)."""
+    user_key = f"test-{uuid.uuid4().hex}"
+    repo = ProgressPhotoTagRepository(session)
+    async with transaction(session):
+        await repo.bulk_seed_if_empty(user_key=user_key, defaults=[], now=_now())
+    rows = await repo.list_for_user(user_key)
+    assert rows == []
+
+
+@pytest.mark.asyncio
+async def test_tag_get_by_id_found_and_missing(session: AsyncSession) -> None:
+    """``get_by_id`` returns the row for a known tag and ``None`` for an unknown id."""
+    user_key = f"test-{uuid.uuid4().hex}"
+    tag_id = await _seed_tag(session, user_key=user_key, name="side")
+    await session.rollback()
+    repo = ProgressPhotoTagRepository(session)
+
+    found = await repo.get_by_id(tag_id=tag_id, user_key=user_key)
+    assert found is not None
+    assert found["normalized_name"] == "side"
+
+    missing = await repo.get_by_id(tag_id=uuid.uuid4(), user_key=user_key)
+    assert missing is None
+
+
+@pytest.mark.asyncio
+async def test_tag_update_fields_empty_returns_row_unchanged(session: AsyncSession) -> None:
+    """``update_fields`` with an empty ``fields`` mapping returns the existing row unchanged."""
+    user_key = f"test-{uuid.uuid4().hex}"
+    tag_id = await _seed_tag(session, user_key=user_key, name="left")
+    await session.rollback()
+    repo = ProgressPhotoTagRepository(session)
+    async with transaction(session):
+        result = await repo.update_fields(
+            tag_id=tag_id, user_key=user_key, fields={}, now=_now()
+        )
+    assert result is not None
+    assert result["normalized_name"] == "left"
+
+
+@pytest.mark.asyncio
+async def test_tag_photo_count_reflects_references(session: AsyncSession) -> None:
+    """``photo_count`` returns zero for an unused tag and the reference count once a photo links it."""
+    user_key = f"test-{uuid.uuid4().hex}"
+    tag_id = await _seed_tag(session, user_key=user_key, name="counted")
+    await session.rollback()
+    tag_repo = ProgressPhotoTagRepository(session)
+
+    assert await tag_repo.photo_count(tag_id=tag_id, user_key=user_key) == 0
+
+    # The bare read above autobegins a transaction on the session; close it so the
+    # explicit transaction() block below can open its own.
+    await session.rollback()
+    photo_repo = ProgressPhotoRepository(session)
+    async with transaction(session):
+        await photo_repo.insert(
+            user_key=user_key,
+            log_date=DateValue(2026, 6, 1),
+            tag_id=tag_id,
+            photo=_jpeg(),
+            photo_thumb=_thumb(),
+            photo_mime="image/jpeg",
+            bytes_=len(_jpeg()),
+            sha256=hashlib.sha256(_jpeg()).hexdigest(),
+            now=_now(),
+        )
+    assert await tag_repo.photo_count(tag_id=tag_id, user_key=user_key) == 1

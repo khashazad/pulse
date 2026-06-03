@@ -21,10 +21,10 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pulse_server.db import transaction
+from pulse_server.log_ids import daily_log_id
 from pulse_server.models import FoodEntryCreate
-from pulse_server.repositories.entries import EntriesRepository
+from pulse_server.repositories.entries import EntriesRepository, FoodEntryPayload
 from pulse_server.services.custom_foods_service import assert_custom_foods_owned
-from pulse_server.services.log_ids import daily_log_id
 
 
 async def create_entries_with_side_effects(
@@ -122,24 +122,26 @@ async def _create_entries(
         await entries_repo.ensure_daily_log(current_daily_log_id, user_key, log_date)
         created_rows.append(
             await entries_repo.create_food_entry(
-                entry_id=uuid.uuid4(),
-                daily_log_id=current_daily_log_id,
-                user_key=user_key,
-                entry_group_id=batch_entry_group_id,
-                display_name=item.display_name,
-                quantity_text=item.quantity_text,
-                normalized_quantity_value=item.normalized_quantity_value,
-                normalized_quantity_unit=item.normalized_quantity_unit,
-                usda_fdc_id=item.usda_fdc_id,
-                usda_description=item.usda_description,
-                custom_food_id=item.custom_food_id,
-                calories=item.calories,
-                protein_g=item.protein_g,
-                carbs_g=item.carbs_g,
-                fat_g=item.fat_g,
-                consumed_at=consumed_at,
-                meal_id=meal_id,
-                meal_name=meal_name,
+                FoodEntryPayload(
+                    entry_id=uuid.uuid4(),
+                    daily_log_id=current_daily_log_id,
+                    user_key=user_key,
+                    entry_group_id=batch_entry_group_id,
+                    display_name=item.display_name,
+                    quantity_text=item.quantity_text,
+                    normalized_quantity_value=item.normalized_quantity_value,
+                    normalized_quantity_unit=item.normalized_quantity_unit,
+                    usda_fdc_id=item.usda_fdc_id,
+                    usda_description=item.usda_description,
+                    custom_food_id=item.custom_food_id,
+                    calories=item.calories,
+                    protein_g=item.protein_g,
+                    carbs_g=item.carbs_g,
+                    fat_g=item.fat_g,
+                    consumed_at=consumed_at,
+                    meal_id=meal_id,
+                    meal_name=meal_name,
+                )
             )
         )
 

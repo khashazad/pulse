@@ -30,6 +30,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from pulse_server.auth import require_session
 from pulse_server.db import get_session_dependency, transaction
+from pulse_server.models.progress_photo import ProgressPhotoMetadata
 from pulse_server.repositories.progress_photo import ProgressPhotoRepository
 from pulse_server.repositories.progress_photo_tag import (
     ProgressPhotoTagRepository,
@@ -71,35 +72,35 @@ async def _read_capped(file: UploadFile, max_bytes: int) -> bytes:
     return bytes(buffer)
 
 
-def _row_to_metadata(row: dict) -> dict:
-    """Project a raw ``progress_photos`` row into the public metadata payload.
+def _row_to_metadata(row: dict) -> ProgressPhotoMetadata:
+    """Project a raw ``progress_photos`` row into its typed metadata DTO.
 
     **Inputs:**
     - row (dict): Column→value mapping returned by :class:`ProgressPhotoRepository`.
 
     **Outputs:**
-    - dict: ``{id, date, tag_id, mime, bytes, sha256, updated_at}`` with
-      ``date`` as ISO string.
+    - ProgressPhotoMetadata: Typed metadata model whose serialized JSON is
+      byte-identical to the prior dict payload (``id``, ``date``, ``tag_id``,
+      ``mime``, ``bytes``, ``sha256``, ``updated_at``).
     """
-    log_date = row["log_date"]
-    return {
-        "id": str(row["id"]),
-        "date": log_date.isoformat() if hasattr(log_date, "isoformat") else log_date,
-        "tag_id": str(row["tag_id"]),
-        "mime": row["photo_mime"],
-        "bytes": row["bytes"],
-        "sha256": row["sha256"],
-        "updated_at": row["updated_at"],
-    }
+    return ProgressPhotoMetadata(
+        id=row["id"],
+        date=row["log_date"],
+        tag_id=row["tag_id"],
+        mime=row["photo_mime"],
+        bytes=row["bytes"],
+        sha256=row["sha256"],
+        updated_at=row["updated_at"],
+    )
 
 
-@router.get("/photos")
+@router.get("/photos", response_model=list[ProgressPhotoMetadata])
 async def list_photos(
     request: Request,
     frm: DateValue = Query(..., alias="from"),
     to: DateValue = Query(...),
     session: AsyncSession = Depends(get_session_dependency),
-) -> list[dict]:
+) -> list[ProgressPhotoMetadata]:
     """List metadata for every progress photo within an inclusive date range.
 
     **Inputs:**
@@ -109,7 +110,7 @@ async def list_photos(
     - session (AsyncSession): DB session dependency.
 
     **Outputs:**
-    - list[dict]: One metadata mapping per stored photo.
+    - list[ProgressPhotoMetadata]: One metadata model per stored photo.
     """
     user_key = request.state.user_key
     repo = ProgressPhotoRepository(session)
@@ -161,7 +162,7 @@ async def get_photo(
     )
 
 
-@router.post("/photos", status_code=201)
+@router.post("/photos", status_code=201, response_model=ProgressPhotoMetadata)
 async def create_photo(
     request: Request,
     log_date: DateValue = Form(..., alias="log_date"),
@@ -169,7 +170,7 @@ async def create_photo(
     idempotency_key: UUID | None = Form(default=None, alias="idempotency_key"),
     file: UploadFile = File(...),
     session: AsyncSession = Depends(get_session_dependency),
-) -> dict:
+) -> ProgressPhotoMetadata:
     """Insert a new progress photo tagged with ``tag_id`` for ``log_date``.
 
     Streams the upload under :data:`MAX_UPLOAD_BYTES`, hands off to
@@ -188,7 +189,7 @@ async def create_photo(
     - session (AsyncSession): DB session dependency.
 
     **Outputs:**
-    - dict: Metadata for the inserted (or pre-existing) row.
+    - ProgressPhotoMetadata: Metadata for the inserted (or pre-existing) row.
 
     **Exceptions:**
     - HTTPException(400): Raised for future dates.

@@ -32,15 +32,6 @@ struct ContainersList: Codable, Equatable {
     let containers: [Container]
 }
 
-/// Response indicating whether a container currently has a photo attached.
-struct ContainerPhotoStatus: Codable, Equatable {
-    let hasPhoto: Bool
-
-    enum CodingKeys: String, CodingKey {
-        case hasPhoto = "has_photo"
-    }
-}
-
 /// Size variant requested when fetching a container photo from the server.
 enum ContainerPhotoSize: String {
     case thumb

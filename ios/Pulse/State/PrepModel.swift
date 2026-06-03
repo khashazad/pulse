@@ -55,6 +55,22 @@ final class PrepModel {
     /// When nil, `portions` follows `containerCount`; once set, the two decouple.
     var portionsOverride: Int? = nil
 
+    /// UserDefaults-backed persistence for the calculator state. Owned by the model
+    /// so `PrepView` stays a renderer and delegates load/save/reconcile here.
+    private let store: PrepStatePersistence
+    /// Whether saved state has already been hydrated from `store`. Stays false
+    /// until a successful hydration so a failed initial container load can still
+    /// hydrate on a later reload.
+    private var hydrated = false
+
+    /// Creates a prep calculator model.
+    /// Inputs:
+    ///   - store: persistence backing the calculator state (defaults to `.init()`).
+    /// Outputs: a `PrepModel`.
+    init(store: PrepStatePersistence = PrepStatePersistence()) {
+        self.store = store
+    }
+
     /// Total number of physical containers to fill (`Σ count`).
     var containerCount: Int { targets.reduce(0) { $0 + max(0, $1.count) } }
 
@@ -120,5 +136,58 @@ final class PrepModel {
             nw.container = fresh
             return nw
         }
+    }
+
+    // MARK: - Persistence lifecycle
+
+    /// Loads saved targets/weigh-ins/portions from persistence once, matching stored
+    /// container ids against `list` (dropping unknown ids). Stays pending (does not
+    /// mark itself done) until a successful load, so a failed initial container load
+    /// can still hydrate on a later reload.
+    /// Inputs:
+    ///   - list: the live containers to resolve ids against, or nil when the
+    ///     container list has not loaded yet (in which case this is a no-op).
+    /// Outputs: the persisted batch food items when hydration occurred, or nil when
+    ///   the call was skipped (list unavailable or already hydrated) so the caller
+    ///   only reseeds its batch state on an actual hydration.
+    func hydrateIfNeeded(matching list: [Container]?) -> [BatchFoodItem]? {
+        guard !hydrated else { return nil }
+        guard let list else { return nil }
+        hydrated = true
+        let loaded = store.load(matching: list)
+        targets = loaded.targets
+        weighIns = loaded.weighIns
+        portionsOverride = loaded.portionsOverride
+        return store.loadBatchItems()
+    }
+
+    /// Writes the current targets/weigh-ins/portions to persistence.
+    /// Outputs: nothing.
+    func persist() {
+        store.save(targets: targets, weighIns: weighIns, portionsOverride: portionsOverride)
+    }
+
+    /// Refreshes container snapshots and drops deleted ones using `list`, but only
+    /// when a loaded list is available.
+    /// Inputs:
+    ///   - list: the live containers, or nil when the list has not loaded yet.
+    /// Outputs: nothing.
+    func reconcileIfLoaded(_ list: [Container]?) {
+        guard let list else { return }
+        reconcile(with: list)
+    }
+
+    /// Loads the persisted batch food items.
+    /// Outputs: the saved items, or an empty array when nothing is stored.
+    func loadBatchItems() -> [BatchFoodItem] {
+        store.loadBatchItems()
+    }
+
+    /// Saves the batch food items, replacing any previously stored list.
+    /// Inputs:
+    ///   - items: the current batch items to persist.
+    /// Outputs: nothing.
+    func saveBatchItems(_ items: [BatchFoodItem]) {
+        store.saveBatchItems(items)
     }
 }

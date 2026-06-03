@@ -16,6 +16,7 @@ from pulse_server.auth import require_session
 from pulse_server.db import get_session_dependency
 from pulse_server.models import DailyLogSummary, LogsListResponse
 from pulse_server.repositories.logs import LogsRepository
+from pulse_server.services.date_utils import validate_logs_range
 
 router = APIRouter(dependencies=[Depends(require_session)])
 
@@ -43,8 +44,10 @@ async def list_logs(
     - RuntimeError: Raised when the database pool is not initialized.
     - sqlalchemy.exc.SQLAlchemyError: Raised when SQL execution fails.
     """
-    if from_date > to_date:
-        raise HTTPException(status_code=400, detail="'from' date must be on or before 'to' date")
+    try:
+        validate_logs_range(from_date, to_date)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     user_key = request.state.user_key
     repository = LogsRepository(session)

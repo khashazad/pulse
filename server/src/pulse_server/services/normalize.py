@@ -9,8 +9,21 @@ columns on ``food_memory``, ``custom_foods``, or ``meals``.
 from __future__ import annotations
 
 import re
+from typing import Any
 
 _WHITESPACE_RE = re.compile(r"\s+")
+
+
+def optional_float(value: Any) -> float | None:
+    """Coerce a possibly-``None`` numeric value to ``float | None``.
+
+    **Inputs:**
+    - value (Any): Numeric value or ``None``.
+
+    **Outputs:**
+    - float | None: ``None`` when input is ``None``, otherwise ``float(value)``.
+    """
+    return None if value is None else float(value)
 
 
 def normalize_name(name: str) -> str:

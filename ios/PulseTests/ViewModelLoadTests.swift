@@ -121,21 +121,21 @@ final class ViewModelLoadTests: XCTestCase {
     }
 
     func test_weekModel_loads() async {
-        let m = WeekModel(auth: makeAuth())
-        await m.loadLast7Days()
+        let m = PeriodIntakeModel(range: .week, auth: makeAuth())
+        await m.load()
         guard case .loaded = m.state else { return XCTFail("got \(m.state)") }
         XCTAssertNotNil(m.targets)
     }
 
     func test_monthModel_loads() async {
-        let m = MonthModel(auth: makeAuth())
-        await m.loadCurrentMonth()
+        let m = PeriodIntakeModel(range: .month, auth: makeAuth())
+        await m.load()
         guard case .loaded = m.state else { return XCTFail("got \(m.state)") }
     }
 
     func test_yearModel_loads() async {
-        let m = YearModel(auth: makeAuth())
-        await m.loadCurrentYear()
+        let m = PeriodIntakeModel(range: .year, auth: makeAuth())
+        await m.load()
         guard case .loaded = m.state else { return XCTFail("got \(m.state)") }
     }
 
@@ -270,13 +270,13 @@ final class ViewModelLoadTests: XCTestCase {
         let day = DayMacroModel(date: Date(), auth: auth); await day.load()
         if case .failed = day.state {} else { XCTFail("day: \(day.state)") }
 
-        let week = WeekModel(auth: auth); await week.loadLast7Days()
+        let week = PeriodIntakeModel(range: .week, auth: auth); await week.load()
         if case .failed = week.state {} else { XCTFail("week: \(week.state)") }
 
-        let month = MonthModel(auth: auth); await month.loadCurrentMonth()
+        let month = PeriodIntakeModel(range: .month, auth: auth); await month.load()
         if case .failed = month.state {} else { XCTFail("month: \(month.state)") }
 
-        let year = YearModel(auth: auth); await year.loadCurrentYear()
+        let year = PeriodIntakeModel(range: .year, auth: auth); await year.load()
         if case .failed = year.state {} else { XCTFail("year: \(year.state)") }
 
         let meals = MealsModel(auth: auth); await meals.load()

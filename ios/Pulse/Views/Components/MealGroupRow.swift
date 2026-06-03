@@ -44,9 +44,9 @@ struct MealGroupRow: View {
                 }
 
                 HStack(spacing: 14) {
-                    macroLine(.protein, grams: group.totals.proteinG)
-                    macroLine(.carbs,   grams: group.totals.carbsG)
-                    macroLine(.fat,     grams: group.totals.fatG)
+                    MacroLineView(macro: .protein, grams: group.totals.proteinG)
+                    MacroLineView(macro: .carbs,   grams: group.totals.carbsG)
+                    MacroLineView(macro: .fat,     grams: group.totals.fatG)
                 }
                 .font(.system(size: 11, design: .monospaced))
             }
@@ -80,24 +80,6 @@ struct MealGroupRow: View {
                         Capsule().fill(Theme.CTP.mauve.opacity(0.18))
                     )
             }
-        }
-    }
-
-    /// Inline macro readout used in the header summary line.
-    /// Inputs:
-    ///   - macro: which macro determines color and short label.
-    ///   - grams: grams to display (rounded for output).
-    /// Outputs: composed inline view.
-    private func macroLine(_ macro: Theme.Macro, grams: Double) -> some View {
-        HStack(spacing: 4) {
-            Circle()
-                .fill(macro.color)
-                .frame(width: 5, height: 5)
-            Text(macro.short)
-                .foregroundStyle(Theme.FG.secondary)
-            Text("\(Int(grams.rounded()))g")
-                .monospacedDigit()
-                .foregroundStyle(Theme.FG.primary)
         }
     }
 

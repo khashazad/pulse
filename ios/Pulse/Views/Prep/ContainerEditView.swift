@@ -2,8 +2,8 @@
 ///
 /// Hosts `ContainerEditView`, which renders the form for naming a container,
 /// setting its tare weight, and attaching a photo (camera or photo library).
-/// Also provides the private `CameraPicker` `UIViewControllerRepresentable`
-/// bridge to `UIImagePickerController` used by the photo section.
+/// Camera capture uses the shared `CameraCaptureView` bridge to
+/// `UIImagePickerController`.
 ///
 /// Bound to `ContainerEditModel` for state/save logic; presented by
 /// `ContainersListView` and (indirectly) by `PrepView`.
@@ -34,9 +34,9 @@ struct ContainerEditView: View {
                 Theme.BG.secondary.ignoresSafeArea()
                 ScrollView {
                     VStack(spacing: 24) {
-                        section(header: "Photo") { photoSection }
+                        SectionCard(header: "Photo") { photoSection }
 
-                        section(header: "Details") {
+                        SectionCard(header: "Details") {
                             textRow {
                                 TextField(
                                     "",
@@ -113,10 +113,14 @@ struct ContainerEditView: View {
                 }
             }
             .fullScreenCover(isPresented: $showCamera) {
-                CameraPicker { image in
-                    previewImage = image
-                    model?.setNewPhoto(uiImage: image)
-                }
+                CameraCaptureView(
+                    onCapture: { image in
+                        previewImage = image
+                        model?.setNewPhoto(uiImage: image)
+                        showCamera = false
+                    },
+                    onCancel: { showCamera = false }
+                )
             }
             .onChange(of: pickerItem) { _, newValue in
                 Task { await loadPicked(newValue) }
@@ -242,31 +246,6 @@ struct ContainerEditView: View {
         }
     }
 
-    /// Wraps a card-styled content block under an uppercase section header.
-    ///
-    /// Inputs:
-    /// - header: section title shown above the card.
-    /// - content: view builder for the card body.
-    ///
-    /// Outputs: a `View` containing the header label and its themed card body.
-    @ViewBuilder
-    private func section<Content: View>(
-        header: String,
-        @ViewBuilder content: () -> Content
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(header)
-                .font(.system(size: 11, weight: .semibold))
-                .tracking(0.8)
-                .textCase(.uppercase)
-                .foregroundStyle(Theme.FG.secondary)
-                .padding(.horizontal, 20)
-            VStack(spacing: 0) { content() }
-                .ctpCard()
-                .padding(.horizontal, 16)
-        }
-    }
-
     /// Adds the row's standard horizontal/vertical padding around its content.
     ///
     /// Inputs:
@@ -290,69 +269,6 @@ struct ContainerEditView: View {
            let img = UIImage(data: data) {
             previewImage = img
             model?.setNewPhoto(uiImage: img)
-        }
-    }
-}
-
-/// SwiftUI bridge to `UIImagePickerController` for camera capture in the container edit flow.
-///
-/// Inputs:
-/// - onCaptured: callback invoked with the captured `UIImage` once the user
-///   takes a photo and the picker dismisses.
-private struct CameraPicker: UIViewControllerRepresentable {
-    let onCaptured: (UIImage) -> Void
-
-    /// Creates the delegate coordinator wired to forward captures to `onCaptured`.
-    ///
-    /// Outputs: a `Coordinator` instance acting as the picker's delegate.
-    func makeCoordinator() -> Coordinator { Coordinator(onCaptured: onCaptured) }
-
-    /// Builds the underlying `UIImagePickerController` configured for camera input.
-    ///
-    /// Inputs:
-    /// - context: SwiftUI representable context that supplies the coordinator.
-    ///
-    /// Outputs: a configured `UIImagePickerController`.
-    func makeUIViewController(context: Context) -> UIImagePickerController {
-        let p = UIImagePickerController()
-        p.sourceType = .camera
-        p.delegate = context.coordinator
-        return p
-    }
-
-    /// No-op; the picker's configuration never changes after creation.
-    ///
-    /// Inputs:
-    /// - uiViewController: the hosted picker.
-    /// - context: SwiftUI representable context (unused).
-    func updateUIViewController(_ uiViewController: UIImagePickerController, context: Context) {}
-
-    /// Delegate that forwards camera capture/cancel events to the parent representable.
-    final class Coordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
-        let onCaptured: (UIImage) -> Void
-        /// Stores the capture callback used when the user finishes picking.
-        ///
-        /// Inputs:
-        /// - onCaptured: closure invoked with the captured image.
-        init(onCaptured: @escaping (UIImage) -> Void) { self.onCaptured = onCaptured }
-        /// `UIImagePickerControllerDelegate` hook: pulls the original image and dismisses.
-        ///
-        /// Inputs:
-        /// - picker: the active picker controller.
-        /// - info: media metadata; `originalImage` is read when present.
-        func imagePickerController(
-            _ picker: UIImagePickerController,
-            didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]
-        ) {
-            if let img = info[.originalImage] as? UIImage { onCaptured(img) }
-            picker.dismiss(animated: true)
-        }
-        /// `UIImagePickerControllerDelegate` hook: dismisses without invoking the callback.
-        ///
-        /// Inputs:
-        /// - picker: the active picker controller.
-        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
-            picker.dismiss(animated: true)
         }
     }
 }

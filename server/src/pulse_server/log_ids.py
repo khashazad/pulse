@@ -1,9 +1,13 @@
-"""Deterministic daily-log UUID derivation.
+"""Deterministic daily-log UUID derivation (layer-neutral).
 
 Provides :func:`daily_log_id`, which maps ``(user_key, log_date)`` to a stable
 UUID5 used as the primary key for ``daily_logs`` rows. The deterministic
 mapping lets callers upsert idempotently per day without first reading the
 row's id from the database.
+
+Lives at the package root (not under ``services/``) so both the repositories
+layer and the services layer can import it without the repositories layer
+depending on a service — avoiding an inverted layer dependency.
 """
 
 from __future__ import annotations

@@ -11,13 +11,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pulse_server.models import ResolvedFood
 from pulse_server.repositories.food_memory import FoodMemoryRepository
 from pulse_server.repositories.tables import food_memory
+from pulse_server.services.alias_utils import assert_alias_available
 from pulse_server.services.normalize import normalize_name
+from pulse_server.services.normalize import optional_float
 
 
 async def resolve_food_by_name(
@@ -56,7 +57,7 @@ async def resolve_food_by_name(
             custom_food_id=row["custom_food_id"],
             custom_food=_custom_food_from_row(row),
             basis=row["cf_basis"],
-            serving_size=_optional_float(row["cf_serving_size"]),
+            serving_size=optional_float(row["cf_serving_size"]),
             serving_size_unit=row["cf_serving_size_unit"],
             calories=int(row["cf_calories"]),
             protein_g=float(row["cf_protein_g"]),
@@ -70,25 +71,13 @@ async def resolve_food_by_name(
         usda_fdc_id=int(row["usda_fdc_id"]),
         usda_description=row["usda_description"],
         basis=row["basis"],
-        serving_size=_optional_float(row["serving_size"]),
+        serving_size=optional_float(row["serving_size"]),
         serving_size_unit=row["serving_size_unit"],
         calories=int(row["calories"]),
         protein_g=float(row["protein_g"]),
         carbs_g=float(row["carbs_g"]),
         fat_g=float(row["fat_g"]),
     )
-
-
-def _optional_float(value: Any) -> float | None:
-    """Coerce a possibly-``None`` numeric value to ``float | None``.
-
-    **Inputs:**
-    - value (Any): Numeric value or ``None``.
-
-    **Outputs:**
-    - float | None: ``None`` when input is ``None``, otherwise ``float(value)``.
-    """
-    return None if value is None else float(value)
 
 
 def _custom_food_from_row(row: dict[str, Any]) -> dict[str, Any]:
@@ -108,7 +97,7 @@ def _custom_food_from_row(row: dict[str, Any]) -> dict[str, Any]:
         "name": row["cf_name"],
         "normalized_name": row["cf_normalized_name"],
         "basis": row["cf_basis"],
-        "serving_size": _optional_float(row["cf_serving_size"]),
+        "serving_size": optional_float(row["cf_serving_size"]),
         "serving_size_unit": row["cf_serving_size_unit"],
         "calories": int(row["cf_calories"]),
         "protein_g": float(row["cf_protein_g"]),
@@ -121,29 +110,6 @@ def _custom_food_from_row(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def normalize_alias_list(aliases: list[str], canonical_normalized_name: str) -> list[str]:
-    """Normalize aliases, drop empties, dedupe, and drop the alias equal to the canonical name.
-
-    **Inputs:**
-    - aliases (list[str]): Raw, user-supplied alias strings.
-    - canonical_normalized_name (str): Already-normalized canonical name;
-      an alias equal to this value is discarded.
-
-    **Outputs:**
-    - list[str]: Order-preserving list of normalized, unique aliases that do
-      not collide with the canonical name.
-    """
-    seen: set[str] = set()
-    out: list[str] = []
-    for raw in aliases:
-        norm = normalize_name(raw)
-        if not norm or norm == canonical_normalized_name or norm in seen:
-            continue
-        seen.add(norm)
-        out.append(norm)
-    return out
-
-
 async def assert_food_alias_available(
     session: AsyncSession,
     user_key: str,
@@ -152,6 +118,9 @@ async def assert_food_alias_available(
 ) -> None:
     """Verify an alias is not already used as a canonical name or alias on another row.
 
+    Thin wrapper over :func:`assert_alias_available` bound to the
+    ``food_memory`` table.
+
     **Inputs:**
     - session (AsyncSession): Active SQLAlchemy session.
     - user_key (str): Owning user's scoping key.
@@ -159,25 +128,21 @@ async def assert_food_alias_available(
     - exclude_normalized_name (str | None): Canonical name to exclude from
       the check (the row being edited).
 
-    **Exceptions:**
+    **Outputs:**
+    - None: Returns nothing when no collision is found.
+
+    **Raises:**
     - ValueError: Raised when ``alias`` collides with another memory row.
     - sqlalchemy.exc.SQLAlchemyError: Raised when SQL execution fails.
     """
-    stmt = (
-        select(food_memory.c.normalized_name)
-        .where(food_memory.c.user_key == user_key)
-        .where(
-            or_(
-                food_memory.c.normalized_name == alias,
-                food_memory.c.aliases.any(alias),
-            )
-        )
+    await assert_alias_available(
+        session,
+        table=food_memory,
+        name_column=food_memory.c.normalized_name,
+        aliases_column=food_memory.c.aliases,
+        user_key=user_key,
+        alias=alias,
+        exclude_value=exclude_normalized_name,
+        exclude_column=food_memory.c.normalized_name,
+        entity_label="food memory entry",
     )
-    if exclude_normalized_name is not None:
-        stmt = stmt.where(food_memory.c.normalized_name != exclude_normalized_name)
-    result = await session.execute(stmt)
-    existing = result.scalar_one_or_none()
-    if existing is not None:
-        raise ValueError(
-            f"alias '{alias}' is already used by food memory entry '{existing}'"
-        )
