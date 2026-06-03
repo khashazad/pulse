@@ -93,31 +93,14 @@ struct MealDetailView: View {
     ///   - disabled: when true, the button is dimmed and non-interactive.
     /// Outputs: composed button view.
     private func logButton(disabled: Bool) -> some View {
-        Button {
+        PrimaryActionButton(
+            title: "Log meal",
+            leading: .icon("plus.circle.fill"),
+            disabled: disabled
+        ) {
             model?.resetLogState()
             showLogSheet = true
-        } label: {
-            HStack(spacing: 8) {
-                Image(systemName: "plus.circle.fill")
-                    .font(.system(size: 16, weight: .semibold))
-                Text("Log meal")
-                    .font(.system(size: 15, weight: .semibold))
-            }
-            .foregroundStyle(Theme.CTP.mauve)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 13)
-            .background(
-                RoundedRectangle(cornerRadius: Theme.Layout.cardRadius, style: .continuous)
-                    .fill(Theme.CTP.mauve.opacity(0.16))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: Theme.Layout.cardRadius, style: .continuous)
-                    .strokeBorder(Theme.CTP.mauve.opacity(0.30), lineWidth: 0.5)
-            )
         }
-        .buttonStyle(.plain)
-        .disabled(disabled)
-        .opacity(disabled ? 0.5 : 1)
     }
 
     /// Top card showing meal totals, notes, macro distribution bar, and per-macro chips.
@@ -298,7 +281,11 @@ struct MealLogSheet: View {
     /// and dismisses the sheet once the meal is logged.
     private var confirmButton: some View {
         let isLogging = model.logState == .logging
-        return Button {
+        return PrimaryActionButton(
+            title: isLogging ? "Logging…" : "Log meal",
+            leading: .busy(isLogging),
+            disabled: isLogging
+        ) {
             Task {
                 await model.logMeal(consumedAt: date)
                 if case .logged = model.logState {
@@ -306,28 +293,6 @@ struct MealLogSheet: View {
                     dismiss()
                 }
             }
-        } label: {
-            HStack(spacing: 8) {
-                if isLogging {
-                    ProgressView().tint(Theme.CTP.mauve)
-                }
-                Text(isLogging ? "Logging…" : "Log meal")
-                    .font(.system(size: 15, weight: .semibold))
-            }
-            .foregroundStyle(Theme.CTP.mauve)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 14)
-            .background(
-                RoundedRectangle(cornerRadius: Theme.Layout.cardRadius, style: .continuous)
-                    .fill(Theme.CTP.mauve.opacity(0.16))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: Theme.Layout.cardRadius, style: .continuous)
-                    .strokeBorder(Theme.CTP.mauve.opacity(0.30), lineWidth: 0.5)
-            )
         }
-        .buttonStyle(.plain)
-        .disabled(isLogging)
-        .padding(.bottom, 12)
     }
 }

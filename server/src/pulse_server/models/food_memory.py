@@ -18,14 +18,17 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
+from pulse_server.models.common import MacroFields
 from pulse_server.models.custom_foods import CustomFoodBasis, CustomFoodResponse
 
 
-class FoodMemoryUsdaWrite(BaseModel):
+class FoodMemoryUsdaWrite(MacroFields):
     """USDA-pointer memory entry; macros are cached at the basis indicated by ``basis``.
 
     Request body for remembering a USDA food under a user-chosen name so
-    future mentions resolve without hitting USDA search.
+    future mentions resolve without hitting USDA search. Inherits the four
+    ``ge=0`` macro fields from :class:`MacroFields`; as a request body, the
+    base-first field order does not affect any wire response.
     """
 
     name: str
@@ -34,10 +37,6 @@ class FoodMemoryUsdaWrite(BaseModel):
     basis: CustomFoodBasis
     serving_size: float | None = None
     serving_size_unit: str | None = None
-    calories: int = Field(ge=0)
-    protein_g: float = Field(ge=0)
-    carbs_g: float = Field(ge=0)
-    fat_g: float = Field(ge=0)
 
 
 class FoodMemoryCustomWrite(BaseModel):

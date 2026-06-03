@@ -40,25 +40,7 @@ from pulse_server.routers import usda as usda_router
 
 from pulse_server.routers import auth as auth_router
 from pulse_server.usda import USDAClient
-
-usda_client: USDAClient | None = None
-
-
-def get_usda_client() -> USDAClient:
-    """Return the initialized USDA client used by API routers.
-
-    Reads the module-level USDA client state populated during app lifespan
-    startup.
-
-    **Outputs:**
-    - USDAClient: Configured client for USDA FoodData Central requests.
-
-    **Exceptions:**
-    - RuntimeError: Raised when called before startup initialization completes.
-    """
-    if usda_client is None:
-        raise RuntimeError("USDA client not initialized")
-    return usda_client
+from pulse_server.usda_provider import get_usda_client, set_usda_client
 
 
 @asynccontextmanager
@@ -66,25 +48,29 @@ async def lifespan(app: FastAPI):
     """Manage startup and shutdown resources for the FastAPI application.
 
     Initializes the SQLAlchemy pool, bootstraps the schema, constructs the
-    shared USDA client, yields while the app is running, then tears down the
-    USDA client and pool.
+    shared USDA client and publishes it to :mod:`pulse_server.usda_provider`,
+    yields while the app is running, then tears down the USDA client and pool.
 
     **Inputs:**
     - app (FastAPI): Active FastAPI application instance bound to this lifespan.
 
-    **Exceptions:**
+    **Outputs:**
+    - None: Async context manager; yields control while the app runs.
+
+    **Raises:**
     - pydantic_core.ValidationError: Raised when required settings are missing.
     - psycopg.Error: Raised when database initialization or schema bootstrap fails.
     - httpx.HTTPError: Raised if USDA client shutdown encounters transport issues.
     """
     del app
-    global usda_client
     settings = get_settings()
     await db.init_pool(settings.database_url)
     await db.bootstrap_schema()
     usda_client = USDAClient(settings.usda_api_key)
+    set_usda_client(usda_client)
     yield
     await usda_client.close()
+    set_usda_client(None)
     await db.close_pool()
 
 

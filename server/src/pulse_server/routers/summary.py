@@ -16,12 +16,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from pulse_server.auth import require_session
 from pulse_server.db import get_session_dependency
 from pulse_server.models import DailySummaryResponse
-from pulse_server.models.weight import CaloriesDailyRow
+from pulse_server.models.daily import CaloriesDailyRow
 from pulse_server.services.summary_service import (
     build_daily_summary,
     daily_calorie_totals,
 )
-from pulse_server.services.weight_service import validate_range
 
 router = APIRouter(dependencies=[Depends(require_session)])
 
@@ -74,15 +73,15 @@ async def calories_daily(
     - list[CaloriesDailyRow]: One row per day in the requested window.
 
     **Exceptions:**
-    - HTTPException(400): Raised when the date range fails :func:`validate_range`.
+    - HTTPException(400): Raised when the date range is invalid (reversed or
+      exceeds the maximum span).
     """
     try:
-        validate_range(from_, to)
+        return await daily_calorie_totals(
+            session=session,
+            user_key=request.state.user_key,
+            from_date=from_,
+            to_date=to,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return await daily_calorie_totals(
-        session=session,
-        user_key=request.state.user_key,
-        from_date=from_,
-        to_date=to,
-    )

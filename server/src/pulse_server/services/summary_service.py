@@ -10,25 +10,26 @@ a transaction.
 from __future__ import annotations
 
 from datetime import date as DateValue
+from typing import Literal
 
 from fastapi import HTTPException
-from sqlalchemy import func as sa_func
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from pulse_server.macro_aggregates import sum_food_entry_macros
-from pulse_server.models import DailySummaryResponse, FoodEntryResponse, MacroTargets, MacroTotals
-from pulse_server.models.weight import CaloriesDailyRow
+from pulse_server.log_ids import daily_log_id
+from pulse_server.macro_aggregates import remaining_macros, sum_food_entry_macros
+from pulse_server.models import DailySummaryResponse, FoodEntryResponse
+from pulse_server.models.adapters import macro_targets_from_row
+from pulse_server.models.daily import CaloriesDailyRow
 from pulse_server.repositories.entries import EntriesRepository
-from pulse_server.repositories.tables import daily_logs, food_entries
 from pulse_server.repositories.targets import TargetsRepository
-from pulse_server.services.log_ids import daily_log_id
+from pulse_server.services.date_utils import validate_range
 
 
 async def build_daily_summary(
     session: AsyncSession,
     user_key: str,
     summary_date: DateValue,
+    missing_target: Literal["raise", "null"] = "raise",
 ) -> DailySummaryResponse:
     """Build a daily summary payload from persisted target and entry data.
 
@@ -41,6 +42,10 @@ async def build_daily_summary(
     - user_key (str): User identifier whose summary is requested.
     - summary_date (DateValue): Date for which target/consumed/remaining
       totals are computed.
+    - missing_target ("raise" | "null"): Behavior when no target profile
+      exists. ``"raise"`` (default, used by the REST ``/summary`` endpoint)
+      raises 404; ``"null"`` (used by the MCP ``get_day`` tool) returns the
+      consumed totals and entries with ``target``/``remaining`` set to ``None``.
 
     **Outputs:**
     - DailySummaryResponse: Computed summary including target, consumed,
@@ -48,39 +53,36 @@ async def build_daily_summary(
 
     **Exceptions:**
     - fastapi.HTTPException: Raised with 404 when no target profile exists
-      for the user.
+      and ``missing_target == "raise"``.
     - sqlalchemy.exc.SQLAlchemyError: Raised when repository queries fail.
     """
     targets_repo = TargetsRepository(session)
     entries_repo = EntriesRepository(session)
 
     target_row = await targets_repo.get_target_profile(user_key)
-    if target_row is None:
+    if target_row is None and missing_target == "raise":
         raise HTTPException(status_code=404, detail=f"No target profile for user {user_key}")
 
     summary_daily_log_id = daily_log_id(user_key, summary_date)
     entry_rows = await entries_repo.list_entries_by_daily_log_id(summary_daily_log_id)
     entries = [FoodEntryResponse(**row) for row in entry_rows]
-
-    target = MacroTargets(
-        calories=int(target_row["calories_target"]),
-        protein_g=float(target_row["protein_g_target"]),
-        carbs_g=float(target_row["carbs_g_target"]),
-        fat_g=float(target_row["fat_g_target"]),
-    )
     consumed = sum_food_entry_macros(entries)
-    remaining = MacroTotals(
-        calories=target.calories - consumed.calories,
-        protein_g=round(target.protein_g - consumed.protein_g, 1),
-        carbs_g=round(target.carbs_g - consumed.carbs_g, 1),
-        fat_g=round(target.fat_g - consumed.fat_g, 1),
-    )
 
+    if target_row is None:
+        return DailySummaryResponse(
+            date=summary_date,
+            target=None,
+            consumed=consumed,
+            remaining=None,
+            entries=entries,
+        )
+
+    target = macro_targets_from_row(target_row)
     return DailySummaryResponse(
         date=summary_date,
         target=target,
         consumed=consumed,
-        remaining=remaining,
+        remaining=remaining_macros(target, consumed),
         entries=entries,
     )
 
@@ -106,23 +108,17 @@ async def daily_calorie_totals(
     - list[CaloriesDailyRow]: One row per day with at least one entry,
       ordered by ``log_date`` ascending.
 
-    **Exceptions:**
+    **Raises:**
+    - ValueError: Raised when the range is invalid (see
+      :func:`validate_range`).
     - sqlalchemy.exc.SQLAlchemyError: Raised when the query fails.
     """
-    stmt = (
-        select(
-            daily_logs.c.log_date.label("log_date"),
-            sa_func.coalesce(sa_func.sum(food_entries.c.calories), 0).label("calories"),
-        )
-        .select_from(food_entries.join(daily_logs, daily_logs.c.id == food_entries.c.daily_log_id))
-        .where(daily_logs.c.user_key == user_key)
-        .where(daily_logs.c.log_date >= from_date)
-        .where(daily_logs.c.log_date <= to_date)
-        .group_by(daily_logs.c.log_date)
-        .order_by(daily_logs.c.log_date.asc())
+    validate_range(from_date, to_date)
+    entries_repo = EntriesRepository(session)
+    rows = await entries_repo.calorie_totals_by_day(
+        user_key=user_key, from_date=from_date, to_date=to_date
     )
-    result = await session.execute(stmt)
     return [
         CaloriesDailyRow(log_date=row["log_date"], calories=int(row["calories"]))
-        for row in result.mappings()
+        for row in rows
     ]

@@ -1,9 +1,8 @@
 /// Models for the progress-photos feature.
 /// Defines `ProgressPhotoTag` (user-defined tag rows), `ProgressPhotoMetadata`
-/// (server metadata for one stored photo, keyed by photo id), the pending-
-/// upload record persisted by the offline retry queue, and a `DateOnlyFormatter`
-/// helper for `YYYY-MM-DD` IDs/keys. Consumed by the progress-photo views,
-/// capture session, stores, and upload queue.
+/// (server metadata for one stored photo, keyed by photo id), and the pending-
+/// upload record persisted by the offline retry queue. Consumed by the
+/// progress-photo views, capture session, stores, and upload queue.
 import Foundation
 
 /// A user-defined progress-photo tag (e.g. "front", "morning", "flexed").
@@ -67,19 +66,4 @@ enum QueuedUpload: Codable, Hashable {
         case .single(let u): return u.nextAttemptAt
         }
     }
-}
-
-/// Shared `YYYY-MM-DD` formatter used for date-keyed IDs and request paths.
-enum DateOnlyFormatter {
-    private static let formatter: ISO8601DateFormatter = {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withFullDate]
-        return f
-    }()
-
-    /// Formats a `Date` as a `YYYY-MM-DD` string.
-    static func string(from date: Date) -> String { formatter.string(from: date) }
-
-    /// Parses a `YYYY-MM-DD` string back into a `Date`.
-    static func date(from string: String) -> Date? { formatter.date(from: string) }
 }

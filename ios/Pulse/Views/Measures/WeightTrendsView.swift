@@ -4,8 +4,8 @@
 /// `WeightTrendsView` which renders a Swift Charts weight-over-time card
 /// (with regression dashed line and target rule) plus an Analytics card with
 /// estimated maintenance kcal, recent trend, and ETA-to-target derived from
-/// `WeightTrendsModel` + `UserTargetsStore`. Internally uses the private
-/// `RegressionLine` value type for the linear-fit overlay.
+/// `WeightTrendsModel` + `UserTargetsStore`. The linear-fit overlay uses
+/// `WeightTrendsModel.regressionLine(for:unit:)` and its `RegressionLine` type.
 import SwiftUI
 import Charts
 
@@ -128,7 +128,7 @@ struct WeightTrendsView: View {
                     .font(.system(size: 13)).foregroundStyle(Theme.FG.tertiary)
                     .frame(height: 160)
             } else {
-                let regLine = regressionLine(for: visible, unit: unit)
+                let regLine = WeightTrendsModel.regressionLine(for: visible, unit: unit)
                 let displayValues = visible.map { WeightFormatter.fromLb($0.weightLb, to: unit) }
                 let yMin = displayValues.min() ?? 0
                 let yMax = displayValues.max() ?? 0
@@ -183,43 +183,6 @@ struct WeightTrendsView: View {
             }
         }
         .padding(16).ctpCard()
-    }
-
-    /// Endpoints of a linear regression fit through the filtered entries, in display units.
-    private struct RegressionLine {
-        let startDate: Date
-        let endDate: Date
-        let startY: Double
-        let endY: Double
-    }
-
-    /// Computes a least-squares regression line over the given entries.
-    ///
-    /// Inputs:
-    /// - entries: chronologically ordered weight entries.
-    /// - unit: display unit; y-values are converted before fitting.
-    ///
-    /// Outputs: a `RegressionLine` for chart overlay, or nil if fewer than 8
-    ///   points are present or the fit is degenerate.
-    private func regressionLine(for entries: [WeightEntry], unit: WeightUnit) -> RegressionLine? {
-        guard entries.count >= 8 else { return nil }
-        let ys = entries.map { WeightFormatter.fromLb($0.weightLb, to: unit) }
-        let n = Double(entries.count)
-        let xs = (0..<entries.count).map(Double.init)
-        let sx = xs.reduce(0, +)
-        let sy = ys.reduce(0, +)
-        let sxx = xs.reduce(0) { $0 + $1 * $1 }
-        let sxy = zip(xs, ys).reduce(0) { $0 + $1.0 * $1.1 }
-        let denom = n * sxx - sx * sx
-        guard denom != 0 else { return nil }
-        let slope = (n * sxy - sx * sy) / denom
-        let intercept = (sy - slope * sx) / n
-        return RegressionLine(
-            startDate: entries.first!.date,
-            endDate: entries.last!.date,
-            startY: intercept,
-            endY: slope * Double(entries.count - 1) + intercept
-        )
     }
 
     /// Renders the maintenance/trend/ETA analytics card.

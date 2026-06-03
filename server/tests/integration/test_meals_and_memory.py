@@ -29,7 +29,7 @@ from pulse_server.models import (
     MealItemCreate,
 )
 from pulse_server.repositories.custom_foods import CustomFoodsRepository
-from pulse_server.repositories.entries import EntriesRepository
+from pulse_server.repositories.entries import EntriesRepository, FoodEntryPayload
 from pulse_server.repositories.food_memory import FoodMemoryRepository
 from pulse_server.repositories.meals import MealsRepository
 from pulse_server.services.custom_foods_service import upsert_custom_food_and_remember
@@ -211,22 +211,24 @@ async def test_food_entries_check_constraint_blocks_dual_source(session: AsyncSe
     with pytest.raises(IntegrityError):
         async with transaction(session):
             await entries_repo.create_food_entry(
-                entry_id=uuid.uuid4(),
-                daily_log_id=log_id,
-                user_key=user_key,
-                entry_group_id=uuid.uuid4(),
-                display_name="bad",
-                quantity_text="1",
-                normalized_quantity_value=None,
-                normalized_quantity_unit=None,
-                usda_fdc_id=12345,
-                usda_description="USDA Thing",
-                custom_food_id=cf["id"],
-                calories=100,
-                protein_g=5,
-                carbs_g=10,
-                fat_g=2,
-                consumed_at=now,
+                FoodEntryPayload(
+                    entry_id=uuid.uuid4(),
+                    daily_log_id=log_id,
+                    user_key=user_key,
+                    entry_group_id=uuid.uuid4(),
+                    display_name="bad",
+                    quantity_text="1",
+                    normalized_quantity_value=None,
+                    normalized_quantity_unit=None,
+                    usda_fdc_id=12345,
+                    usda_description="USDA Thing",
+                    custom_food_id=cf["id"],
+                    calories=100,
+                    protein_g=5,
+                    carbs_g=10,
+                    fat_g=2,
+                    consumed_at=now,
+                )
             )
 
 
@@ -310,22 +312,24 @@ async def test_delete_custom_food_blocked_when_referenced(session: AsyncSession)
         log_id = entries_repo.daily_log_id(user_key=user_key, log_date=log_date)
         await entries_repo.ensure_daily_log(log_id, user_key, log_date)
         await entries_repo.create_food_entry(
-            entry_id=uuid.uuid4(),
-            daily_log_id=log_id,
-            user_key=user_key,
-            entry_group_id=uuid.uuid4(),
-            display_name="restrict test",
-            quantity_text="1",
-            normalized_quantity_value=None,
-            normalized_quantity_unit=None,
-            usda_fdc_id=None,
-            usda_description=None,
-            custom_food_id=cf["id"],
-            calories=200,
-            protein_g=10,
-            carbs_g=20,
-            fat_g=5,
-            consumed_at=now,
+            FoodEntryPayload(
+                entry_id=uuid.uuid4(),
+                daily_log_id=log_id,
+                user_key=user_key,
+                entry_group_id=uuid.uuid4(),
+                display_name="restrict test",
+                quantity_text="1",
+                normalized_quantity_value=None,
+                normalized_quantity_unit=None,
+                usda_fdc_id=None,
+                usda_description=None,
+                custom_food_id=cf["id"],
+                calories=200,
+                protein_g=10,
+                carbs_g=20,
+                fat_g=5,
+                consumed_at=now,
+            )
         )
 
     with pytest.raises(IntegrityError):
@@ -585,22 +589,24 @@ async def test_manual_entry_has_null_meal_link(session: AsyncSession) -> None:
         log_id = entries_repo.daily_log_id(user_key=user_key, log_date=log_date)
         await entries_repo.ensure_daily_log(log_id, user_key, log_date)
         row = await entries_repo.create_food_entry(
-            entry_id=uuid.uuid4(),
-            daily_log_id=log_id,
-            user_key=user_key,
-            entry_group_id=uuid.uuid4(),
-            display_name="ad-hoc",
-            quantity_text="1",
-            normalized_quantity_value=None,
-            normalized_quantity_unit=None,
-            usda_fdc_id=200003,
-            usda_description="ad-hoc usda",
-            custom_food_id=None,
-            calories=50,
-            protein_g=1,
-            carbs_g=10,
-            fat_g=2,
-            consumed_at=now,
+            FoodEntryPayload(
+                entry_id=uuid.uuid4(),
+                daily_log_id=log_id,
+                user_key=user_key,
+                entry_group_id=uuid.uuid4(),
+                display_name="ad-hoc",
+                quantity_text="1",
+                normalized_quantity_value=None,
+                normalized_quantity_unit=None,
+                usda_fdc_id=200003,
+                usda_description="ad-hoc usda",
+                custom_food_id=None,
+                calories=50,
+                protein_g=1,
+                carbs_g=10,
+                fat_g=2,
+                consumed_at=now,
+            )
         )
 
     assert row["meal_id"] is None

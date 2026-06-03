@@ -1,16 +1,35 @@
 """Pure helpers for rolling food entries up into macro totals.
 
-Provides :func:`sum_food_entry_macros`, used by services and routers to
-summarize a day (or any slice) of :class:`FoodEntryResponse` records into a
-single :class:`MacroTotals` payload. Stateless and side-effect free so it can
-be reused anywhere a macro rollup is needed.
+Provides :func:`sum_food_entry_macros` (day/slice rollup) and
+:func:`remaining_macros` (target minus consumed), used by services and the MCP
+tools to build summary payloads. Stateless and side-effect free so they can be
+reused anywhere a macro rollup is needed.
 """
 
 from __future__ import annotations
 
 from collections.abc import Sequence
 
-from pulse_server.models import FoodEntryResponse, MacroTotals
+from pulse_server.models import FoodEntryResponse, MacroTargets, MacroTotals
+
+
+def remaining_macros(target: MacroTargets, consumed: MacroTotals) -> MacroTotals:
+    """Compute remaining-vs-target macros (target minus consumed).
+
+    **Inputs:**
+    - target (MacroTargets): The user's daily macro targets.
+    - consumed (MacroTotals): Macros already consumed for the day.
+
+    **Outputs:**
+    - MacroTotals: Element-wise ``target - consumed``, with macro grams rounded
+      to one decimal place (calories left as an integer difference).
+    """
+    return MacroTotals(
+        calories=target.calories - consumed.calories,
+        protein_g=round(target.protein_g - consumed.protein_g, 1),
+        carbs_g=round(target.carbs_g - consumed.carbs_g, 1),
+        fat_g=round(target.fat_g - consumed.fat_g, 1),
+    )
 
 
 def sum_food_entry_macros(entries: Sequence[FoodEntryResponse]) -> MacroTotals:

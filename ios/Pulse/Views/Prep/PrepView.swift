@@ -15,7 +15,6 @@ struct PrepView: View {
     @State private var listModel: ContainersListModel?
     @State private var pickerMode: PickerMode?
     @State private var showManager = false
-    @State private var hydrated = false
     @State private var managerReloadTask: Task<Void, Never>?
     /// Tracks which weigh-in's gross-grams field holds the decimal-pad keyboard,
     /// so the keyboard toolbar's Done button can resign it (the decimal pad has
@@ -24,7 +23,6 @@ struct PrepView: View {
     @State private var batchModel = BatchCompositionModel()
     @State private var foodSearchModel: FoodSearchModel?
     @State private var showFoodSearch = false
-    private let store = PrepStatePersistence()
 
     /// Identifies which selection the container picker is fulfilling.
     private enum PickerMode: Identifiable {
@@ -82,7 +80,7 @@ struct PrepView: View {
             if let fm = foodSearchModel {
                 FoodSearchSheet(model: fm, containers: loadedContainers) { item in
                     batchModel.add(item)
-                    store.saveBatchItems(batchModel.items)
+                    model.saveBatchItems(batchModel.items)
                 }
             }
         }
@@ -95,7 +93,7 @@ struct PrepView: View {
                         await listModel?.load()
                         if Task.isCancelled { return }
                         hydrateIfNeeded()
-                        reconcile()
+                        model.reconcileIfLoaded(loadedListOrNil)
                     }
                 }
         }
@@ -104,11 +102,11 @@ struct PrepView: View {
             if foodSearchModel == nil { foodSearchModel = FoodSearchModel(auth: auth) }
             await listModel?.load()
             hydrateIfNeeded()
-            reconcile()
+            model.reconcileIfLoaded(loadedListOrNil)
         }
-        .onChange(of: model.targets) { _, _ in persist() }
-        .onChange(of: model.weighIns) { _, _ in persist() }
-        .onChange(of: model.portionsOverride) { _, _ in persist() }
+        .onChange(of: model.targets) { _, _ in model.persist() }
+        .onChange(of: model.weighIns) { _, _ in model.persist() }
+        .onChange(of: model.portionsOverride) { _, _ in model.persist() }
     }
 
     // MARK: - Sections
@@ -116,7 +114,7 @@ struct PrepView: View {
     /// "Divide into" card: one row per target container with a count stepper.
     @ViewBuilder
     private var targetsSection: some View {
-        section(header: "Divide into") {
+        SectionCard(header: "Divide into") {
             if model.targets.isEmpty {
                 emptyRow("Pick the containers to split into")
             } else {
@@ -169,7 +167,7 @@ struct PrepView: View {
     /// "Weigh-ins" card: one row per scale reading (container + gross grams).
     @ViewBuilder
     private var weighInsSection: some View {
-        section(header: "Weigh-ins") {
+        SectionCard(header: "Weigh-ins") {
             if model.weighIns.isEmpty {
                 emptyRow("Add each container you put on the scale")
             } else {
@@ -223,7 +221,7 @@ struct PrepView: View {
     /// "Result" card: total net, portions stepper, per-portion, and fill targets.
     @ViewBuilder
     private var resultSection: some View {
-        section(header: "Result") {
+        SectionCard(header: "Result") {
             resultRow("Total net food", value: model.totalNetGrams)
             if model.totalNetGrams != nil, model.hasUnenteredWeighIns {
                 HStack(spacing: 6) {
@@ -284,7 +282,7 @@ struct PrepView: View {
     /// running batch total, and an add button that opens the food search sheet.
     @ViewBuilder
     private var foodsSection: some View {
-        section(header: "Foods in this batch") {
+        SectionCard(header: "Foods in this batch") {
             if batchModel.items.isEmpty {
                 emptyRow("Search and add foods to this batch")
             } else {
@@ -302,7 +300,7 @@ struct PrepView: View {
                         Spacer()
                         Button {
                             batchModel.remove(id: item.id)
-                            store.saveBatchItems(batchModel.items)
+                            model.saveBatchItems(batchModel.items)
                         } label: {
                             Image(systemName: "minus.circle.fill")
                                 .font(.system(size: 18))
@@ -390,30 +388,20 @@ struct PrepView: View {
 
     // MARK: - Persistence & reconcile
 
-    /// Loads saved targets/weigh-ins/portions from `UserDefaults` once the
-    /// container list is available, matching stored container ids against it
-    /// (dropping unknown ids). Stays pending (not marked done) until a successful
-    /// load, so a failed initial load can still hydrate on a later reload.
+    /// The loaded container list, or nil when it has not yet loaded — used to gate
+    /// the model's hydrate/reconcile so they no-op until containers are available.
+    private var loadedListOrNil: [Container]? {
+        if case .loaded(let list) = listModel?.state ?? .idle { return list }
+        return nil
+    }
+
+    /// Delegates hydration to `PrepModel`; reseeds the batch composition state only
+    /// when the model actually hydrated (returns the persisted items), matching the
+    /// prior behavior of restoring batch items in the same pass as targets/weigh-ins.
     private func hydrateIfNeeded() {
-        guard !hydrated else { return }
-        guard case .loaded(let list) = listModel?.state ?? .idle else { return }
-        hydrated = true
-        let loaded = store.load(matching: list)
-        model.targets = loaded.targets
-        model.weighIns = loaded.weighIns
-        model.portionsOverride = loaded.portionsOverride
-        batchModel = BatchCompositionModel(items: store.loadBatchItems())
-    }
-
-    /// Writes the current targets/weigh-ins/portions to `UserDefaults`.
-    private func persist() {
-        store.save(targets: model.targets, weighIns: model.weighIns, portionsOverride: model.portionsOverride)
-    }
-
-    /// Refreshes container snapshots and drops deleted ones using the loaded list.
-    private func reconcile() {
-        guard case .loaded(let list) = listModel?.state ?? .idle else { return }
-        model.reconcile(with: list)
+        if let items = model.hydrateIfNeeded(matching: loadedListOrNil) {
+            batchModel = BatchCompositionModel(items: items)
+        }
     }
 
     // MARK: - Reusable views
@@ -458,29 +446,6 @@ struct PrepView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-    }
-
-    /// Wraps a card-styled content block under an uppercase section header.
-    /// Inputs:
-    ///   - header: section title shown above the card.
-    ///   - content: view builder for the card body.
-    /// Outputs: a `View` containing the header label and themed card body.
-    @ViewBuilder
-    private func section<Content: View>(
-        header: String,
-        @ViewBuilder content: () -> Content
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(header)
-                .font(.system(size: 11, weight: .semibold))
-                .tracking(0.8)
-                .textCase(.uppercase)
-                .foregroundStyle(Theme.FG.secondary)
-                .padding(.horizontal, 20)
-            VStack(spacing: 0) { content() }
-                .ctpCard()
-                .padding(.horizontal, 16)
-        }
     }
 
     /// Renders a label/value row used in the Result card.

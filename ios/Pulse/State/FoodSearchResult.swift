@@ -1,4 +1,4 @@
-// Pulse/Models/FoodSearchResult.swift
+// Pulse/State/FoodSearchResult.swift
 /// A single, source-agnostic food the user can pick from search: a custom food,
 /// a remembered USDA food ("my foods"), or a live USDA hit. Carries the
 /// `FoodNutrition` needed to scale macros, plus lowercased match terms used for

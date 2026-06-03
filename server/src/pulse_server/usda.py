@@ -7,7 +7,7 @@ nutrient payload (search vs detail endpoints) onto the internal macro schema
 ``/foods/search`` and ``/food/{fdcId}`` endpoints.
 
 Owned at process scope by the FastAPI lifespan (``app.py``) and surfaced to
-routers via ``get_usda_client``.
+routers (and the MCP layer) via :mod:`pulse_server.usda_provider`.
 """
 
 from __future__ import annotations

@@ -23,6 +23,22 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from pulse_server.repositories.tables import custom_foods
 
+# Columns whose value is overwritten when an upsert replaces an existing row.
+# Declared once and reused to build both the INSERT ``.values()`` payload and
+# the ``ON CONFLICT ... SET`` mapping so a column is never listed twice.
+_CUSTOM_FOOD_MUTABLE_COLUMNS: tuple[str, ...] = (
+    "name",
+    "basis",
+    "serving_size",
+    "serving_size_unit",
+    "calories",
+    "protein_g",
+    "carbs_g",
+    "fat_g",
+    "source",
+    "notes",
+)
+
 
 def _row_columns() -> tuple[Any, ...]:
     """Return the canonical column projection for ``custom_foods`` rows.
@@ -60,6 +76,90 @@ class CustomFoodsRepository:
         """
         self._session = session
 
+    async def _insert(
+        self,
+        user_key: str,
+        name: str,
+        normalized_name: str,
+        basis: str,
+        serving_size: float | None,
+        serving_size_unit: str | None,
+        calories: int,
+        protein_g: float,
+        carbs_g: float,
+        fat_g: float,
+        source: str,
+        notes: str | None,
+        now: DateTimeValue,
+        on_conflict_update: bool,
+    ) -> dict[str, Any]:
+        """Insert a custom-food row, optionally updating on conflict.
+
+        Shared implementation behind :meth:`create` and :meth:`upsert`. The
+        macro/value columns are declared once via
+        ``_CUSTOM_FOOD_MUTABLE_COLUMNS`` and reused for both the ``.values()``
+        payload and the ``ON CONFLICT ... SET`` mapping.
+
+        **Inputs:**
+        - user_key (str): Owning user identifier.
+        - name (str): Original-cased display name.
+        - normalized_name (str): Lowercased canonical key for lookup.
+        - basis (str): Macro basis indicator (``per_100g``/``per_serving``/``per_unit``).
+        - serving_size (float | None): Serving size when basis requires it.
+        - serving_size_unit (str | None): Serving size unit (e.g. ``"g"``, ``"wrap"``).
+        - calories (int): Calories at the indicated basis.
+        - protein_g (float): Protein grams at the indicated basis.
+        - carbs_g (float): Carbohydrate grams at the indicated basis.
+        - fat_g (float): Fat grams at the indicated basis.
+        - source (str): Provenance label (``manual``/``photo``/``corrected``).
+        - notes (str | None): Free-form note.
+        - now (DateTimeValue): Timestamp for ``created_at`` and ``updated_at``.
+        - on_conflict_update (bool): When ``True``, an existing row for the same
+          ``(user_key, normalized_name)`` is updated; when ``False``, a
+          conflict surfaces as an IntegrityError.
+
+        **Outputs:**
+        - dict[str, Any]: The inserted or upserted row.
+
+        **Raises:**
+        - sqlalchemy.exc.IntegrityError: Raised (when ``on_conflict_update`` is
+          ``False``) if a row already exists for the same user+name.
+        - sqlalchemy.exc.SQLAlchemyError: Raised when SQL execution fails.
+        """
+        mutable_values = {
+            "name": name,
+            "basis": basis,
+            "serving_size": serving_size,
+            "serving_size_unit": serving_size_unit,
+            "calories": calories,
+            "protein_g": protein_g,
+            "carbs_g": carbs_g,
+            "fat_g": fat_g,
+            "source": source,
+            "notes": notes,
+        }
+        insert_stmt = pg_insert(custom_foods).values(
+            user_key=user_key,
+            normalized_name=normalized_name,
+            created_at=now,
+            updated_at=now,
+            **{col: mutable_values[col] for col in _CUSTOM_FOOD_MUTABLE_COLUMNS},
+        )
+        if on_conflict_update:
+            set_: dict[str, Any] = {
+                col: getattr(insert_stmt.excluded, col)
+                for col in _CUSTOM_FOOD_MUTABLE_COLUMNS
+            }
+            set_["updated_at"] = now
+            stmt = insert_stmt.on_conflict_do_update(
+                index_elements=[custom_foods.c.user_key, custom_foods.c.normalized_name],
+                set_=set_,
+            ).returning(*_row_columns())
+        else:
+            stmt = insert_stmt.returning(*_row_columns())
+        result = await self._session.execute(stmt)
+        return dict(result.mappings().one())
+
     async def create(
         self,
         user_key: str,
@@ -77,6 +177,9 @@ class CustomFoodsRepository:
         now: DateTimeValue,
     ) -> dict[str, Any]:
         """Insert a custom-food row keyed by ``(user_key, normalized_name)``.
+
+        Thin wrapper over :meth:`_insert` with conflict-update disabled, so a
+        duplicate name surfaces as an IntegrityError.
 
         **Inputs:**
         - user_key (str): Owning user identifier.
@@ -96,32 +199,26 @@ class CustomFoodsRepository:
         **Outputs:**
         - dict[str, Any]: The inserted row.
 
-        **Exceptions:**
+        **Raises:**
         - sqlalchemy.exc.IntegrityError: Raised when a row already exists for
           the same user+name.
         """
-        stmt = (
-            pg_insert(custom_foods)
-            .values(
-                user_key=user_key,
-                name=name,
-                normalized_name=normalized_name,
-                basis=basis,
-                serving_size=serving_size,
-                serving_size_unit=serving_size_unit,
-                calories=calories,
-                protein_g=protein_g,
-                carbs_g=carbs_g,
-                fat_g=fat_g,
-                source=source,
-                notes=notes,
-                created_at=now,
-                updated_at=now,
-            )
-            .returning(*_row_columns())
+        return await self._insert(
+            user_key=user_key,
+            name=name,
+            normalized_name=normalized_name,
+            basis=basis,
+            serving_size=serving_size,
+            serving_size_unit=serving_size_unit,
+            calories=calories,
+            protein_g=protein_g,
+            carbs_g=carbs_g,
+            fat_g=fat_g,
+            source=source,
+            notes=notes,
+            now=now,
+            on_conflict_update=False,
         )
-        result = await self._session.execute(stmt)
-        return dict(result.mappings().one())
 
     async def upsert(
         self,
@@ -141,8 +238,9 @@ class CustomFoodsRepository:
     ) -> dict[str, Any]:
         """Insert a custom food, updating an existing row on conflict.
 
-        Uses Postgres ``ON CONFLICT`` against the
-        ``(user_key, normalized_name)`` unique index.
+        Thin wrapper over :meth:`_insert` with conflict-update enabled. Uses
+        Postgres ``ON CONFLICT`` against the ``(user_key, normalized_name)``
+        unique index.
 
         **Inputs:**
         - user_key (str): Owning user identifier.
@@ -162,10 +260,10 @@ class CustomFoodsRepository:
         **Outputs:**
         - dict[str, Any]: The upserted row.
 
-        **Exceptions:**
+        **Raises:**
         - sqlalchemy.exc.SQLAlchemyError: Raised when SQL execution fails.
         """
-        insert_stmt = pg_insert(custom_foods).values(
+        return await self._insert(
             user_key=user_key,
             name=name,
             normalized_name=normalized_name,
@@ -178,27 +276,9 @@ class CustomFoodsRepository:
             fat_g=fat_g,
             source=source,
             notes=notes,
-            created_at=now,
-            updated_at=now,
+            now=now,
+            on_conflict_update=True,
         )
-        stmt = insert_stmt.on_conflict_do_update(
-            index_elements=[custom_foods.c.user_key, custom_foods.c.normalized_name],
-            set_={
-                "name": insert_stmt.excluded.name,
-                "basis": insert_stmt.excluded.basis,
-                "serving_size": insert_stmt.excluded.serving_size,
-                "serving_size_unit": insert_stmt.excluded.serving_size_unit,
-                "calories": insert_stmt.excluded.calories,
-                "protein_g": insert_stmt.excluded.protein_g,
-                "carbs_g": insert_stmt.excluded.carbs_g,
-                "fat_g": insert_stmt.excluded.fat_g,
-                "source": insert_stmt.excluded.source,
-                "notes": insert_stmt.excluded.notes,
-                "updated_at": now,
-            },
-        ).returning(*_row_columns())
-        result = await self._session.execute(stmt)
-        return dict(result.mappings().one())
 
     async def get_by_id(self, custom_food_id: UUID, user_key: str) -> dict[str, Any] | None:
         """Fetch a custom food by primary key, scoped to the owning user.

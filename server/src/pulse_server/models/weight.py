@@ -2,10 +2,10 @@
 
 Defines the weight unit literal (:data:`WeightUnit`), the request shape
 for upserts (:class:`WeightEntryUpsert` — accepts ``lb`` or ``kg`` and
-enforces the storable range), the response shape
-(:class:`WeightEntryResponse`), and :class:`CaloriesDailyRow` (a small
-helper row type used alongside weight history endpoints). Consumed by
-the weight router and service.
+enforces the storable range), and the response shape
+(:class:`WeightEntryResponse`). :class:`CaloriesDailyRow` now lives in
+``models/daily.py`` and is re-exported here for backward-compatible imports.
+Consumed by the weight router and service.
 """
 
 from __future__ import annotations
@@ -18,6 +18,14 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, field_serializer, model_validator
 
+from pulse_server.models.daily import CaloriesDailyRow
+
+__all__ = [
+    "CaloriesDailyRow",
+    "WeightEntryResponse",
+    "WeightEntryUpsert",
+    "WeightUnit",
+]
 
 WeightUnit = Literal["lb", "kg"]
 
@@ -76,10 +84,3 @@ class WeightEntryUpsert(BaseModel):
         if rounded > limit:
             raise ValueError(f"weight in {self.unit} must be <= {limit}")
         return self
-
-
-class CaloriesDailyRow(BaseModel):
-    """One row of the daily calorie history used alongside the weight chart."""
-
-    log_date: DateValue
-    calories: int

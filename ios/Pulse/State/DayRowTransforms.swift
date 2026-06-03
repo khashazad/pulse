@@ -1,10 +1,13 @@
-/// DayEntriesGrouping: pure helpers that fold a flat list of FoodEntry into
-/// renderable day rows.
-/// Defines DayRow (single entry or meal group), MealGroup (aggregated items for
-/// a meal), and `groupDayEntries` which buckets entries by group id then merges
-/// repeated saved-meal instances.
-/// Role: shared logic used by day-view UIs.
+/// DayRowTransforms: pure helpers that fold a flat list of FoodEntry into the
+/// renderable day-view shape, then split that into time-proximity clusters.
+/// One pipeline in two steps: `groupDayEntries` buckets entries by group id and
+/// merges repeated saved-meal instances into `DayRow`s; `clusterByProximity`
+/// then folds those rows into `DayCluster`s, starting a new cluster whenever the
+/// gap between consecutive rows exceeds `DayProximity.gap`.
+/// Role: shared logic used by the Intake day view; no view or network deps.
 import Foundation
+
+// MARK: - Grouping
 
 /// One renderable row in the day view: either a single entry or an aggregated meal group.
 enum DayRow: Identifiable {
@@ -137,4 +140,52 @@ func groupDayEntries(_ entries: [FoodEntry]) -> [DayRow] {
         if lhs.sortDate == rhs.sortDate { return false }  // preserve insertion order on ties
         return lhs.sortDate < rhs.sortDate
     }
+}
+
+// MARK: - Proximity clustering
+
+/// Tunables for day-view proximity clustering.
+enum DayProximity {
+    /// Maximum gap between two consecutive entries' `consumedAt` times before a
+    /// new cluster begins. 45 minutes sits comfortably between intra-occasion
+    /// logging bursts (seconds-to-minutes apart) and the hours-long gaps between
+    /// distinct meals.
+    static let gap: TimeInterval = 45 * 60
+}
+
+/// A run of consecutive day rows logged close together in time.
+struct DayCluster: Identifiable {
+    /// Stable id derived from the first row, so SwiftUI diffing is well-behaved.
+    let id: String
+    /// The rows in this cluster, in their original chronological order.
+    let rows: [DayRow]
+}
+
+/// Splits chronologically-ordered day rows into proximity clusters: a new cluster
+/// starts whenever the gap between a row and the row before it exceeds `gap`.
+/// Inputs:
+///   - rows: the day's rows, already sorted ascending by representative time
+///     (as produced by `groupDayEntries`).
+///   - gap: maximum allowed gap between consecutive rows within one cluster, in
+///     seconds. Defaults to `DayProximity.gap`.
+/// Outputs: clusters in chronological order; empty when `rows` is empty. Every
+/// returned cluster is non-empty.
+func clusterByProximity(_ rows: [DayRow], gap: TimeInterval = DayProximity.gap) -> [DayCluster] {
+    guard let first = rows.first else { return [] }
+
+    var clusters: [DayCluster] = []
+    var current: [DayRow] = [first]
+    var previousDate = first.sortDate
+
+    for row in rows.dropFirst() {
+        if row.sortDate.timeIntervalSince(previousDate) > gap {
+            clusters.append(DayCluster(id: current[0].id, rows: current))
+            current = [row]
+        } else {
+            current.append(row)
+        }
+        previousDate = row.sortDate
+    }
+    clusters.append(DayCluster(id: current[0].id, rows: current))
+    return clusters
 }

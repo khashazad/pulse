@@ -2,7 +2,7 @@
 
 Exposes the ``/containers`` router covering full CRUD plus photo upload/fetch/
 delete. Routers handle multipart parsing, byte caps, and HTTP error mapping;
-business logic lives in :mod:`services.container_photos` and SQL in
+image processing lives in :mod:`services.image_processing` and SQL in
 :class:`ContainersRepository`.
 
 Containers carry a tare weight and an optional photo (stored full + thumbnail
@@ -28,12 +28,13 @@ from pulse_server.models import (
     ContainerResponse,
     ContainerUpdate,
     ContainersListResponse,
+    container_response,
 )
 from pulse_server.repositories.containers import ContainersRepository
-from pulse_server.services.container_photos import (
+from pulse_server.services.image_processing import (
     PhotoTooLargeError,
     UnsupportedImageError,
-    process_container_photo,
+    process_photo,
 )
 from pulse_server.services.normalize import normalize_name
 
@@ -75,27 +76,6 @@ async def _read_capped(file: UploadFile, max_bytes: int) -> bytearray:
     return buffer
 
 
-def _to_response(row: dict) -> ContainerResponse:
-    """Project a raw ``containers`` row mapping into the public response model.
-
-    **Inputs:**
-    - row (dict): Column→value mapping returned by :class:`ContainersRepository`.
-
-    **Outputs:**
-    - ContainerResponse: Pydantic DTO with normalized field types.
-    """
-    return ContainerResponse(
-        id=row["id"],
-        user_key=row["user_key"],
-        name=row["name"],
-        normalized_name=row["normalized_name"],
-        tare_weight_g=float(row["tare_weight_g"]),
-        has_photo=bool(row["has_photo"]),
-        created_at=row["created_at"],
-        updated_at=row["updated_at"],
-    )
-
-
 @router.get("/containers", response_model=ContainersListResponse)
 async def list_containers(
     request: Request,
@@ -113,7 +93,7 @@ async def list_containers(
     user_key = request.state.user_key
     repo = ContainersRepository(session)
     rows = await repo.list_for_user(user_key)
-    return ContainersListResponse(containers=[_to_response(r) for r in rows])
+    return ContainersListResponse(containers=[container_response(r) for r in rows])
 
 
 @router.post("/containers", status_code=201, response_model=ContainerResponse)
@@ -149,7 +129,7 @@ async def create_container(
             )
     except IntegrityError as exc:
         raise HTTPException(status_code=409, detail="A container with that name already exists") from exc
-    return _to_response(row)
+    return container_response(row)
 
 
 @router.get("/containers/{container_id}", response_model=ContainerResponse)
@@ -176,7 +156,7 @@ async def get_container(
     row = await repo.get_by_id(container_id, user_key)
     if row is None:
         raise HTTPException(status_code=404, detail="Container not found")
-    return _to_response(row)
+    return container_response(row)
 
 
 @router.patch("/containers/{container_id}", response_model=ContainerResponse)
@@ -216,7 +196,7 @@ async def update_container(
         raise HTTPException(status_code=409, detail="A container with that name already exists") from exc
     if row is None:
         raise HTTPException(status_code=404, detail="Container not found")
-    return _to_response(row)
+    return container_response(row)
 
 
 @router.delete("/containers/{container_id}", status_code=204)
@@ -277,7 +257,7 @@ async def upload_container_photo(
         raise HTTPException(status_code=413, detail=str(exc)) from exc
 
     try:
-        full, thumb, mime = process_container_photo(raw, max_bytes=MAX_UPLOAD_BYTES)
+        full, thumb, mime = process_photo(raw, max_bytes=MAX_UPLOAD_BYTES)
     except PhotoTooLargeError as exc:
         raise HTTPException(status_code=413, detail=str(exc)) from exc
     except UnsupportedImageError as exc:

@@ -1,7 +1,7 @@
 /// Settings sheet.
 /// Account info + sign-out, theme palette display, weight-goal entry (saved to the
 /// server's `MacroTargets.targetWeightLb`), and the display-unit toggle stored in
-/// `@AppStorage`. Reuses the private `section` and `row` helpers for layout.
+/// `@AppStorage`. Reuses the shared `SectionCard` and the private `row` helper for layout.
 import SwiftUI
 
 /// User-facing settings sheet shown over any tab via the gear toolbar button.
@@ -22,27 +22,14 @@ struct SettingsView: View {
         return v > 0 && v < 2000
     }
 
-    /// Persists the target weight by converting the user's input to lb, fetching the
-    /// current macro targets, and PUTting an updated copy. Updates the in-memory
-    /// `targetsStore` on success; failures are swallowed so the user can retry.
+    /// Persists the target weight by converting the user's input to lb and delegating
+    /// the fetch/update/upsert sequence to `UserTargetsStore`. No-ops when the input
+    /// is unparseable or no client is available.
     private func saveTarget() async {
         guard let v = Double(targetWeightInput.replacingOccurrences(of: ",", with: ".")) else { return }
         let lb = WeightFormatter.toLb(v, from: targetUnit)
         guard let client = auth.makeClient() else { return }
-        do {
-            let current = try await client.fetchTargets()
-            let updated = MacroTargets(
-                calories: current.calories,
-                proteinG: current.proteinG,
-                carbsG: current.carbsG,
-                fatG: current.fatG,
-                targetWeightLb: lb
-            )
-            _ = try await client.upsertTargets(updated)
-            targetsStore.update(updated)
-        } catch {
-            // Silent failure on save — user can retry. Matches existing macro-target save behavior.
-        }
+        await targetsStore.saveTargetWeight(lb: lb, client: client)
     }
 
     var body: some View {
@@ -51,7 +38,7 @@ struct SettingsView: View {
                 Theme.BG.secondary.ignoresSafeArea()
                 ScrollView {
                     VStack(spacing: 24) {
-                        section(header: "Account") {
+                        SectionCard(header: "Account", headerHorizontalPadding: 16) {
                             row(label: "Email") {
                                 Text(auth.email ?? "—")
                                     .font(.system(size: 14, weight: .medium, design: .monospaced))
@@ -83,7 +70,7 @@ struct SettingsView: View {
                         }
                         .padding(.horizontal, 16)
 
-                        section(header: "Theme") {
+                        SectionCard(header: "Theme", headerHorizontalPadding: 16) {
                             row(label: "Palette") {
                                 HStack(spacing: 8) {
                                     HStack(spacing: 3) {
@@ -104,7 +91,7 @@ struct SettingsView: View {
                             }
                         }
 
-                        section(header: "Weight goal") {
+                        SectionCard(header: "Weight goal", headerHorizontalPadding: 16) {
                             row(label: "Target weight") {
                                 HStack(spacing: 8) {
                                     TextField("e.g. 170", text: $targetWeightInput)
@@ -140,7 +127,7 @@ struct SettingsView: View {
                             }
                         }
 
-                        section(header: "Display unit") {
+                        SectionCard(header: "Display unit", headerHorizontalPadding: 16) {
                             row(label: "Weight unit") {
                                 Picker("Display unit", selection: $displayUnitRaw) {
                                     Text("lb").tag(WeightUnit.lb.rawValue)
@@ -176,40 +163,6 @@ struct SettingsView: View {
             }
         }
         .preferredColorScheme(.dark)
-    }
-
-    /// Layout helper that wraps `content` in a card with optional uppercase header
-    /// caption and a tertiary footer caption.
-    /// Inputs:
-    ///   - header: optional uppercase caption rendered above the card.
-    ///   - footer: optional caption rendered below the card.
-    ///   - content: rows to embed inside the card.
-    /// Outputs: composed section view.
-    @ViewBuilder
-    private func section<Content: View>(
-        header: String? = nil,
-        footer: String? = nil,
-        @ViewBuilder content: () -> Content
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if let header {
-                Text(header)
-                    .font(.system(size: 11, weight: .semibold))
-                    .tracking(0.8)
-                    .textCase(.uppercase)
-                    .foregroundStyle(Theme.FG.secondary)
-                    .padding(.horizontal, 16)
-            }
-            VStack(spacing: 0) { content() }
-                .ctpCard()
-                .padding(.horizontal, 16)
-            if let footer {
-                Text(footer)
-                    .font(.system(size: 12))
-                    .foregroundStyle(Theme.FG.tertiary)
-                    .padding(.horizontal, 20)
-            }
-        }
     }
 
     /// Standard label/trailing-control row used inside settings cards.

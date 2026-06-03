@@ -75,23 +75,15 @@ final class ProgressPhotoStore {
         photos[normalize(date)] ?? []
     }
 
-    private func image(meta: ProgressPhotoMetadata, size: ProgressPhotoClient.Size) async -> UIImage? {
-        let variant = cacheVariant(for: size)
-        if let cached = cache.image(forSHA: meta.sha256, variant: variant) { return cached }
+    private func image(meta: ProgressPhotoMetadata, size: PhotoSize) async -> UIImage? {
+        if let cached = cache.image(forSHA: meta.sha256, variant: size) { return cached }
         guard let client = auth?.makeProgressPhotoClient() else { return nil }
         do {
             let data = try await client.download(photoId: meta.id, size: size)
-            try cache.store(data: data, sha: meta.sha256, variant: variant)
-            return cache.image(forSHA: meta.sha256, variant: variant)
+            try cache.store(data: data, sha: meta.sha256, variant: size)
+            return cache.image(forSHA: meta.sha256, variant: size)
         } catch {
             return nil
-        }
-    }
-
-    private func cacheVariant(for size: ProgressPhotoClient.Size) -> ProgressPhotoCache.Variant {
-        switch size {
-        case .full: return .full
-        case .thumb: return .thumb
         }
     }
 

@@ -26,10 +26,10 @@ from pulse_server.models import (
     EntriesListResponse,
     FoodEntryResponse,
 )
+from pulse_server.log_ids import daily_log_id
 from pulse_server.repositories.entries import EntriesRepository
 from pulse_server.services.custom_foods_service import CrossTenantReferenceError
 from pulse_server.services.entries_service import create_entries_with_side_effects
-from pulse_server.services.log_ids import daily_log_id
 
 settings = get_settings()
 router = APIRouter(dependencies=[Depends(require_session)])

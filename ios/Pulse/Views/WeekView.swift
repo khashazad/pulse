@@ -1,12 +1,12 @@
 /// Intake → Week sub-tab.
-/// Renders the last seven days of intake via `WeekModel`: daily kcal bars,
-/// week total + percent-of-target chip, and average macros table.
+/// Renders the last seven days of intake via `PeriodIntakeModel(range: .week)`:
+/// daily kcal bars, week total + percent-of-target chip, and average macros table.
 import SwiftUI
 
 /// Week-period summary screen: daily kcal bars + week total + average macros table.
 struct WeekView: View {
     @Environment(AuthSession.self) private var auth
-    @State private var model: WeekModel?
+    @State private var model: PeriodIntakeModel?
 
     var body: some View {
         ZStack {
@@ -24,7 +24,7 @@ struct WeekView: View {
                         icon: "exclamationmark.triangle",
                         title: "Couldn't load",
                         description: error.userMessage,
-                        action: { Task { await model?.loadLast7Days() } },
+                        action: { Task { await model?.load() } },
                         actionLabel: "Retry"
                     )
                 }
@@ -35,10 +35,10 @@ struct WeekView: View {
         .toolbarBackground(Theme.BG.primary, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
         .task {
-            if model == nil { model = WeekModel(auth: auth) }
-            await model?.loadLast7Days()
+            if model == nil { model = PeriodIntakeModel(range: .week, auth: auth) }
+            await model?.load()
         }
-        .refreshable { await model?.loadLast7Days() }
+        .refreshable { await model?.load() }
     }
 
     /// Body for the loaded state. Computes totals and percent-of-target from `logs`
@@ -61,10 +61,10 @@ struct WeekView: View {
                     .padding(.horizontal, 16)
 
                 AverageMacrosTable(
-                    avgKcal: WeekModel.avgCalories(chronological),
-                    avgProteinG: Int(WeekModel.avgProtein(chronological).rounded()),
-                    avgCarbsG: Int(WeekModel.avgCarbs(chronological).rounded()),
-                    avgFatG: Int(WeekModel.avgFat(chronological).rounded())
+                    avgKcal: chronological.avgCalories,
+                    avgProteinG: Int(chronological.avgProtein.rounded()),
+                    avgCarbsG: Int(chronological.avgCarbs.rounded()),
+                    avgFatG: Int(chronological.avgFat.rounded())
                 )
                 .padding(.horizontal, 16)
 

@@ -13,7 +13,6 @@ final class ViewRenderTests: XCTestCase {
     private let testService = "com.pulseapp.pulse.session.test"
     private var testAccount = ""
     private var activeStubs: [StubURLProtocol.Registration] = []
-    private var settings = AppSettings()
     private var targetsStore = UserTargetsStore()
     private var auth: AuthSession!
     private var photoStore: ProgressPhotoStore!
@@ -99,7 +98,6 @@ final class ViewRenderTests: XCTestCase {
     /// Wraps a view with the full set of root environment objects.
     private func env<V: View>(_ view: V) -> some View {
         view
-            .environment(settings)
             .environment(auth)
             .environment(photoStore)
             .environment(tagStore)

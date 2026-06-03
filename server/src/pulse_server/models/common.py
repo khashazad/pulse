@@ -14,6 +14,22 @@ from decimal import ROUND_HALF_EVEN, Decimal
 from pydantic import BaseModel, Field, field_validator
 
 
+class MacroFields(BaseModel):
+    """Shared, non-negative macro inputs (calories + protein/carbs/fat grams).
+
+    Base for request/response DTOs that carry a single food's required macros
+    with a ``ge=0`` floor on every value. Subclasses inherit these four fields
+    unchanged; because Pydantic places base-class fields first in field order,
+    only DTOs whose macros already lead their field list (or whose field order
+    is not observable on the wire) may inherit this base.
+    """
+
+    calories: int = Field(ge=0)
+    protein_g: float = Field(ge=0)
+    carbs_g: float = Field(ge=0)
+    fat_g: float = Field(ge=0)
+
+
 class MacroTotals(BaseModel):
     """Aggregated macro totals (calories + protein/carbs/fat in grams).
 

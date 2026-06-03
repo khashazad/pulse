@@ -1,14 +1,14 @@
 /// App entry point for Pulse.
 /// Defines the `@main` `PulseApp` scene, wires up shared `@State` stores
-/// (`AppSettings`, `AuthSession`, `ProgressPhotoStore`, `UserTargetsStore`), and
-/// injects them into the SwiftUI environment for the root view tree. Acts as the
-/// composition root that ties auth lifecycle to dependent stores.
+/// (`AuthSession`, `ProgressPhotoStore`, `ProgressPhotoTagStore`,
+/// `UserTargetsStore`), and injects them into the SwiftUI environment for the
+/// root view tree. Acts as the composition root that ties auth lifecycle to
+/// dependent stores.
 import SwiftUI
 
 /// Root SwiftUI `App` that owns shared session and store state and presents `RootView`.
 @main
 struct PulseApp: App {
-    @State private var settings = AppSettings()
     @State private var auth: AuthSession
     @State private var photoStore: ProgressPhotoStore
     @State private var photoTagStore: ProgressPhotoTagStore
@@ -29,7 +29,6 @@ struct PulseApp: App {
     var body: some Scene {
         WindowGroup {
             RootView()
-                .environment(settings)
                 .environment(auth)
                 .environment(photoStore)
                 .environment(photoTagStore)

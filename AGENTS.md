@@ -1,23 +1,10 @@
 # AGENTS.md
 
-This file provides guidance to Codex (Codex.ai/code) when working with code in this repository.
+Canonical agent guidance for this repository lives in **[CLAUDE.md](CLAUDE.md)** — read that file first.
 
-## Layout
+It is the single doc for the whole monorepo and covers:
 
-This is a single git repo (monorepo) containing two subprojects for one product. Each was previously its own repo and was merged in with full history preserved under its subdirectory:
+- the layout (`server/` FastAPI + Postgres backend, `ios/` SwiftUI client) and the cross-cutting JSON-over-HTTP wire contract between them (Bearer-token auth only — no `user_key` query param, no `X-API-Key`);
+- per-subproject commands (uv/pytest/alembic for the server; xcodegen/xcodebuild for iOS) and architecture (router → service → repository on the server; Views → State → Networking → Models on iOS).
 
-- `server/` — FastAPI + Postgres backend (single-user today, Google-OAuth gated, MCP endpoint). See its own `AGENTS.md` for commands and architecture.
-- `ios/` — SwiftUI iOS 17+ client that talks to the backend over HTTP. Identity is hardcoded to `user_key = "khash"`; base URL + API key are entered in the app's Settings sheet. See its own `AGENTS.md`.
-
-There is no shared tooling or build at this level — `cd` into the relevant subdirectory before running anything.
-
-## Cross-cutting contract
-
-The two subprojects are coupled by a JSON-over-HTTP wire format, not a shared schema package. When you change a DTO on one side, you must update the other:
-
-- Server DTOs: `server/src/diet_tracker_server/models/` (Pydantic, `snake_case`).
-- iOS DTOs: `ios/Pulse/Models/` (Codable structs, camelCase via explicit `CodingKeys` mapping `snake_case` JSON).
-- iOS dates use `JSONDecoder.pulseDefault()` which accepts both `YYYY-MM-DD` and ISO-8601 — keep server outputs within those.
-- The iOS client appends `?user_key=khash` to every request and sends `X-API-Key`. Server still accepts that for the legacy single-user path; new endpoints should keep working under the session-cookie/Bearer auth path documented in the server `AGENTS.md`.
-
-When extending features that span both sides, read both subprojects' `docs/superpowers/specs/` — that's where cross-cutting design decisions live.
+This file is intentionally just a pointer so there is exactly one source of truth; the former per-subproject `CLAUDE.md`/`AGENTS.md` copies drifted and were consolidated into the root `CLAUDE.md`. Keep it that way: update `CLAUDE.md`, not this file.

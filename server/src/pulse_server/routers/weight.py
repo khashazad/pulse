@@ -24,8 +24,6 @@ from pulse_server.services.weight_service import (
     get_weight,
     list_weight_range,
     upsert_weight,
-    validate_log_date,
-    validate_range,
 )
 
 settings = get_settings()
@@ -52,18 +50,18 @@ async def list_weights(
     - list[WeightEntryResponse]: Weight entries ordered by date ascending.
 
     **Exceptions:**
-    - HTTPException(400): Raised when the date range fails :func:`validate_range`.
+    - HTTPException(400): Raised when the date range is invalid (reversed or
+      exceeds the maximum span).
     """
     try:
-        validate_range(from_, to)
+        return await list_weight_range(
+            session=session,
+            user_key=request.state.user_key,
+            from_date=from_,
+            to_date=to,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return await list_weight_range(
-        session=session,
-        user_key=request.state.user_key,
-        from_date=from_,
-        to_date=to,
-    )
 
 
 @router.get("/weight/{log_date}", response_model=WeightEntryResponse)
@@ -117,24 +115,22 @@ async def put_weight(
     - WeightEntryResponse: The upserted entry.
 
     **Exceptions:**
-    - HTTPException(400): Raised when ``log_date`` fails :func:`validate_log_date` (e.g. future date).
+    - HTTPException(400): Raised when ``log_date`` is invalid (future date or
+      too far in the past); validated inside :func:`upsert_weight`.
     """
-    today = DateTimeValue.now(tz=TZ).date()
+    now = DateTimeValue.now(tz=TZ)
     try:
-        validate_log_date(log_date, today)
+        async with transaction(session):
+            return await upsert_weight(
+                session=session,
+                user_key=request.state.user_key,
+                log_date=log_date,
+                weight=body.weight,
+                unit=body.unit,
+                now=now,
+            )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-    now = DateTimeValue.now(tz=TZ)
-    async with transaction(session):
-        return await upsert_weight(
-            session=session,
-            user_key=request.state.user_key,
-            log_date=log_date,
-            weight=body.weight,
-            unit=body.unit,
-            now=now,
-        )
 
 
 @router.delete("/weight/{log_date}", status_code=204)

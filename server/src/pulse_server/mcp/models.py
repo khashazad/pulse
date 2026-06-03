@@ -1,0 +1,95 @@
+"""Pydantic request/response models that shape the MCP wire format.
+
+Defines the tool-facing DTOs the FastMCP server returns: USDA search hits
+(:class:`FoodCandidate`, :class:`SearchFoodResponse`), food/meal logging
+results (:class:`LogFoodResponse`, :class:`LogMealResponse`), and the per-day
+summary (:class:`DaySummary`). These mirror the REST surface so MCP clients and
+the iOS app see the same macro shapes; the logging responses expose
+``daily_totals`` to match the REST ``daily_totals`` field name.
+"""
+
+from __future__ import annotations
+
+from datetime import date as DateValue
+
+from pydantic import BaseModel
+
+from pulse_server.models import (
+    FoodEntryResponse,
+    MacroTargets,
+    MacroTotals,
+)
+
+
+class FoodCandidate(BaseModel):
+    """One USDA search hit returned to the MCP client.
+
+    Carries the macros at the basis (``per_100g`` or ``per_serving``) indicated
+    by ``basis``; the client must scale to the user's quantity before logging.
+    """
+
+    fdc_id: int
+    description: str
+    basis: str  # "per_100g" or "per_serving"
+    serving_size: float | None
+    serving_size_unit: str | None
+    calories: int
+    protein_g: float
+    carbs_g: float
+    fat_g: float
+
+
+class SearchFoodResponse(BaseModel):
+    """Envelope for ``search_food`` results: the echoed query plus candidates.
+
+    The ``note`` field is a fixed reminder to the caller that macros are at the
+    candidate's basis and must be scaled before logging.
+    """
+
+    query: str
+    candidates: list[FoodCandidate]
+    note: str = (
+        "Macros are reported on the basis indicated by `basis`. "
+        "Scale them yourself for the user's quantity, then call `log_food` with the final "
+        "calories/protein_g/carbs_g/fat_g."
+    )
+
+
+class LogFoodResponse(BaseModel):
+    """Result of logging a single food entry.
+
+    Returns the new entry, today's running totals, and (when targets are set)
+    the user's target profile plus remaining macros for the day.
+    """
+
+    entry: FoodEntryResponse
+    daily_totals: MacroTotals
+    target: MacroTargets | None = None
+    remaining_vs_target: MacroTotals | None = None
+
+
+class LogMealResponse(BaseModel):
+    """Result of logging a saved meal (one food entry per item).
+
+    Mirrors :class:`LogFoodResponse` but carries the list of entries created
+    from the meal's items.
+    """
+
+    entries: list[FoodEntryResponse]
+    daily_totals: MacroTotals
+    target: MacroTargets | None = None
+    remaining_vs_target: MacroTotals | None = None
+
+
+class DaySummary(BaseModel):
+    """Per-day summary returned by ``get_day``.
+
+    Bundles the date, target profile (if any), consumed macros, remaining
+    macros vs. target (if any), and all food entries for that day.
+    """
+
+    date: DateValue
+    target: MacroTargets | None
+    consumed: MacroTotals
+    remaining: MacroTotals | None
+    entries: list[FoodEntryResponse]

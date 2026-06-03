@@ -15,18 +15,22 @@ from datetime import date as DateValue
 from datetime import datetime as DateTimeValue
 from uuid import UUID
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, model_validator
 
-from pulse_server.models.common import MacroTotals
+from pulse_server.models.common import MacroFields, MacroTotals
 
 
-class FoodEntryCreate(BaseModel):
+class FoodEntryCreate(MacroFields):
     """Request body for one item in ``POST /entries``.
 
     The owning daily-log calendar date is derived server-side from
     ``consumed_at`` (projected into server timezone), or from the request's
     ``now`` when ``consumed_at`` is omitted. Clients should not — and
     cannot — pass an explicit calendar date.
+
+    Inherits the four ``ge=0`` macro fields from :class:`MacroFields`. This is
+    a request body, so the base-first field order does not affect any wire
+    response.
 
     Note: ``meal_id`` / ``meal_name`` are intentionally NOT public input
     fields — they are server-controlled metadata stamped only by
@@ -41,10 +45,6 @@ class FoodEntryCreate(BaseModel):
     usda_fdc_id: int | None = None
     usda_description: str | None = None
     custom_food_id: UUID | None = None
-    calories: int = Field(ge=0)
-    protein_g: float = Field(ge=0)
-    carbs_g: float = Field(ge=0)
-    fat_g: float = Field(ge=0)
     consumed_at: DateTimeValue | None = None
 
     @model_validator(mode="after")

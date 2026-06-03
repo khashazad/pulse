@@ -16,9 +16,16 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
+from pulse_server.models.common import MacroFields
 
-class MealItemCreate(BaseModel):
-    """Request fragment describing one ingredient in a meal being created."""
+
+class MealItemCreate(MacroFields):
+    """Request fragment describing one ingredient in a meal being created.
+
+    Inherits the four ``ge=0`` macro fields from :class:`MacroFields`. This is
+    a request fragment, so the base-first field order does not affect any wire
+    response.
+    """
 
     display_name: str
     quantity_text: str
@@ -27,10 +34,6 @@ class MealItemCreate(BaseModel):
     usda_fdc_id: int | None = None
     usda_description: str | None = None
     custom_food_id: UUID | None = None
-    calories: int = Field(ge=0)
-    protein_g: float = Field(ge=0)
-    carbs_g: float = Field(ge=0)
-    fat_g: float = Field(ge=0)
 
 
 class MealItemResponse(BaseModel):

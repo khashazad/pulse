@@ -24,7 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from pulse_server.db import to_sqlalchemy_url, transaction
 from pulse_server.models import FoodEntryCreate
-from pulse_server.repositories.entries import EntriesRepository
+from pulse_server.repositories.entries import EntriesRepository, FoodEntryPayload
 from pulse_server.repositories.logs import LogsRepository
 from pulse_server.repositories.targets import TargetsRepository
 from pulse_server.services.entries_service import create_entries_with_side_effects
@@ -185,58 +185,64 @@ async def test_logs_and_summary_aggregates(session: AsyncSession) -> None:
         await entries_repo.ensure_daily_log(second_log_id, user_key, second_date)
 
         await entries_repo.create_food_entry(
-            entry_id=uuid.uuid4(),
-            daily_log_id=first_log_id,
-            user_key=user_key,
-            entry_group_id=uuid.uuid4(),
-            display_name="oats",
-            quantity_text="1 bowl",
-            normalized_quantity_value=1,
-            normalized_quantity_unit="bowl",
-            usda_fdc_id=200001,
-            usda_description="Oats",
-            custom_food_id=None,
-            calories=300,
-            protein_g=10,
-            carbs_g=50,
-            fat_g=5,
-            consumed_at=consumed_at,
+            FoodEntryPayload(
+                entry_id=uuid.uuid4(),
+                daily_log_id=first_log_id,
+                user_key=user_key,
+                entry_group_id=uuid.uuid4(),
+                display_name="oats",
+                quantity_text="1 bowl",
+                normalized_quantity_value=1,
+                normalized_quantity_unit="bowl",
+                usda_fdc_id=200001,
+                usda_description="Oats",
+                custom_food_id=None,
+                calories=300,
+                protein_g=10,
+                carbs_g=50,
+                fat_g=5,
+                consumed_at=consumed_at,
+            )
         )
         await entries_repo.create_food_entry(
-            entry_id=uuid.uuid4(),
-            daily_log_id=first_log_id,
-            user_key=user_key,
-            entry_group_id=uuid.uuid4(),
-            display_name="milk",
-            quantity_text="1 cup",
-            normalized_quantity_value=1,
-            normalized_quantity_unit="cup",
-            usda_fdc_id=200002,
-            usda_description="Milk",
-            custom_food_id=None,
-            calories=100,
-            protein_g=8,
-            carbs_g=12,
-            fat_g=3,
-            consumed_at=consumed_at,
+            FoodEntryPayload(
+                entry_id=uuid.uuid4(),
+                daily_log_id=first_log_id,
+                user_key=user_key,
+                entry_group_id=uuid.uuid4(),
+                display_name="milk",
+                quantity_text="1 cup",
+                normalized_quantity_value=1,
+                normalized_quantity_unit="cup",
+                usda_fdc_id=200002,
+                usda_description="Milk",
+                custom_food_id=None,
+                calories=100,
+                protein_g=8,
+                carbs_g=12,
+                fat_g=3,
+                consumed_at=consumed_at,
+            )
         )
         await entries_repo.create_food_entry(
-            entry_id=uuid.uuid4(),
-            daily_log_id=second_log_id,
-            user_key=user_key,
-            entry_group_id=uuid.uuid4(),
-            display_name="banana",
-            quantity_text="1 banana",
-            normalized_quantity_value=1,
-            normalized_quantity_unit="item",
-            usda_fdc_id=200003,
-            usda_description="Banana",
-            custom_food_id=None,
-            calories=120,
-            protein_g=1,
-            carbs_g=31,
-            fat_g=0,
-            consumed_at=consumed_at,
+            FoodEntryPayload(
+                entry_id=uuid.uuid4(),
+                daily_log_id=second_log_id,
+                user_key=user_key,
+                entry_group_id=uuid.uuid4(),
+                display_name="banana",
+                quantity_text="1 banana",
+                normalized_quantity_value=1,
+                normalized_quantity_unit="item",
+                usda_fdc_id=200003,
+                usda_description="Banana",
+                custom_food_id=None,
+                calories=120,
+                protein_g=1,
+                carbs_g=31,
+                fat_g=0,
+                consumed_at=consumed_at,
+            )
         )
 
     log_rows = await logs_repo.list_logs(user_key=user_key, from_date=first_date, to_date=second_date)
