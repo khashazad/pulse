@@ -37,7 +37,7 @@ jobs:
 
       - name: pip-audit
         working-directory: server
-        run: uvx pip-audit --strict -r requirements-audit.txt
+        run: uvx --python 3.12 pip-audit --strict -r requirements-audit.txt
 
   gitleaks:
     name: gitleaks (secret scan)
