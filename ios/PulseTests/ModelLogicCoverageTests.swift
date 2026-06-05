@@ -93,7 +93,8 @@ final class ModelLogicCoverageTests: XCTestCase {
         let store = UserTargetsStore()
         let targets = MacroTargets(calories: 1800, proteinG: 160, carbsG: 150,
                                    fatG: 55, targetWeightLb: 168)
-        try await store.save(targets, client: auth.makeClient()!)
+        let echoed = try await store.save(targets, client: auth.makeClient()!)
+        XCTAssertEqual(echoed.calories, 1801, "save must return the server echo")
         XCTAssertEqual(store.targets?.calories, 1801,
                        "cache must hold the server-echoed value, not the input")
         XCTAssertEqual(store.targets?.proteinG, 160)

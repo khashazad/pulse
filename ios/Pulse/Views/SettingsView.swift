@@ -104,8 +104,8 @@ struct SettingsView: View {
         isSaving = true
         saveFailed = false
         do {
-            try await targetsStore.save(targets, client: client)
-            draft.seed(from: targets, unit: draft.weightUnit)
+            let persisted = try await targetsStore.save(targets, client: client)
+            draft.seed(from: persisted, unit: draft.weightUnit)
         } catch {
             saveFailed = true
         }
