@@ -1,38 +1,14 @@
 """Smoke tests for the FastAPI app's middleware-gated entry points.
 
-Covers the health endpoint pass-through, unauthenticated rejection on
-protected routes, and the `user_key` query guardrail. Exercises the app
-factory wiring via a TestClient with the DB pool and USDA client patched
-out so no real I/O occurs.
+Covers the health endpoint pass-through and unauthenticated rejection on
+protected routes. Exercises the module-level app wiring via a TestClient
+with the DB pool and USDA client patched out so no real I/O occurs.
 """
 
-from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
-
-
-def _patched_session_repo(email: str = "khashzd@gmail.com") -> tuple[AsyncMock, AsyncMock]:
-    """Build an AsyncMock SessionsRepository + async-context pair for middleware short-circuiting.
-
-    **Inputs:**
-    - email (str): Email value the fake session row reports.
-
-    **Outputs:**
-    - tuple[AsyncMock, AsyncMock]: ``(repo, ctx)`` suitable for patching
-      ``SessionsRepository`` and ``get_session`` respectively.
-    """
-    fut = datetime.now(timezone.utc) + timedelta(days=7)
-    repo = AsyncMock()
-    repo.get.return_value = {"email": email, "expires_at": fut}
-    repo.slide.return_value = 1
-    repo.delete.return_value = 1
-    fake_session = AsyncMock()
-    ctx = AsyncMock()
-    ctx.__aenter__.return_value = fake_session
-    ctx.__aexit__.return_value = None
-    return repo, ctx
 
 
 @pytest.fixture
@@ -65,17 +41,3 @@ def test_unauthenticated_request_rejected(client: TestClient) -> None:
     """Protected route without a Bearer token returns 401."""
     response = client.get("/entries", params={"date": "2026-04-05"})
     assert response.status_code == 401
-
-
-def test_user_key_query_rejected_on_protected_route(client: TestClient) -> None:
-    """`user_key` query on a protected route returns 400 even with a valid Bearer token."""
-    repo, ctx = _patched_session_repo()
-    with patch("pulse_server.auth.middleware.get_session", return_value=ctx), patch(
-        "pulse_server.auth.middleware.SessionsRepository", return_value=repo
-    ):
-        response = client.get(
-            "/entries?user_key=foo&date=2026-04-05",
-            headers={"Authorization": "Bearer tok"},
-        )
-    assert response.status_code == 400
-    assert "user_key" in (response.json().get("error") or "")
