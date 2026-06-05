@@ -43,7 +43,7 @@ Request flow: **router → service → repository.** Routers own HTTP, services 
 - `auth/` — Google OAuth handshake, session tokens, middleware.
 - `mcp/` — MCP server, GitHub OAuth + service-token auth, tools split per feature.
 
-**DB lifecycle.** `bootstrap_schema()` runs `schema.sql` idempotently on every startup (`IF NOT EXISTS`); Alembic handles migration deltas. All data is scoped by `user_key` (today: `LEGACY_USER_KEY`). Daily logs use deterministic UUID5 from `(user_key, date)` for idempotent upserts.
+**DB lifecycle.** `bootstrap_schema()` runs `schema.sql` idempotently on every startup — that file is the single source of truth for the schema. Changes land as idempotent guarded statements and are folded into the final-shape DDL once deployed everywhere. All data is scoped by `user_key` (today: `LEGACY_USER_KEY`). Daily logs use deterministic UUID5 from `(user_key, date)` for idempotent upserts.
 
 ### Commands
 
@@ -54,7 +54,6 @@ uv sync --extra dev                                          # install
 uv run uvicorn pulse_server.app:app --port 8787 --reload     # run
 uv run pytest tests/ -v                                      # unit tests
 TEST_DATABASE_URL=postgresql://localhost/test uv run pytest -m integration -v
-uv run alembic upgrade head                                  # migrations
 ```
 
 ### Config

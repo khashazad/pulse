@@ -127,9 +127,6 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Migration smoke test
-        run: uv run alembic upgrade head
-
       # Unit + integration together so coverage reflects the whole suite;
       # the 80% gate comes from [tool.coverage.report] fail_under.
       - name: Full test suite with coverage

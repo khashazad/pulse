@@ -1,3 +1,27 @@
+-- Pulse database schema — single source of truth.
+--
+-- `bootstrap_schema()` (db.py) executes this file idempotently inside one
+-- transaction on every startup; the live database shape is whatever this file
+-- produces. `repositories/tables.py` mirrors these definitions for the
+-- SQLAlchemy-Core query builder and must be kept in sync by hand.
+--
+-- Change policy (no Alembic): schema changes land here as idempotent guarded
+-- statements (`ADD COLUMN IF NOT EXISTS`, conditional DO-blocks) appended after
+-- the table they alter. Once a change has reached every deployment, fold it
+-- into the final-shape CREATE TABLE below and delete the guard — keeping this
+-- file readable as the current schema rather than its migration history.
+-- NOTE: columns added via ALTER sit *last* in the live table's column order,
+-- so when folding a column in, keep it at the end of the column list — that
+-- keeps fresh bootstraps byte-identical to migrated databases.
+--
+-- Supported database states: a fresh/empty database, or one already at (or
+-- ahead of) the shape this file produces. Pre-squash states are NOT upgraded —
+-- the old in-place migration guards were folded away once every deployment
+-- reached final shape. Do not boot the server against a database restored from
+-- a pre-squash dump; restore from a current-shape backup instead
+-- (scripts/backup_db.sh dumps the live schema, so its output is always
+-- current-shape as of dump time).
+
 create extension if not exists pgcrypto;
 
 create table if not exists daily_target_profile (
@@ -8,7 +32,8 @@ create table if not exists daily_target_profile (
   carbs_g_target numeric not null,
   fat_g_target numeric not null,
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
+  updated_at timestamptz not null default now(),
+  target_weight_lb numeric(6,2)
 );
 create unique index if not exists idx_daily_target_profile_user_key on daily_target_profile(user_key);
 
@@ -59,13 +84,16 @@ create table if not exists food_memory (
   fat_g numeric,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
+  aliases text[] not null default '{}'::text[],
   constraint food_memory_one_target check (
     (usda_fdc_id is not null and custom_food_id is null) or
     (usda_fdc_id is null and custom_food_id is not null)
-  )
+  ),
+  constraint food_memory_alias_not_self check (not (normalized_name = ANY(aliases)))
 );
 create unique index if not exists idx_food_memory_user_key_name on food_memory(user_key, normalized_name);
 create index if not exists idx_food_memory_user_key on food_memory(user_key);
+create index if not exists idx_food_memory_aliases on food_memory using gin (aliases);
 
 create table if not exists meals (
   id uuid primary key default gen_random_uuid(),
@@ -74,10 +102,13 @@ create table if not exists meals (
   normalized_name text not null,
   notes text,
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
+  updated_at timestamptz not null default now(),
+  aliases text[] not null default '{}'::text[],
+  constraint meals_alias_not_self check (not (normalized_name = ANY(aliases)))
 );
 create unique index if not exists idx_meals_user_key_name on meals(user_key, normalized_name);
 create index if not exists idx_meals_user_key on meals(user_key);
+create index if not exists idx_meals_aliases on meals using gin (aliases);
 
 create table if not exists meal_items (
   id uuid primary key default gen_random_uuid(),
@@ -120,61 +151,17 @@ create table if not exists food_entries (
   fat_g numeric not null,
   consumed_at timestamptz not null,
   created_at timestamptz not null default now(),
+  meal_id uuid,
+  meal_name text,
   constraint food_entries_one_source check (
     (usda_fdc_id is not null and custom_food_id is null) or
     (usda_fdc_id is null and custom_food_id is not null)
-  )
+  ),
+  constraint fk_food_entries_meal_id foreign key (meal_id) references meals(id) on delete set null
 );
 create index if not exists idx_food_entries_user_key on food_entries(user_key);
 create index if not exists idx_food_entries_daily_log_id_consumed_at on food_entries(daily_log_id, consumed_at);
-
-alter table food_entries add column if not exists custom_food_id uuid references custom_foods(id) on delete restrict;
-
 create index if not exists idx_food_entries_custom_food_id on food_entries(custom_food_id);
-
-do $body$
-begin
-  if exists (
-    select 1 from information_schema.columns
-    where table_name = 'food_entries' and column_name = 'custom_food_id' and is_nullable = 'YES'
-  ) and not exists (
-    select 1 from information_schema.columns
-    where table_name = 'food_entries' and column_name = 'usda_fdc_id' and is_nullable = 'YES'
-  ) then
-    alter table food_entries alter column usda_fdc_id drop not null;
-    alter table food_entries alter column usda_description drop not null;
-  end if;
-end
-$body$;
-
-do $body$
-begin
-  if not exists (
-    select 1 from pg_constraint where conname = 'food_entries_one_source'
-  ) then
-    alter table food_entries add constraint food_entries_one_source check (
-      (usda_fdc_id is not null and custom_food_id is null) or
-      (usda_fdc_id is null and custom_food_id is not null)
-    );
-  end if;
-end
-$body$;
-
-alter table food_entries add column if not exists meal_id uuid;
-alter table food_entries add column if not exists meal_name text;
-
-do $body$
-begin
-  if not exists (
-    select 1 from pg_constraint where conname = 'fk_food_entries_meal_id'
-  ) then
-    alter table food_entries
-      add constraint fk_food_entries_meal_id
-      foreign key (meal_id) references meals(id) on delete set null;
-  end if;
-end
-$body$;
-
 create index if not exists idx_food_entries_meal_id on food_entries(meal_id);
 
 create table if not exists sessions (
@@ -231,92 +218,36 @@ create table if not exists progress_photos (
   id uuid primary key default gen_random_uuid(),
   user_key text not null,
   log_date date not null,
-  tag_id uuid not null references progress_photo_tags(id) on delete restrict,
+  tag_id uuid not null,
   photo bytea not null,
   photo_thumb bytea not null,
   photo_mime text not null default 'image/jpeg',
   bytes integer not null,
   sha256 text not null,
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
+  updated_at timestamptz not null default now(),
+  idempotency_key uuid,
+  constraint fk_progress_photos_tag_id
+    foreign key (tag_id) references progress_photo_tags(id) on delete restrict
 );
-
--- One-time migration from the legacy fixed-slot model to per-user tags.
--- Safe to run repeatedly: the column / constraint guards skip on already-migrated
--- deployments.
-do $body$
-begin
-  if exists (
-    select 1 from information_schema.columns
-    where table_name = 'progress_photos' and column_name = 'slot'
-  ) then
-    -- Pre-existing prod tables were bootstrapped before tag_id existed; the
-    -- new CREATE TABLE above is skipped (table exists), so ensure the column
-    -- is present before we try to populate it.
-    alter table progress_photos add column if not exists tag_id uuid;
-
-    insert into progress_photo_tags (user_key, name, normalized_name, sort_order)
-    select user_key, slot, slot,
-           case slot when 'front' then 0
-                    when 'left'  then 1
-                    when 'right' then 2
-                    when 'back'  then 3
-                    else 4 end
-      from progress_photos
-     where slot is not null
-     group by user_key, slot
-    on conflict (user_key, normalized_name) do nothing;
-
-    update progress_photos pp
-       set tag_id = t.id
-      from progress_photo_tags t
-     where pp.tag_id is null
-       and pp.user_key = t.user_key
-       and pp.slot = t.normalized_name;
-
-    alter table progress_photos drop constraint if exists progress_photos_slot_check;
-    alter table progress_photos drop constraint if exists uq_progress_photos_user_date_slot;
-    alter table progress_photos drop column slot;
-    alter table progress_photos alter column tag_id set not null;
-  end if;
-
-  if not exists (
-    select 1 from pg_constraint where conname = 'fk_progress_photos_tag_id'
-  ) then
-    alter table progress_photos
-      add constraint fk_progress_photos_tag_id
-      foreign key (tag_id) references progress_photo_tags(id) on delete restrict;
-  end if;
-end
-$body$;
-
-drop index if exists idx_progress_photos_user_date;
 create index if not exists idx_progress_photos_user_date_tag
   on progress_photos (user_key, log_date desc, tag_id);
-
-alter table progress_photos add column if not exists idempotency_key uuid;
 create unique index if not exists uq_progress_photos_user_idem
   on progress_photos (user_key, idempotency_key)
   where idempotency_key is not null;
 
-alter table food_memory add column if not exists aliases text[] not null default '{}'::text[];
-alter table meals add column if not exists aliases text[] not null default '{}'::text[];
-
-create index if not exists idx_food_memory_aliases on food_memory using gin (aliases);
-create index if not exists idx_meals_aliases on meals using gin (aliases);
-
-do $body$
-begin
-  if not exists (select 1 from pg_constraint where conname = 'food_memory_alias_not_self') then
-    alter table food_memory add constraint food_memory_alias_not_self
-      check (not (normalized_name = ANY(aliases)));
-  end if;
-  if not exists (select 1 from pg_constraint where conname = 'meals_alias_not_self') then
-    alter table meals add constraint meals_alias_not_self
-      check (not (normalized_name = ANY(aliases)));
-  end if;
-end
-$body$;
+create table if not exists weight_entries (
+  id uuid primary key default gen_random_uuid(),
+  user_key text not null,
+  log_date date not null,
+  weight_lb numeric(6,2) not null check (weight_lb > 0),
+  source_unit text not null check (source_unit in ('lb','kg')),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (user_key, log_date)
+);
+create index if not exists idx_weight_entries_user_key_log_date
+  on weight_entries(user_key, log_date);
 
 -- search_path is pinned to '' and all table references are schema-qualified to
 -- satisfy Supabase linter 0011 (function_search_path_mutable). pg_catalog is
@@ -355,7 +286,6 @@ begin
 end;
 $$;
 
--- search_path pinned to '' with schema-qualified table refs (Supabase lint 0011).
 create or replace function check_meals_alias_uniqueness() returns trigger
 language plpgsql
 set search_path = ''
@@ -399,22 +329,6 @@ drop trigger if exists meals_alias_uniqueness on meals;
 create trigger meals_alias_uniqueness
   before insert or update on meals
   for each row execute function check_meals_alias_uniqueness();
-
-create table if not exists weight_entries (
-  id uuid primary key default gen_random_uuid(),
-  user_key text not null,
-  log_date date not null,
-  weight_lb numeric(6,2) not null check (weight_lb > 0),
-  source_unit text not null check (source_unit in ('lb','kg')),
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-  unique (user_key, log_date)
-);
-create index if not exists idx_weight_entries_user_key_log_date
-  on weight_entries(user_key, log_date);
-
-alter table daily_target_profile
-  add column if not exists target_weight_lb numeric(6,2);
 
 -- Keep public tables off the Supabase Data API surface (lints 0026/0027,
 -- pg_graphql anon/authenticated table exposed). The backend connects as the
