@@ -103,23 +103,29 @@ struct SettingsView: View {
 
     // MARK: - data flow
 
-    /// Fetches current targets, updates the shared cache, and seeds the draft
-    /// in the user's preferred display unit. A 404 (no profile yet) seeds an
+    /// Seeds the draft immediately from the shared cache when available (no
+    /// blank-form wait), then refreshes from the server and re-seeds unless
+    /// the user has already started editing. A 404 (no profile yet) seeds an
     /// empty draft — the first Save then creates the profile. Any other
-    /// failure flips `loadFailed` so the editable cards are replaced by a
-    /// retry affordance instead of a blank form that could overwrite server
-    /// state. Outputs: nothing.
+    /// failure with no cache to fall back on flips `loadFailed`, replacing
+    /// the editable cards with a retry affordance instead of a blank form
+    /// that could overwrite server state. Outputs: nothing.
     private func loadTargets() async {
         guard let client = auth.makeClient() else { return }
+        if let cached = targetsStore.targets {
+            draft.seed(from: cached, unit: displayUnit)
+        }
         loadFailed = false
         do {
             let current = try await client.fetchTargets()
             targetsStore.update(current)
-            draft.seed(from: current, unit: displayUnit)
+            if !draft.isDirty { draft.seed(from: current, unit: displayUnit) }
         } catch PulseError.notFound {
-            draft.seed(from: nil, unit: displayUnit)
+            if !draft.isDirty { draft.seed(from: nil, unit: displayUnit) }
         } catch {
-            loadFailed = true
+            // The cache-seeded form stays usable (merge-on-save re-fetches
+            // anyway); only show the retry card when there's nothing to edit.
+            loadFailed = targetsStore.targets == nil
         }
     }
 
@@ -137,10 +143,9 @@ struct SettingsView: View {
             do {
                 let persisted = try await targetsStore.save(targets, client: client)
                 draft.seed(from: persisted, unit: draft.weightUnit)
-            } catch PulseError.unauthorized, PulseError.notSignedIn {
-                saveError = "Session expired — sign in again to save."
             } catch {
-                saveError = "Couldn't save — check your connection and try again."
+                saveError = (error as? PulseError)?.userMessage
+                    ?? "Couldn't save — check your connection and try again."
             }
         }
         isSaving = false
@@ -168,16 +173,11 @@ struct SettingsView: View {
     /// offers a retry instead of presenting a blank editable form.
     private var loadFailedSection: some View {
         SectionCard(header: "Targets", headerHorizontalPadding: 16) {
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Couldn't load your current targets.")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(Theme.CTP.red)
-                Button("Retry") { Task { await loadTargets() } }
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(Theme.CTP.mauve)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(16)
+            EmptyStateView(
+                icon: "exclamationmark.triangle",
+                title: "Couldn't load targets",
+                description: "Your current targets couldn't be fetched.",
+                action: { Task { await loadTargets() } })
         }
     }
 

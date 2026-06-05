@@ -236,7 +236,7 @@ struct WeightLogView: View {
                     .foregroundStyle(Theme.FG.primary)
                 Spacer()
                 if let delta {
-                    Text("\(delta > 0 ? "+" : "")\(String(format: "%.1f", delta))")
+                    Text("\(delta > 0 ? "+" : "")\(WeightFormatter.entryString(delta))")
                         .font(.system(size: 11, weight: .medium, design: .monospaced))
                         .monospacedDigit()
                         .foregroundStyle(deltaColor(delta))
