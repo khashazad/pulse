@@ -32,6 +32,18 @@ final class UserTargetsStore {
         }
     }
 
+    /// Persists the full target profile with a single PUT /targets and
+    /// publishes the server-echoed value to the cache on success.
+    /// Inputs:
+    ///   - targets: complete desired macro targets (+ optional weight goal).
+    ///   - client: authenticated client used for the upsert.
+    /// Outputs: nothing.
+    /// Throws: `PulseError` when the upsert fails; the cache is left untouched.
+    func save(_ targets: MacroTargets, client: PulseClient) async throws {
+        let persisted = try await client.upsertTargets(targets)
+        update(persisted)
+    }
+
     /// Persists a new target weight by fetching the current macro targets and
     /// PUTting an updated copy that swaps in `lb`, then updates the in-memory
     /// cache on success. Failures are swallowed so the caller can retry.
