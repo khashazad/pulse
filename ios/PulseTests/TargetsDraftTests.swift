@@ -75,14 +75,31 @@ final class TargetsDraftTests: XCTestCase {
         XCTAssertFalse(d.isWeightEdited)
     }
 
-    /// Verifies toggling the weight unit (lb -> kg -> lb) never marks dirty:
-    /// the conversion rewrites the string but represents the same value.
+    /// Verifies toggling the weight unit (lb -> kg -> lb) never marks dirty,
+    /// including values like 176.0 whose naive parse/format round-trip drifts
+    /// by 0.1 lb (the unedited field must regenerate from the baseline).
     func test_unitToggle_staysClean() {
-        var d = seeded(unit: .lb)
+        for lb in [150.0, 160.0, 175.0, 176.0, 203.3] {
+            var d = TargetsDraft()
+            d.seed(from: MacroTargets(calories: 2000, proteinG: 150, carbsG: 200,
+                                      fatG: 60, targetWeightLb: lb), unit: .lb)
+            d.setUnit(.kg)
+            XCTAssertFalse(d.isDirty, "lb->kg toggle dirtied \(lb)")
+            d.setUnit(.lb)
+            XCTAssertFalse(d.isDirty, "kg->lb round-trip dirtied \(lb)")
+            XCTAssertEqual(d.weightInput, String(format: "%.1f", lb),
+                           "round-trip must restore the seeded display value")
+        }
+    }
+
+    /// Verifies an edited weight field converts the user's value on toggle
+    /// (rather than regenerating from baseline) and stays dirty.
+    func test_unitToggle_editedWeightConvertsAndStaysDirty() {
+        var d = seeded(unit: .lb) // baseline weight 175.0
+        d.weightInput = "180.0"
         d.setUnit(.kg)
-        XCTAssertFalse(d.isDirty, "lb->kg conversion must not read as an edit")
-        d.setUnit(.lb)
-        XCTAssertFalse(d.isDirty, "round-trip back to lb must stay clean")
+        XCTAssertTrue(d.isDirty)
+        XCTAssertEqual(d.weightInput, String(format: "%.1f", 180.0 / WeightFormatter.kgToLb))
     }
 
     /// Verifies editing the weight after a unit toggle is detected as dirty.

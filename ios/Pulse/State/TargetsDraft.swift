@@ -50,14 +50,17 @@ struct TargetsDraft: Equatable {
     }
 
     /// Switches the weight-entry unit, converting the current input in place.
-    /// Conversion goes through the same format path as seeding, so a pure
-    /// toggle never reads as dirty.
+    /// An unedited field is regenerated from the baseline value (same format
+    /// path as seeding), so a pure toggle never reads as dirty regardless of
+    /// rounding; an edited field converts the user's entered value.
     /// Inputs:
     ///   - newUnit: unit to convert the weight input into.
     /// Outputs: nothing.
     mutating func setUnit(_ newUnit: WeightUnit) {
         guard newUnit != weightUnit else { return }
-        if let v = Self.parse(weightInput) {
+        if !isWeightEdited, let baseLb = baseline?.targetWeightLb {
+            weightInput = Self.formatWeight(WeightFormatter.fromLb(baseLb, to: newUnit))
+        } else if let v = Self.parse(weightInput) {
             let lb = WeightFormatter.toLb(v, from: weightUnit)
             weightInput = Self.formatWeight(WeightFormatter.fromLb(lb, to: newUnit))
         }
