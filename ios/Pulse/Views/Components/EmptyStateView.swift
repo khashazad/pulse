@@ -8,7 +8,7 @@ struct EmptyStateView: View {
     let icon: String
     let title: String
     let description: String
-    var action: (() -> Void)? = nil
+    var action: (() -> Void)?
     var actionLabel: String = "Retry"
 
     var body: some View {

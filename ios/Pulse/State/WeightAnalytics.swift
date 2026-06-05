@@ -57,7 +57,9 @@ enum WeightAnalytics {
 
         // Display trend + ETA depend only on weight data; calorie gaps must not
         // suppress them.
-        let trendCutoff = cal.date(byAdding: .day, value: -(trendWindowDays - 1), to: endDay)!
+        // Gregorian day arithmetic cannot fail here; collapse to a single-day
+        // window (trend becomes nil) rather than crash if it ever did.
+        let trendCutoff = cal.date(byAdding: .day, value: -(trendWindowDays - 1), to: endDay) ?? endDay
         let trendLbPerWeek = Self.trendLbPerWeek(
             entries: entries, start: trendCutoff, end: endDay, calendar: cal
         )
@@ -88,7 +90,8 @@ enum WeightAnalytics {
         let trendStr = trendLbPerWeek.map { String(format: "%.2f", $0) } ?? "nil"
         let maintStr = maintenanceKcal.map(String.init) ?? "nil"
         let winStr = window.map { "\($0.days)d" } ?? "nil"
-        analyticsDiagLog.notice("window=\(winStr, privacy: .public) recentAvgKcal=\(avgStr, privacy: .public) trendLb/wk=\(trendStr, privacy: .public) maintenance=\(maintStr, privacy: .public)")
+        let summary = "window=\(winStr) recentAvgKcal=\(avgStr) trendLb/wk=\(trendStr) maintenance=\(maintStr)"
+        analyticsDiagLog.notice("\(summary, privacy: .public)")
         #endif
 
         return WeightAnalyticsResult(
@@ -114,15 +117,15 @@ enum WeightAnalytics {
         today: Date,
         calendar cal: Calendar
     ) -> (start: Date, end: Date, days: Int)? {
-        var endDay: Date? = nil
+        var endDay: Date?
         for offset in 0..<maxRecentWindowDays {
-            let day = cal.date(byAdding: .day, value: -offset, to: today)!
+            guard let day = cal.date(byAdding: .day, value: -offset, to: today) else { break }
             if kcalByDay[day] != nil { endDay = day; break }
         }
         guard let end = endDay else { return nil }
         var start = end
         for offset in 1..<maxRecentWindowDays {
-            let day = cal.date(byAdding: .day, value: -offset, to: end)!
+            guard let day = cal.date(byAdding: .day, value: -offset, to: end) else { break }
             if kcalByDay[day] != nil { start = day } else { break }
         }
         let days = daysBetween(start, end, calendar: cal) + 1
@@ -198,7 +201,7 @@ enum WeightAnalytics {
         guard let target = targetWeightLb, let trend = trendLbPerWeek else { return nil }
         if abs(trend) < stableLbPerWeekThreshold { return .stable }
 
-        let cutoff = cal.date(byAdding: .day, value: -6, to: today)!
+        guard let cutoff = cal.date(byAdding: .day, value: -6, to: today) else { return nil }
         let recent = entries.filter { cal.startOfDay(for: $0.date) >= cutoff }
         let latestMean: Double
         if !recent.isEmpty {
@@ -216,7 +219,9 @@ enum WeightAnalytics {
 
         let lbPerDay = trend / 7.0
         let daysOut = direction / lbPerDay
-        let eta = cal.date(byAdding: .day, value: Int(daysOut.rounded()), to: today)!
+        guard let eta = cal.date(byAdding: .day, value: Int(daysOut.rounded()), to: today) else {
+            return nil
+        }
         return .date(eta)
     }
 

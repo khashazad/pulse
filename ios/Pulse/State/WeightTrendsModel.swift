@@ -109,7 +109,9 @@ final class WeightTrendsModel {
     /// Outputs: a `RegressionLine` for chart overlay, or nil if fewer than 8
     ///   points are present or the fit is degenerate.
     static func regressionLine(for entries: [WeightEntry], unit: WeightUnit) -> RegressionLine? {
-        guard entries.count >= 8 else { return nil }
+        guard entries.count >= 8, let first = entries.first, let last = entries.last else {
+            return nil
+        }
         let ys = entries.map { WeightFormatter.fromLb($0.weightLb, to: unit) }
         let n = Double(entries.count)
         let xs = (0..<entries.count).map(Double.init)
@@ -122,8 +124,8 @@ final class WeightTrendsModel {
         let slope = (n * sxy - sx * sy) / denom
         let intercept = (sy - slope * sx) / n
         return RegressionLine(
-            startDate: entries.first!.date,
-            endDate: entries.last!.date,
+            startDate: first.date,
+            endDate: last.date,
             startY: intercept,
             endY: slope * Double(entries.count - 1) + intercept
         )

@@ -12,9 +12,9 @@ from __future__ import annotations
 
 import os
 import uuid
+from datetime import UTC
 from datetime import date as DateValue
 from datetime import datetime as DateTimeValue
-from datetime import timezone as TimezoneValue
 from unittest.mock import patch
 
 import pytest
@@ -115,7 +115,7 @@ async def session(session_factory: async_sessionmaker[AsyncSession]) -> AsyncSes
 async def test_create_entries_rolls_back_on_error(session: AsyncSession) -> None:
     """``create_entries_with_side_effects`` rolls back the full batch when a duplicate ``entry_id`` triggers an ``IntegrityError`` mid-transaction."""
     user_key = f"user-{uuid.uuid4()}"
-    now = DateTimeValue.now(tz=TimezoneValue.utc)
+    now = DateTimeValue.now(tz=UTC)
     log_date = now.date()
 
     item = FoodEntryCreate(
@@ -166,7 +166,7 @@ async def test_logs_and_summary_aggregates(session: AsyncSession) -> None:
 
     first_date = DateValue(2026, 4, 5)
     second_date = DateValue(2026, 4, 6)
-    consumed_at = DateTimeValue(2026, 4, 6, 12, 0, tzinfo=TimezoneValue.utc)
+    consumed_at = DateTimeValue(2026, 4, 6, 12, 0, tzinfo=UTC)
 
     async with transaction(session):
         await target_repo.upsert_targets(
@@ -245,7 +245,9 @@ async def test_logs_and_summary_aggregates(session: AsyncSession) -> None:
             )
         )
 
-    log_rows = await logs_repo.list_logs(user_key=user_key, from_date=first_date, to_date=second_date)
+    log_rows = await logs_repo.list_logs(
+        user_key=user_key, from_date=first_date, to_date=second_date
+    )
     assert len(log_rows) == 2
     rows_by_date = {row["log_date"]: row for row in log_rows}
     assert int(rows_by_date[first_date]["total_calories"]) == 400

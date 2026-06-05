@@ -15,7 +15,7 @@ parameters so they aren't 401'd before their own layer runs.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from fastapi import HTTPException, Request
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -25,7 +25,6 @@ from pulse_server.auth.sessions import email_to_user_key, hash_token
 from pulse_server.config import get_settings
 from pulse_server.db import get_session
 from pulse_server.repositories.sessions import SessionsRepository
-
 
 # Paths that always bypass session auth. The OAuth bootstrap routes handle their own
 # credential lifecycle; /auth/whoami and /auth/logout still require a valid session
@@ -102,7 +101,7 @@ class SessionAuthMiddleware(BaseHTTPMiddleware):
 
         token_hash = hash_token(token)
         settings = get_settings()
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         new_expires = now + timedelta(days=settings.session_ttl_days)
 
         async with get_session() as db_session:

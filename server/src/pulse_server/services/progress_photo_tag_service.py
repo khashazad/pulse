@@ -8,8 +8,8 @@ Tag deletion is intentionally not implemented in this release.
 
 from __future__ import annotations
 
+from datetime import UTC
 from datetime import datetime as DateTimeValue
-from datetime import timezone as TimezoneValue
 from typing import Any
 from uuid import UUID
 
@@ -27,9 +27,7 @@ DEFAULT_TAGS: tuple[tuple[str, int], ...] = (
 )
 
 
-async def list_tags(
-    *, repo: ProgressPhotoTagRepository, user_key: str
-) -> list[dict[str, Any]]:
+async def list_tags(*, repo: ProgressPhotoTagRepository, user_key: str) -> list[dict[str, Any]]:
     """List a user's tags, seeding the catalog on first call.
 
     When the user has no tag rows yet, inserts the canonical defaults
@@ -46,7 +44,7 @@ async def list_tags(
     rows = await repo.list_for_user(user_key)
     if rows:
         return rows
-    now = DateTimeValue.now(tz=TimezoneValue.utc)
+    now = DateTimeValue.now(tz=UTC)
     defaults = [(name, name, order) for name, order in DEFAULT_TAGS]
     await repo.bulk_seed_if_empty(user_key=user_key, defaults=defaults, now=now)
     return await repo.list_for_user(user_key)
@@ -81,7 +79,7 @@ async def create_tag(
         )
     existing = await repo.list_for_user(user_key)
     next_order = max((row["sort_order"] for row in existing), default=-1) + 1
-    now = DateTimeValue.now(tz=TimezoneValue.utc)
+    now = DateTimeValue.now(tz=UTC)
     try:
         return await repo.create(
             user_key=user_key,
@@ -134,18 +132,14 @@ async def update_tag(
         fields["normalized_name"] = normalized
     if sort_order is not None:
         fields["sort_order"] = sort_order
-    now = DateTimeValue.now(tz=TimezoneValue.utc)
+    now = DateTimeValue.now(tz=UTC)
     try:
-        row = await repo.update_fields(
-            tag_id=tag_id, user_key=user_key, fields=fields, now=now
-        )
+        row = await repo.update_fields(tag_id=tag_id, user_key=user_key, fields=fields, now=now)
     except IntegrityError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="a tag with that name already exists",
         ) from exc
     if row is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="tag not found"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="tag not found")
     return row

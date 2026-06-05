@@ -10,9 +10,9 @@ the transaction boundary on the repository.
 from __future__ import annotations
 
 import hashlib
+from datetime import UTC
 from datetime import date as DateValue
 from datetime import datetime as DateTimeValue
-from datetime import timezone as TimezoneValue
 from typing import Any
 from uuid import UUID
 
@@ -41,7 +41,7 @@ def _validate_date(log_date: DateValue) -> None:
     - fastapi.HTTPException: Raised with 400 when ``log_date`` is later than
       today (UTC).
     """
-    today = DateTimeValue.now(tz=TimezoneValue.utc).date()
+    today = DateTimeValue.now(tz=UTC).date()
     if log_date > today:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -114,9 +114,7 @@ async def insert_one(
     _validate_date(log_date)
     tag = await tag_repo.get_by_id(tag_id=tag_id, user_key=user_key)
     if tag is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="tag not found"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="tag not found")
     full, thumb, mime = _process_or_raise(raw)
     sha = hashlib.sha256(full).hexdigest()
     return await repo.insert(
@@ -128,6 +126,6 @@ async def insert_one(
         photo_mime=mime,
         bytes_=len(full),
         sha256=sha,
-        now=DateTimeValue.now(tz=TimezoneValue.utc),
+        now=DateTimeValue.now(tz=UTC),
         idempotency_key=idempotency_key,
     )

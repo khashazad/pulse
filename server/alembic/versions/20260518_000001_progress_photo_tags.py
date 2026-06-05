@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from alembic import op
 
-
 revision = "20260518_000001"
 down_revision = "20260513_000001"
 branch_labels = None
@@ -135,18 +134,14 @@ def downgrade() -> None:
          where pp.slot is null and pp.tag_id = t.id
         """
     )
-    op.execute(
-        "alter table progress_photos drop constraint if exists fk_progress_photos_tag_id"
-    )
+    op.execute("alter table progress_photos drop constraint if exists fk_progress_photos_tag_id")
     op.execute("alter table progress_photos drop column if exists tag_id")
     op.execute(
         "alter table progress_photos "
         "add constraint progress_photos_slot_check "
         "check (slot in ('front','left','right','back'))"
     )
-    op.execute(
-        "alter table progress_photos alter column slot set not null"
-    )
+    op.execute("alter table progress_photos alter column slot set not null")
     op.execute(
         "alter table progress_photos "
         "add constraint uq_progress_photos_user_date_slot "

@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from pulse_server.auth import require_session
 from pulse_server.config import get_settings
 from pulse_server.db import get_session_dependency, transaction
+from pulse_server.log_ids import daily_log_id
 from pulse_server.macro_aggregates import sum_food_entry_macros
 from pulse_server.models import (
     EntriesCreateRequest,
@@ -26,7 +27,6 @@ from pulse_server.models import (
     EntriesListResponse,
     FoodEntryResponse,
 )
-from pulse_server.log_ids import daily_log_id
 from pulse_server.repositories.entries import EntriesRepository
 from pulse_server.services.custom_foods_service import CrossTenantReferenceError
 from pulse_server.services.entries_service import create_entries_with_side_effects
@@ -107,7 +107,9 @@ async def list_entries(
     rows = await repository.list_entries_by_daily_log_id(daily_log)
 
     entries = [FoodEntryResponse(**row) for row in rows]
-    return EntriesListResponse(date=log_date, entries=entries, totals=sum_food_entry_macros(entries))
+    return EntriesListResponse(
+        date=log_date, entries=entries, totals=sum_food_entry_macros(entries)
+    )
 
 
 @router.delete("/entries/{entry_id}", status_code=204)

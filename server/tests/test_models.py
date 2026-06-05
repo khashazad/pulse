@@ -82,6 +82,7 @@ def test_macro_targets_validation() -> None:
 def test_food_memory_table_has_aliases_column() -> None:
     """`food_memory` and `meals` tables both expose an `aliases` column."""
     from pulse_server.repositories.tables import food_memory, meals
+
     assert "aliases" in food_memory.c
     assert "aliases" in meals.c
 
@@ -90,6 +91,7 @@ def test_food_memory_entry_aliases_defaults_to_empty_list() -> None:
     """`FoodMemoryEntry.aliases` defaults to `[]` when not provided."""
     from datetime import datetime
     from uuid import uuid4
+
     from pulse_server.models import FoodMemoryEntry
 
     entry = FoodMemoryEntry(
@@ -113,6 +115,7 @@ def test_food_memory_entry_aliases_defaults_to_empty_list() -> None:
 def test_meal_summary_aliases_defaults_to_empty_list() -> None:
     """`MealSummary.aliases` defaults to `[]` when not provided."""
     from uuid import uuid4
+
     from pulse_server.models import MealSummary
 
     summary = MealSummary(

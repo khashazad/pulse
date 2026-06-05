@@ -67,7 +67,7 @@ class WeightEntryUpsert(BaseModel):
     unit: WeightUnit
 
     @model_validator(mode="after")
-    def _check_storable(self) -> "WeightEntryUpsert":
+    def _check_storable(self) -> WeightEntryUpsert:
         """Round to two decimals and reject values outside the storable range.
 
         **Outputs:**

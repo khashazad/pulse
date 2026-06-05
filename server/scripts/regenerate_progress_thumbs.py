@@ -14,8 +14,8 @@ from __future__ import annotations
 import argparse
 import asyncio
 import io
+from datetime import UTC
 from datetime import datetime as DateTimeValue
-from datetime import timezone as TimezoneValue
 from typing import Any
 
 from PIL import Image, ImageOps
@@ -54,39 +54,38 @@ async def _run(*, user_key: str | None, dry_run: bool) -> None:
     await init_pool(settings.database_url)
 
     try:
-        async with get_session() as session:
-            async with transaction(session):
-                stmt = select(
-                    progress_photos.c.id,
-                    progress_photos.c.user_key,
-                    progress_photos.c.photo,
+        async with get_session() as session, transaction(session):
+            stmt = select(
+                progress_photos.c.id,
+                progress_photos.c.user_key,
+                progress_photos.c.photo,
+            )
+            if user_key:
+                stmt = stmt.where(progress_photos.c.user_key == user_key)
+            stmt = stmt.order_by(progress_photos.c.created_at)
+            result = await session.execute(stmt)
+            rows: list[dict[str, Any]] = [dict(r) for r in result.mappings().all()]
+
+            print(f"processing {len(rows)} rows (target MAX_THUMB_PX={MAX_THUMB_PX})")
+            if dry_run:
+                for r in rows[:5]:
+                    print(f"  {r['id']} user={r['user_key']} full_bytes={len(r['photo'])}")
+                if len(rows) > 5:
+                    print(f"  ... +{len(rows) - 5} more")
+                return
+
+            now = DateTimeValue.now(tz=UTC)
+            written = 0
+            for row in rows:
+                full = bytes(row["photo"])
+                new_thumb = _rethumb(full)
+                await session.execute(
+                    update(progress_photos)
+                    .where(progress_photos.c.id == row["id"])
+                    .values(photo_thumb=new_thumb, updated_at=now)
                 )
-                if user_key:
-                    stmt = stmt.where(progress_photos.c.user_key == user_key)
-                stmt = stmt.order_by(progress_photos.c.created_at)
-                result = await session.execute(stmt)
-                rows: list[dict[str, Any]] = [dict(r) for r in result.mappings().all()]
-
-                print(f"processing {len(rows)} rows (target MAX_THUMB_PX={MAX_THUMB_PX})")
-                if dry_run:
-                    for r in rows[:5]:
-                        print(f"  {r['id']} user={r['user_key']} full_bytes={len(r['photo'])}")
-                    if len(rows) > 5:
-                        print(f"  ... +{len(rows) - 5} more")
-                    return
-
-                now = DateTimeValue.now(tz=TimezoneValue.utc)
-                written = 0
-                for row in rows:
-                    full = bytes(row["photo"])
-                    new_thumb = _rethumb(full)
-                    await session.execute(
-                        update(progress_photos)
-                        .where(progress_photos.c.id == row["id"])
-                        .values(photo_thumb=new_thumb, updated_at=now)
-                    )
-                    written += 1
-                print(f"rewrote {written} thumbnails")
+                written += 1
+            print(f"rewrote {written} thumbnails")
     finally:
         await close_pool()
 

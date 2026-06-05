@@ -119,6 +119,5 @@ async def daily_calorie_totals(
         user_key=user_key, from_date=from_date, to_date=to_date
     )
     return [
-        CaloriesDailyRow(log_date=row["log_date"], calories=int(row["calories"]))
-        for row in rows
+        CaloriesDailyRow(log_date=row["log_date"], calories=int(row["calories"])) for row in rows
     ]

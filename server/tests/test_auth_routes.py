@@ -16,7 +16,6 @@ from urllib.parse import parse_qs, urlparse
 import pytest
 from fastapi.testclient import TestClient
 
-
 os.environ.setdefault("DATABASE_URL", "postgresql://localhost/test")
 os.environ.setdefault("USDA_API_KEY", "x")
 os.environ.setdefault("GOOGLE_CLIENT_ID", "cid.apps.googleusercontent.com")
@@ -36,14 +35,18 @@ def client():
     **Outputs:**
     - TestClient: Client bound to the configured app.
     """
-    with patch("pulse_server.db.init_pool", new_callable=AsyncMock), \
-         patch("pulse_server.db.bootstrap_schema", new_callable=AsyncMock), \
-         patch("pulse_server.db.close_pool", new_callable=AsyncMock), \
-         patch("pulse_server.usda.USDAClient") as mock_usda:
+    with (
+        patch("pulse_server.db.init_pool", new_callable=AsyncMock),
+        patch("pulse_server.db.bootstrap_schema", new_callable=AsyncMock),
+        patch("pulse_server.db.close_pool", new_callable=AsyncMock),
+        patch("pulse_server.usda.USDAClient") as mock_usda,
+    ):
         mock_usda.return_value.close = AsyncMock()
         from pulse_server.config import get_settings
+
         get_settings.cache_clear()
         from pulse_server.app import app
+
         with TestClient(app) as c:
             yield c
 
@@ -77,7 +80,7 @@ def test_start_without_pkce_challenge_redirects_invalid_request(client):
     assert r.headers["location"] == "diettracker://auth?error=invalid_request"
 
 
-from datetime import datetime, timezone
+from datetime import UTC
 
 from pulse_server.auth.google import GoogleAuthError
 
@@ -98,9 +101,11 @@ def _patch_db_repo():
     fake_session_ctx = AsyncMock()
     fake_session_ctx.__aenter__.return_value = fake_session
     fake_session_ctx.__aexit__.return_value = None
-    with patch("pulse_server.routers.auth.get_session", return_value=fake_session_ctx), \
-         patch("pulse_server.routers.auth.AuthExchangeCodesRepository", return_value=exchange_repo), \
-         patch("pulse_server.routers.auth.SessionsRepository", return_value=sessions_repo):
+    with (
+        patch("pulse_server.routers.auth.get_session", return_value=fake_session_ctx),
+        patch("pulse_server.routers.auth.AuthExchangeCodesRepository", return_value=exchange_repo),
+        patch("pulse_server.routers.auth.SessionsRepository", return_value=sessions_repo),
+    ):
         yield exchange_repo
 
 
@@ -142,12 +147,16 @@ def test_callback_disallowed_email_redirects_not_allowed(client, _patch_db_repo)
     """Verified email outside `ALLOWED_EMAILS` redirects with `error=not_allowed` and skips code creation."""
     client.cookies.set("oauth_state", "s", path="/auth/google")
     client.cookies.set("oauth_pkce", "challenge", path="/auth/google")
-    with patch(
-        "pulse_server.routers.auth.exchange_code_for_id_token",
-        new_callable=AsyncMock, return_value="jwt",
-    ), patch(
-        "pulse_server.routers.auth.verify_id_token",
-        return_value=("nobody@gmail.com", "sub"),
+    with (
+        patch(
+            "pulse_server.routers.auth.exchange_code_for_id_token",
+            new_callable=AsyncMock,
+            return_value="jwt",
+        ),
+        patch(
+            "pulse_server.routers.auth.verify_id_token",
+            return_value=("nobody@gmail.com", "sub"),
+        ),
     ):
         r = client.get(
             "/auth/google/callback",
@@ -163,12 +172,16 @@ def test_callback_happy_path_stores_exchange_code_and_redirects_with_code(client
     """Successful callback stores a one-time code and redirects with `code` only (no token/email)."""
     client.cookies.set("oauth_state", "s", path="/auth/google")
     client.cookies.set("oauth_pkce", "challenge", path="/auth/google")
-    with patch(
-        "pulse_server.routers.auth.exchange_code_for_id_token",
-        new_callable=AsyncMock, return_value="jwt",
-    ), patch(
-        "pulse_server.routers.auth.verify_id_token",
-        return_value=("khashzd@gmail.com", "sub"),
+    with (
+        patch(
+            "pulse_server.routers.auth.exchange_code_for_id_token",
+            new_callable=AsyncMock,
+            return_value="jwt",
+        ),
+        patch(
+            "pulse_server.routers.auth.verify_id_token",
+            return_value=("khashzd@gmail.com", "sub"),
+        ),
     ):
         r = client.get(
             "/auth/google/callback",
@@ -202,7 +215,8 @@ def test_callback_token_exchange_failure_redirects_server_error(client):
     client.cookies.set("oauth_pkce", "challenge", path="/auth/google")
     with patch(
         "pulse_server.routers.auth.exchange_code_for_id_token",
-        new_callable=AsyncMock, side_effect=GoogleAuthError("boom"),
+        new_callable=AsyncMock,
+        side_effect=GoogleAuthError("boom"),
     ):
         r = client.get(
             "/auth/google/callback",
@@ -228,13 +242,14 @@ def test_callback_missing_code_redirects_invalid_callback(client):
 
 def test_exchange_valid_code_returns_token(client):
     """`POST /auth/google/exchange` with a valid code + matching verifier returns a bearer token."""
-    from datetime import datetime as DT, timezone as TZ, timedelta as TD
+    from datetime import datetime as DT
+    from datetime import timedelta as TD
 
     from pulse_server.auth.sessions import pkce_s256_challenge
 
     verifier = "v" * 48
     challenge = pkce_s256_challenge(verifier)
-    fut = DT.now(TZ.utc) + TD(seconds=120)
+    fut = DT.now(UTC) + TD(seconds=120)
 
     exchange_repo = AsyncMock()
     exchange_repo.consume.return_value = {
@@ -249,9 +264,11 @@ def test_exchange_valid_code_returns_token(client):
     ctx = AsyncMock()
     ctx.__aenter__.return_value = fake_session
     ctx.__aexit__.return_value = None
-    with patch("pulse_server.routers.auth.get_session", return_value=ctx), \
-         patch("pulse_server.routers.auth.AuthExchangeCodesRepository", return_value=exchange_repo), \
-         patch("pulse_server.routers.auth.SessionsRepository", return_value=sessions_repo):
+    with (
+        patch("pulse_server.routers.auth.get_session", return_value=ctx),
+        patch("pulse_server.routers.auth.AuthExchangeCodesRepository", return_value=exchange_repo),
+        patch("pulse_server.routers.auth.SessionsRepository", return_value=sessions_repo),
+    ):
         r = client.post(
             "/auth/google/exchange",
             json={"code": "one-time", "code_verifier": verifier},
@@ -265,11 +282,12 @@ def test_exchange_valid_code_returns_token(client):
 
 def test_exchange_wrong_verifier_rejected(client):
     """A verifier that doesn't match the stored challenge is rejected and no session is created."""
-    from datetime import datetime as DT, timezone as TZ, timedelta as TD
+    from datetime import datetime as DT
+    from datetime import timedelta as TD
 
     from pulse_server.auth.sessions import pkce_s256_challenge
 
-    fut = DT.now(TZ.utc) + TD(seconds=120)
+    fut = DT.now(UTC) + TD(seconds=120)
     exchange_repo = AsyncMock()
     exchange_repo.consume.return_value = {
         "email": "khashzd@gmail.com",
@@ -282,9 +300,11 @@ def test_exchange_wrong_verifier_rejected(client):
     ctx = AsyncMock()
     ctx.__aenter__.return_value = fake_session
     ctx.__aexit__.return_value = None
-    with patch("pulse_server.routers.auth.get_session", return_value=ctx), \
-         patch("pulse_server.routers.auth.AuthExchangeCodesRepository", return_value=exchange_repo), \
-         patch("pulse_server.routers.auth.SessionsRepository", return_value=sessions_repo):
+    with (
+        patch("pulse_server.routers.auth.get_session", return_value=ctx),
+        patch("pulse_server.routers.auth.AuthExchangeCodesRepository", return_value=exchange_repo),
+        patch("pulse_server.routers.auth.SessionsRepository", return_value=sessions_repo),
+    ):
         r = client.post(
             "/auth/google/exchange",
             json={"code": "one-time", "code_verifier": "w" * 43},  # valid length, wrong value
@@ -302,8 +322,10 @@ def test_exchange_unknown_code_rejected(client):
     ctx = AsyncMock()
     ctx.__aenter__.return_value = fake_session
     ctx.__aexit__.return_value = None
-    with patch("pulse_server.routers.auth.get_session", return_value=ctx), \
-         patch("pulse_server.routers.auth.AuthExchangeCodesRepository", return_value=exchange_repo):
+    with (
+        patch("pulse_server.routers.auth.get_session", return_value=ctx),
+        patch("pulse_server.routers.auth.AuthExchangeCodesRepository", return_value=exchange_repo),
+    ):
         r = client.post(
             "/auth/google/exchange",
             json={"code": "nope", "code_verifier": "v" * 43},
@@ -313,9 +335,10 @@ def test_exchange_unknown_code_rejected(client):
 
 def test_exchange_non_ascii_verifier_rejected_not_500(client):
     """A non-ASCII (but valid-length) verifier is rejected with 400, never a 500."""
-    from datetime import datetime as DT, timezone as TZ, timedelta as TD
+    from datetime import datetime as DT
+    from datetime import timedelta as TD
 
-    fut = DT.now(TZ.utc) + TD(seconds=120)
+    fut = DT.now(UTC) + TD(seconds=120)
     exchange_repo = AsyncMock()
     exchange_repo.consume.return_value = {
         "email": "khashzd@gmail.com",
@@ -328,9 +351,11 @@ def test_exchange_non_ascii_verifier_rejected_not_500(client):
     ctx = AsyncMock()
     ctx.__aenter__.return_value = fake_session
     ctx.__aexit__.return_value = None
-    with patch("pulse_server.routers.auth.get_session", return_value=ctx), \
-         patch("pulse_server.routers.auth.AuthExchangeCodesRepository", return_value=exchange_repo), \
-         patch("pulse_server.routers.auth.SessionsRepository", return_value=sessions_repo):
+    with (
+        patch("pulse_server.routers.auth.get_session", return_value=ctx),
+        patch("pulse_server.routers.auth.AuthExchangeCodesRepository", return_value=exchange_repo),
+        patch("pulse_server.routers.auth.SessionsRepository", return_value=sessions_repo),
+    ):
         r = client.post(
             "/auth/google/exchange",
             json={"code": "one-time", "code_verifier": "é" * 50},  # non-ASCII, length 50
@@ -363,8 +388,10 @@ def test_whoami_unauthenticated_returns_401(client):
 
 def test_whoami_returns_email_and_expires_at(client):
     """`/auth/whoami` with a valid session returns the email and expiry."""
-    from datetime import datetime as DT, timezone as TZ, timedelta as TD
-    fut = DT.now(TZ.utc) + TD(days=7)
+    from datetime import datetime as DT
+    from datetime import timedelta as TD
+
+    fut = DT.now(UTC) + TD(days=7)
     fake_repo = AsyncMock()
     fake_repo.get.return_value = {"email": "khashzd@gmail.com", "expires_at": fut}
     fake_repo.slide.return_value = 1
@@ -373,8 +400,10 @@ def test_whoami_returns_email_and_expires_at(client):
     ctx = AsyncMock()
     ctx.__aenter__.return_value = fake_session
     ctx.__aexit__.return_value = None
-    with patch("pulse_server.auth.middleware.get_session", return_value=ctx), \
-         patch("pulse_server.auth.middleware.SessionsRepository", return_value=fake_repo):
+    with (
+        patch("pulse_server.auth.middleware.get_session", return_value=ctx),
+        patch("pulse_server.auth.middleware.SessionsRepository", return_value=fake_repo),
+    ):
         r = client.get("/auth/whoami", headers={"Authorization": "Bearer tok"})
     assert r.status_code == 200
     body = r.json()
@@ -384,8 +413,10 @@ def test_whoami_returns_email_and_expires_at(client):
 
 def test_logout_deletes_session_and_returns_204(client):
     """`/auth/logout` deletes the session row and returns 204."""
-    from datetime import datetime as DT, timezone as TZ, timedelta as TD
-    fut = DT.now(TZ.utc) + TD(days=7)
+    from datetime import datetime as DT
+    from datetime import timedelta as TD
+
+    fut = DT.now(UTC) + TD(days=7)
     fake_repo = AsyncMock()
     fake_repo.get.return_value = {"email": "u@e.com", "expires_at": fut}
     fake_repo.slide.return_value = 1
@@ -395,10 +426,12 @@ def test_logout_deletes_session_and_returns_204(client):
     ctx = AsyncMock()
     ctx.__aenter__.return_value = fake_session
     ctx.__aexit__.return_value = None
-    with patch("pulse_server.auth.middleware.get_session", return_value=ctx), \
-         patch("pulse_server.auth.middleware.SessionsRepository", return_value=fake_repo), \
-         patch("pulse_server.routers.auth.get_session", return_value=ctx), \
-         patch("pulse_server.routers.auth.SessionsRepository", return_value=fake_repo):
+    with (
+        patch("pulse_server.auth.middleware.get_session", return_value=ctx),
+        patch("pulse_server.auth.middleware.SessionsRepository", return_value=fake_repo),
+        patch("pulse_server.routers.auth.get_session", return_value=ctx),
+        patch("pulse_server.routers.auth.SessionsRepository", return_value=fake_repo),
+    ):
         r = client.post("/auth/logout", headers={"Authorization": "Bearer tok"})
     assert r.status_code == 204
     fake_repo.delete.assert_awaited()

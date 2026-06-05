@@ -12,10 +12,10 @@ from __future__ import annotations
 import io
 import os
 import uuid
+from datetime import UTC
 from datetime import date as DateValue
 from datetime import datetime as DateTimeValue
 from datetime import timedelta as TimeDeltaValue
-from datetime import timezone as TimezoneValue
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -44,7 +44,7 @@ def _png_bytes(w: int, h: int) -> bytes:
 
 def _now() -> DateTimeValue:
     """Return the current UTC timestamp."""
-    return DateTimeValue.now(tz=TimezoneValue.utc)
+    return DateTimeValue.now(tz=UTC)
 
 
 def _photo_row(tag_id: uuid.UUID, sha: str = "deadbeef") -> dict:
@@ -88,14 +88,13 @@ def client() -> TestClient:
     db_ctx.__aenter__.return_value = fake_db_session
     db_ctx.__aexit__.return_value = None
 
-    with patch("pulse_server.db.init_pool", new_callable=AsyncMock), patch(
-        "pulse_server.db.bootstrap_schema", new_callable=AsyncMock
-    ), patch("pulse_server.db.close_pool", new_callable=AsyncMock), patch(
-        "pulse_server.usda.USDAClient"
-    ) as mock_usda_client, patch(
-        "pulse_server.auth.middleware.get_session", return_value=db_ctx
-    ), patch(
-        "pulse_server.auth.middleware.SessionsRepository", return_value=session_repo
+    with (
+        patch("pulse_server.db.init_pool", new_callable=AsyncMock),
+        patch("pulse_server.db.bootstrap_schema", new_callable=AsyncMock),
+        patch("pulse_server.db.close_pool", new_callable=AsyncMock),
+        patch("pulse_server.usda.USDAClient") as mock_usda_client,
+        patch("pulse_server.auth.middleware.get_session", return_value=db_ctx),
+        patch("pulse_server.auth.middleware.SessionsRepository", return_value=session_repo),
     ):
         mock_usda_client.return_value.close = AsyncMock()
         from pulse_server.app import app
@@ -130,9 +129,7 @@ def test_unauthenticated_rejected(client: TestClient) -> None:
 def test_list_tags_seeds_defaults_when_empty(client: TestClient) -> None:
     """`GET /measures/photo-tags` seeds the four defaults when the user has none."""
     seeded = [_tag_row(n, i) for i, n in enumerate(["front", "left", "right", "back"])]
-    with patch(
-        "pulse_server.routers.measures_photo_tags.ProgressPhotoTagRepository"
-    ) as MockRepo:
+    with patch("pulse_server.routers.measures_photo_tags.ProgressPhotoTagRepository") as MockRepo:
         instance = MockRepo.return_value
         instance.list_for_user = AsyncMock(side_effect=[[], seeded])
         instance.bulk_seed_if_empty = AsyncMock(return_value=None)
@@ -146,9 +143,7 @@ def test_list_tags_seeds_defaults_when_empty(client: TestClient) -> None:
 def test_list_tags_returns_existing(client: TestClient) -> None:
     """`GET /measures/photo-tags` skips seeding when rows already exist."""
     existing = [_tag_row("morning", 0)]
-    with patch(
-        "pulse_server.routers.measures_photo_tags.ProgressPhotoTagRepository"
-    ) as MockRepo:
+    with patch("pulse_server.routers.measures_photo_tags.ProgressPhotoTagRepository") as MockRepo:
         instance = MockRepo.return_value
         instance.list_for_user = AsyncMock(return_value=existing)
         instance.bulk_seed_if_empty = AsyncMock(return_value=None)
@@ -163,9 +158,7 @@ def test_list_tags_returns_existing(client: TestClient) -> None:
 def test_create_tag_returns_201(client: TestClient) -> None:
     """`POST /measures/photo-tags` creates a tag and returns it."""
     created = _tag_row("flexed", 4)
-    with patch(
-        "pulse_server.routers.measures_photo_tags.ProgressPhotoTagRepository"
-    ) as MockRepo:
+    with patch("pulse_server.routers.measures_photo_tags.ProgressPhotoTagRepository") as MockRepo:
         instance = MockRepo.return_value
         instance.list_for_user = AsyncMock(return_value=[])
         instance.create = AsyncMock(return_value=created)
@@ -193,9 +186,7 @@ def test_create_tag_rejects_blank(client: TestClient) -> None:
 def test_update_tag_renames(client: TestClient) -> None:
     """`PATCH /measures/photo-tags/{id}` renames a tag."""
     renamed = {**_tag_row("morning", 0), "name": "morning", "normalized_name": "morning"}
-    with patch(
-        "pulse_server.routers.measures_photo_tags.ProgressPhotoTagRepository"
-    ) as MockRepo:
+    with patch("pulse_server.routers.measures_photo_tags.ProgressPhotoTagRepository") as MockRepo:
         instance = MockRepo.return_value
         instance.update_fields = AsyncMock(return_value=renamed)
         resp = client.patch(
@@ -209,9 +200,7 @@ def test_update_tag_renames(client: TestClient) -> None:
 
 def test_update_tag_404_when_missing(client: TestClient) -> None:
     """`PATCH /measures/photo-tags/{id}` returns 404 when no row matches."""
-    with patch(
-        "pulse_server.routers.measures_photo_tags.ProgressPhotoTagRepository"
-    ) as MockRepo:
+    with patch("pulse_server.routers.measures_photo_tags.ProgressPhotoTagRepository") as MockRepo:
         instance = MockRepo.return_value
         instance.update_fields = AsyncMock(return_value=None)
         resp = client.patch(
@@ -233,12 +222,15 @@ def test_post_photo_returns_metadata(client: TestClient) -> None:
     photo_repo.insert = AsyncMock(return_value=_photo_row(tag_id, "deadbeef"))
     tag_repo = MagicMock()
     tag_repo.get_by_id = AsyncMock(return_value=_tag_row("front", 0))
-    with patch(
-        "pulse_server.routers.measures_photos.ProgressPhotoRepository",
-        return_value=photo_repo,
-    ), patch(
-        "pulse_server.routers.measures_photos.ProgressPhotoTagRepository",
-        return_value=tag_repo,
+    with (
+        patch(
+            "pulse_server.routers.measures_photos.ProgressPhotoRepository",
+            return_value=photo_repo,
+        ),
+        patch(
+            "pulse_server.routers.measures_photos.ProgressPhotoTagRepository",
+            return_value=tag_repo,
+        ),
     ):
         resp = client.post(
             "/measures/photos",
@@ -262,12 +254,15 @@ def test_post_photo_forwards_idempotency_key(client: TestClient) -> None:
     photo_repo.insert = AsyncMock(return_value=_photo_row(tag_id, "sha"))
     tag_repo = MagicMock()
     tag_repo.get_by_id = AsyncMock(return_value=_tag_row("front", 0))
-    with patch(
-        "pulse_server.routers.measures_photos.ProgressPhotoRepository",
-        return_value=photo_repo,
-    ), patch(
-        "pulse_server.routers.measures_photos.ProgressPhotoTagRepository",
-        return_value=tag_repo,
+    with (
+        patch(
+            "pulse_server.routers.measures_photos.ProgressPhotoRepository",
+            return_value=photo_repo,
+        ),
+        patch(
+            "pulse_server.routers.measures_photos.ProgressPhotoTagRepository",
+            return_value=tag_repo,
+        ),
     ):
         resp = client.post(
             "/measures/photos",
@@ -342,9 +337,7 @@ def test_post_photo_rejects_non_image(client: TestClient) -> None:
 def test_get_photo_returns_bytes_with_etag(client: TestClient) -> None:
     """`GET /measures/photos/{id}` returns photo bytes with an ETag header."""
     photo_id = uuid.uuid4()
-    with patch(
-        "pulse_server.routers.measures_photos.ProgressPhotoRepository"
-    ) as MockRepo:
+    with patch("pulse_server.routers.measures_photos.ProgressPhotoRepository") as MockRepo:
         instance = MockRepo.return_value
         instance.get_photo = AsyncMock(
             return_value={
@@ -366,9 +359,7 @@ def test_get_photo_returns_bytes_with_etag(client: TestClient) -> None:
 
 def test_get_photo_returns_404_when_missing(client: TestClient) -> None:
     """`GET /measures/photos/{id}` returns 404 when no photo exists."""
-    with patch(
-        "pulse_server.routers.measures_photos.ProgressPhotoRepository"
-    ) as MockRepo:
+    with patch("pulse_server.routers.measures_photos.ProgressPhotoRepository") as MockRepo:
         MockRepo.return_value.get_photo = AsyncMock(return_value=None)
         resp = client.get(f"/measures/photos/{uuid.uuid4()}", headers=HEADERS)
     assert resp.status_code == 404
@@ -377,9 +368,7 @@ def test_get_photo_returns_404_when_missing(client: TestClient) -> None:
 def test_list_returns_metadata_for_range(client: TestClient) -> None:
     """`GET /measures/photos?from=&to=` returns metadata rows for the range."""
     tag_id = uuid.uuid4()
-    with patch(
-        "pulse_server.routers.measures_photos.ProgressPhotoRepository"
-    ) as MockRepo:
+    with patch("pulse_server.routers.measures_photos.ProgressPhotoRepository") as MockRepo:
         instance = MockRepo.return_value
         instance.list_metadata = AsyncMock(return_value=[_photo_row(tag_id, "a")])
         resp = client.get(
@@ -395,9 +384,7 @@ def test_list_returns_metadata_for_range(client: TestClient) -> None:
 
 def test_delete_returns_204(client: TestClient) -> None:
     """`DELETE /measures/photos/{id}` returns 204 on success."""
-    with patch(
-        "pulse_server.routers.measures_photos.ProgressPhotoRepository"
-    ) as MockRepo:
+    with patch("pulse_server.routers.measures_photos.ProgressPhotoRepository") as MockRepo:
         MockRepo.return_value.delete = AsyncMock(return_value=True)
         resp = client.delete(f"/measures/photos/{uuid.uuid4()}", headers=HEADERS)
     assert resp.status_code == 204
@@ -405,9 +392,7 @@ def test_delete_returns_204(client: TestClient) -> None:
 
 def test_delete_returns_404_when_missing(client: TestClient) -> None:
     """`DELETE /measures/photos/{id}` returns 404 when nothing was removed."""
-    with patch(
-        "pulse_server.routers.measures_photos.ProgressPhotoRepository"
-    ) as MockRepo:
+    with patch("pulse_server.routers.measures_photos.ProgressPhotoRepository") as MockRepo:
         MockRepo.return_value.delete = AsyncMock(return_value=False)
         resp = client.delete(f"/measures/photos/{uuid.uuid4()}", headers=HEADERS)
     assert resp.status_code == 404

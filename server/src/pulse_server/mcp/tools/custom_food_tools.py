@@ -19,7 +19,12 @@ from sqlalchemy.exc import IntegrityError
 
 from pulse_server.db import get_session, transaction
 from pulse_server.mcp.context import ToolContext
-from pulse_server.models import CustomFoodCreate, CustomFoodResponse, CustomFoodUpdate, custom_food_response
+from pulse_server.models import (
+    CustomFoodCreate,
+    CustomFoodResponse,
+    CustomFoodUpdate,
+    custom_food_response,
+)
 from pulse_server.repositories.custom_foods import CustomFoodsRepository
 from pulse_server.services.custom_foods_service import upsert_custom_food_and_remember
 from pulse_server.services.normalize import normalize_name
@@ -70,11 +75,10 @@ def register(mcp: FastMCP, ctx: ToolContext) -> None:
             notes=notes,
         )
         now = DateTimeValue.now(tz=tz)
-        async with get_session() as session:
-            async with transaction(session):
-                row = await upsert_custom_food_and_remember(
-                    session=session, user_key=user_key, payload=payload, now=now
-                )
+        async with get_session() as session, transaction(session):
+            row = await upsert_custom_food_and_remember(
+                session=session, user_key=user_key, payload=payload, now=now
+            )
         return custom_food_response(row)
 
     @mcp.tool
@@ -115,7 +119,9 @@ def register(mcp: FastMCP, ctx: ToolContext) -> None:
             "source": source,
             "notes": notes,
         }
-        payload = CustomFoodUpdate(**{k: v for k, v in provided.items() if v is not None})
+        payload = CustomFoodUpdate.model_validate(
+            {k: v for k, v in provided.items() if v is not None}
+        )
         fields = payload.model_dump(exclude_unset=True)
         if "name" in fields and fields["name"] is not None:
             fields["normalized_name"] = normalize_name(fields["name"])

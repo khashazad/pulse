@@ -18,11 +18,12 @@ def client() -> TestClient:
     **Outputs:**
     - TestClient: Client bound to the app under test.
     """
-    with patch("pulse_server.db.init_pool", new_callable=AsyncMock), patch(
-        "pulse_server.db.bootstrap_schema", new_callable=AsyncMock
-    ), patch("pulse_server.db.close_pool", new_callable=AsyncMock), patch(
-        "pulse_server.usda.USDAClient"
-    ) as mock_usda_client:
+    with (
+        patch("pulse_server.db.init_pool", new_callable=AsyncMock),
+        patch("pulse_server.db.bootstrap_schema", new_callable=AsyncMock),
+        patch("pulse_server.db.close_pool", new_callable=AsyncMock),
+        patch("pulse_server.usda.USDAClient") as mock_usda_client,
+    ):
         mock_usda_client.return_value.close = AsyncMock()
         from pulse_server.app import app
 

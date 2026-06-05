@@ -18,18 +18,6 @@ struct HTTPCore: Sendable {
     let sessionToken: String
     let session: URLSession
 
-    /// Builds the core bound to a backend URL and bearer token.
-    /// Inputs:
-    ///   - baseURL: backend root URL (no trailing path).
-    ///   - sessionToken: bearer token issued after sign-in.
-    ///   - session: `URLSession` to use for all requests.
-    /// Outputs: a configured `HTTPCore`.
-    init(baseURL: URL, sessionToken: String, session: URLSession) {
-        self.baseURL = baseURL
-        self.sessionToken = sessionToken
-        self.session = session
-    }
-
     /// Composes a URL from the base, a path, and optional query items.
     /// Inputs:
     ///   - path: server path, leading slash included.
@@ -111,23 +99,21 @@ struct HTTPCore: Sendable {
         var body = Data()
         let crlf = "\r\n"
         for field in fields {
-            body.append("--\(boundary)\(crlf)".data(using: .utf8)!)
+            body.append(Data("--\(boundary)\(crlf)".utf8))
             body.append(
-                "Content-Disposition: form-data; name=\"\(field.name)\"\(crlf)\(crlf)"
-                    .data(using: .utf8)!
+                Data("Content-Disposition: form-data; name=\"\(field.name)\"\(crlf)\(crlf)".utf8)
             )
-            body.append(field.value.data(using: .utf8)!)
-            body.append(crlf.data(using: .utf8)!)
+            body.append(Data(field.value.utf8))
+            body.append(Data(crlf.utf8))
         }
-        body.append("--\(boundary)\(crlf)".data(using: .utf8)!)
+        body.append(Data("--\(boundary)\(crlf)".utf8))
         body.append(
-            "Content-Disposition: form-data; name=\"\(file.fieldName)\"; filename=\"\(file.filename)\"\(crlf)"
-                .data(using: .utf8)!
+            Data("Content-Disposition: form-data; name=\"\(file.fieldName)\"; filename=\"\(file.filename)\"\(crlf)".utf8)
         )
-        body.append("Content-Type: \(file.mime)\(crlf)\(crlf)".data(using: .utf8)!)
+        body.append(Data("Content-Type: \(file.mime)\(crlf)\(crlf)".utf8))
         body.append(file.data)
-        body.append(crlf.data(using: .utf8)!)
-        body.append("--\(boundary)--\(crlf)".data(using: .utf8)!)
+        body.append(Data(crlf.utf8))
+        body.append(Data("--\(boundary)--\(crlf)".utf8))
         return body
     }
 }

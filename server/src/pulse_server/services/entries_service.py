@@ -13,9 +13,10 @@ saved meal. Composes :class:`EntriesRepository` and :func:`daily_log_id`.
 from __future__ import annotations
 
 import uuid
+from collections.abc import Sequence
 from datetime import date as DateValue
 from datetime import datetime as DateTimeValue
-from typing import Any, Sequence
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -107,9 +108,7 @@ async def _create_entries(
     # Reject references to custom foods the user doesn't own before any insert.
     # The food_entries FK only proves the UUID exists, not that it belongs to
     # this user (see CrossTenantReferenceError).
-    await assert_custom_foods_owned(
-        session, user_key, (item.custom_food_id for item in items)
-    )
+    await assert_custom_foods_owned(session, user_key, (item.custom_food_id for item in items))
 
     entries_repo = EntriesRepository(session)
     created_rows: list[dict[str, Any]] = []

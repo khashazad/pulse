@@ -10,8 +10,8 @@ struct MacroTotalsRow: View {
     var body: some View {
         HStack(spacing: 8) {
             chip(.protein, value: totals.proteinG, target: targets?.proteinG)
-            chip(.carbs,   value: totals.carbsG,   target: targets?.carbsG)
-            chip(.fat,     value: totals.fatG,     target: targets?.fatG)
+            chip(.carbs, value: totals.carbsG, target: targets?.carbsG)
+            chip(.fat, value: totals.fatG, target: targets?.fatG)
         }
     }
 

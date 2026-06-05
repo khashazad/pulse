@@ -10,9 +10,8 @@ Create Date: 2026-05-24T00:00:00Z
 
 from __future__ import annotations
 
-from alembic import op
 import sqlalchemy as sa
-
+from alembic import op
 
 revision = "20260524_000001"
 down_revision = "20260519_000001"
@@ -26,7 +25,12 @@ def upgrade() -> None:
         sa.Column("code_hash", sa.LargeBinary(), nullable=False),
         sa.Column("email", sa.Text(), nullable=False),
         sa.Column("code_challenge", sa.Text(), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
         sa.PrimaryKeyConstraint("code_hash"),
     )

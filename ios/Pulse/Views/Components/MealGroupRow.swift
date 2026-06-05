@@ -45,8 +45,8 @@ struct MealGroupRow: View {
 
                 HStack(spacing: 14) {
                     MacroLineView(macro: .protein, grams: group.totals.proteinG)
-                    MacroLineView(macro: .carbs,   grams: group.totals.carbsG)
-                    MacroLineView(macro: .fat,     grams: group.totals.fatG)
+                    MacroLineView(macro: .carbs, grams: group.totals.carbsG)
+                    MacroLineView(macro: .fat, grams: group.totals.fatG)
                 }
                 .font(.system(size: 11, design: .monospaced))
             }

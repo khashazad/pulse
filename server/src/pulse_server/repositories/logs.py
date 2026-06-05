@@ -31,7 +31,9 @@ class LogsRepository:
         """
         self._session = session
 
-    async def list_logs(self, user_key: str, from_date: DateValue, to_date: DateValue) -> list[dict[str, Any]]:
+    async def list_logs(
+        self, user_key: str, from_date: DateValue, to_date: DateValue
+    ) -> list[dict[str, Any]]:
         """List per-day macro totals and entry counts for a user across a date range.
 
         Outer-joins ``daily_logs`` to ``food_entries`` so days with zero
@@ -50,11 +52,15 @@ class LogsRepository:
         **Exceptions:**
         - sqlalchemy.exc.SQLAlchemyError: Raised when SQL execution fails.
         """
-        join_stmt = daily_logs.outerjoin(food_entries, food_entries.c.daily_log_id == daily_logs.c.id)
+        join_stmt = daily_logs.outerjoin(
+            food_entries, food_entries.c.daily_log_id == daily_logs.c.id
+        )
         stmt = (
             select(
                 daily_logs.c.log_date.label("log_date"),
-                cast(func.coalesce(func.sum(food_entries.c.calories), 0), Integer).label("total_calories"),
+                cast(func.coalesce(func.sum(food_entries.c.calories), 0), Integer).label(
+                    "total_calories"
+                ),
                 func.coalesce(func.sum(food_entries.c.protein_g), 0).label("total_protein_g"),
                 func.coalesce(func.sum(food_entries.c.carbs_g), 0).label("total_carbs_g"),
                 func.coalesce(func.sum(food_entries.c.fat_g), 0).label("total_fat_g"),

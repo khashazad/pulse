@@ -10,9 +10,10 @@ deletes the row in the same statement that reads it.
 from __future__ import annotations
 
 from datetime import datetime as DateTimeValue
-from typing import Any
+from typing import Any, cast
 
 from sqlalchemy import delete, insert
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pulse_server.repositories.tables import auth_exchange_codes
@@ -105,4 +106,4 @@ class AuthExchangeCodesRepository:
         result = await self._session.execute(
             delete(auth_exchange_codes).where(auth_exchange_codes.c.expires_at <= now)
         )
-        return result.rowcount or 0
+        return cast(CursorResult[Any], result).rowcount or 0

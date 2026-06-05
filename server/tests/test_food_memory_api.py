@@ -10,8 +10,8 @@ router module level, so these tests need no database.
 from __future__ import annotations
 
 import uuid
+from datetime import UTC
 from datetime import datetime as DateTimeValue
-from datetime import timezone as TimezoneValue
 from unittest.mock import AsyncMock, patch
 
 from fastapi.testclient import TestClient
@@ -25,7 +25,7 @@ def _now() -> DateTimeValue:
     **Outputs:**
     - datetime: Aware ``datetime`` in UTC.
     """
-    return DateTimeValue.now(tz=TimezoneValue.utc)
+    return DateTimeValue.now(tz=UTC)
 
 
 def _usda_row(name: str = "Greek Yogurt") -> dict:
@@ -164,11 +164,10 @@ def test_remember_food_custom_200(rest_client: TestClient) -> None:
     """`PUT /food-memory/custom` upserts a custom-pointer entry when the custom food exists."""
     cf_id = uuid.uuid4()
     row = _custom_row()
-    with patch(
-        "pulse_server.routers.food_memory.CustomFoodsRepository"
-    ) as MockCustomRepo, patch(
-        "pulse_server.routers.food_memory.FoodMemoryRepository"
-    ) as MockMemoryRepo:
+    with (
+        patch("pulse_server.routers.food_memory.CustomFoodsRepository") as MockCustomRepo,
+        patch("pulse_server.routers.food_memory.FoodMemoryRepository") as MockMemoryRepo,
+    ):
         MockCustomRepo.return_value.get_by_id = AsyncMock(return_value={"id": cf_id})
         MockMemoryRepo.return_value.upsert_custom = AsyncMock(return_value=row)
         resp = rest_client.put(

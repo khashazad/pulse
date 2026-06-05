@@ -80,7 +80,7 @@ final class DayEntriesGroupingTests: XCTestCase {
     func testAllSinglesPassThroughInOrder() {
         let entries = [
             entry(groupId: "11111111-1111-1111-1111-111111111111", name: "A", consumedAt: date(8)),
-            entry(groupId: "22222222-2222-2222-2222-222222222222", name: "B", consumedAt: date(13)),
+            entry(groupId: "22222222-2222-2222-2222-222222222222", name: "B", consumedAt: date(13))
         ]
         let rows = groupDayEntries(entries)
         XCTAssertEqual(rows.count, 2)
@@ -98,7 +98,7 @@ final class DayEntriesGroupingTests: XCTestCase {
         let entries = [
             entry(groupId: g, name: "Oats", kcal: 320, mealId: mealA, mealName: "Breakfast", consumedAt: date(8)),
             entry(groupId: g, name: "Yogurt", kcal: 130, mealId: mealA, mealName: "Breakfast", consumedAt: date(8)),
-            entry(groupId: g, name: "Berries", kcal: 60, mealId: mealA, mealName: "Breakfast", consumedAt: date(8)),
+            entry(groupId: g, name: "Berries", kcal: 60, mealId: mealA, mealName: "Breakfast", consumedAt: date(8))
         ]
         let rows = groupDayEntries(entries)
         XCTAssertEqual(rows.count, 1)
@@ -118,7 +118,7 @@ final class DayEntriesGroupingTests: XCTestCase {
             entry(groupId: g1, name: "Oats", kcal: 320, mealId: mealA, mealName: "Breakfast", consumedAt: date(8)),
             entry(groupId: g1, name: "Yogurt", kcal: 130, mealId: mealA, mealName: "Breakfast", consumedAt: date(8)),
             entry(groupId: g2, name: "Oats", kcal: 320, mealId: mealA, mealName: "Breakfast", consumedAt: date(13)),
-            entry(groupId: g2, name: "Yogurt", kcal: 130, mealId: mealA, mealName: "Breakfast", consumedAt: date(13)),
+            entry(groupId: g2, name: "Yogurt", kcal: 130, mealId: mealA, mealName: "Breakfast", consumedAt: date(13))
         ]
         let rows = groupDayEntries(entries)
         XCTAssertEqual(rows.count, 1)
@@ -138,7 +138,7 @@ final class DayEntriesGroupingTests: XCTestCase {
             entry(groupId: g1, name: "Yogurt v1", mealId: mealA, mealName: "Breakfast", consumedAt: date(8)),
             entry(groupId: g2, name: "Oats v2", mealId: mealA, mealName: "Breakfast", consumedAt: date(13)),
             entry(groupId: g2, name: "Yogurt v2", mealId: mealA, mealName: "Breakfast", consumedAt: date(13)),
-            entry(groupId: g2, name: "Berries v2", mealId: mealA, mealName: "Breakfast", consumedAt: date(13)),
+            entry(groupId: g2, name: "Berries v2", mealId: mealA, mealName: "Breakfast", consumedAt: date(13))
         ]
         let rows = groupDayEntries(entries)
         guard case .meal(let group) = rows[0] else { return XCTFail("expected meal") }
@@ -154,7 +154,7 @@ final class DayEntriesGroupingTests: XCTestCase {
             entry(groupId: g1, name: "Oats", mealId: mealA, mealName: "Old Name", consumedAt: date(8)),
             entry(groupId: g1, name: "Yogurt", mealId: mealA, mealName: "Old Name", consumedAt: date(8)),
             entry(groupId: g2, name: "Oats", mealId: mealA, mealName: "New Name", consumedAt: date(13)),
-            entry(groupId: g2, name: "Yogurt", mealId: mealA, mealName: "New Name", consumedAt: date(13)),
+            entry(groupId: g2, name: "Yogurt", mealId: mealA, mealName: "New Name", consumedAt: date(13))
         ]
         let rows = groupDayEntries(entries)
         XCTAssertEqual(rows.count, 1)
@@ -172,7 +172,7 @@ final class DayEntriesGroupingTests: XCTestCase {
             entry(groupId: g1, name: "Oats", mealId: mealA, mealName: "Real Name", consumedAt: date(8)),
             entry(groupId: g1, name: "Yogurt", mealId: mealA, mealName: "Real Name", consumedAt: date(8)),
             entry(groupId: g2, name: "Oats", mealId: mealA, mealName: nil, consumedAt: date(13)),
-            entry(groupId: g2, name: "Yogurt", mealId: mealA, mealName: nil, consumedAt: date(13)),
+            entry(groupId: g2, name: "Yogurt", mealId: mealA, mealName: nil, consumedAt: date(13))
         ]
         let rows = groupDayEntries(entries)
         XCTAssertEqual(rows.count, 1)
@@ -190,7 +190,7 @@ final class DayEntriesGroupingTests: XCTestCase {
             entry(groupId: g1, name: "X", consumedAt: date(8)),
             entry(groupId: g1, name: "Y", consumedAt: date(8)),
             entry(groupId: g2, name: "X", consumedAt: date(13)),
-            entry(groupId: g2, name: "Y", consumedAt: date(13)),
+            entry(groupId: g2, name: "Y", consumedAt: date(13))
         ]
         let rows = groupDayEntries(entries)
         XCTAssertEqual(rows.count, 2)
@@ -212,7 +212,7 @@ final class DayEntriesGroupingTests: XCTestCase {
             entry(groupId: coffeeGroup, name: "Coffee", consumedAt: date(7)),
             entry(groupId: breakfastGroup, name: "Oats", mealId: mealA, mealName: "Breakfast", consumedAt: date(8)),
             entry(groupId: breakfastGroup, name: "Yogurt", mealId: mealA, mealName: "Breakfast", consumedAt: date(8)),
-            entry(groupId: appleGroup, name: "Apple", consumedAt: date(15)),
+            entry(groupId: appleGroup, name: "Apple", consumedAt: date(15))
         ]
         let rows = groupDayEntries(entries)
         XCTAssertEqual(rows.count, 3)
@@ -234,7 +234,7 @@ final class DayEntriesGroupingTests: XCTestCase {
             entry(groupId: g1, name: "Oats", mealId: mealA, mealName: "Breakfast", consumedAt: date(8)),
             entry(groupId: g1, name: "Yogurt", mealId: mealA, mealName: "Breakfast", consumedAt: date(8)),
             entry(groupId: g2, name: "Rice", mealId: mealB, mealName: "Lunch", consumedAt: date(13)),
-            entry(groupId: g2, name: "Beans", mealId: mealB, mealName: "Lunch", consumedAt: date(13)),
+            entry(groupId: g2, name: "Beans", mealId: mealB, mealName: "Lunch", consumedAt: date(13))
         ]
         let rows = groupDayEntries(entries)
         XCTAssertEqual(rows.count, 2)

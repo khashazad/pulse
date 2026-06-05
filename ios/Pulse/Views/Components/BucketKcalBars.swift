@@ -88,7 +88,7 @@ struct BucketKcalBars: View {
         .init(id: "week-1", label: "W1", avgKcalPerDay: 1980, isCurrent: false),
         .init(id: "week-2", label: "W2", avgKcalPerDay: 2120, isCurrent: false),
         .init(id: "week-3", label: "W3", avgKcalPerDay: 2310, isCurrent: false),
-        .init(id: "week-4", label: "W4", avgKcalPerDay: 1840, isCurrent: true),
+        .init(id: "week-4", label: "W4", avgKcalPerDay: 1840, isCurrent: true)
     ]
     return BucketKcalBars(buckets: buckets, header: "Avg cal / day", targetCalories: 2200)
         .padding()

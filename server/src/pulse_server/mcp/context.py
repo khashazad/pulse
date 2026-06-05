@@ -10,10 +10,11 @@ tool-agnostic utilities the food/meal/summary tools share.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date as DateValue
 from datetime import datetime as DateTimeValue
-from typing import Any, Callable
+from typing import Any
 from zoneinfo import ZoneInfo
 
 from fastmcp.exceptions import ToolError
@@ -87,9 +88,7 @@ def parse_consumed_at(value: str | None, tz: ZoneInfo) -> DateTimeValue | None:
     try:
         parsed = DateTimeValue.fromisoformat(value)
     except ValueError as exc:
-        raise ToolError(
-            f"Invalid consumed_at '{value}', expected YYYY-MM-DD or ISO-8601"
-        ) from exc
+        raise ToolError(f"Invalid consumed_at '{value}', expected YYYY-MM-DD or ISO-8601") from exc
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=tz)
     return parsed

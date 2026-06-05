@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import logging
 import secrets
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from urllib.parse import quote
 
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Request
@@ -33,7 +33,6 @@ from pulse_server.config import get_settings
 from pulse_server.db import get_session
 from pulse_server.repositories.auth_exchange_codes import AuthExchangeCodesRepository
 from pulse_server.repositories.sessions import SessionsRepository
-
 
 logger = logging.getLogger(__name__)
 
@@ -211,7 +210,7 @@ async def google_callback(
         return _app_redirect(error="not_allowed")
 
     exchange_code = generate_token(num_bytes=settings.session_token_bytes)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     expires_at = now + timedelta(seconds=EXCHANGE_CODE_TTL_SECONDS)
 
     async with get_session() as db_session:
@@ -232,7 +231,7 @@ class ExchangeRequest(BaseModel):
     """Request body for ``POST /auth/google/exchange``.
 
     Field bounds reject obviously-malformed unauthenticated input at the edge
-    (422) and cap payload size; an RFC 7636 ``code_verifier`` is 43–128 chars.
+    (422) and cap payload size; an RFC 7636 ``code_verifier`` is 43-128 chars.
     """
 
     code: str = Field(min_length=1, max_length=512)
@@ -267,7 +266,7 @@ async def google_exchange(body: ExchangeRequest) -> ExchangeResponse:
       PKCE verifier does not match.
     """
     settings = get_settings()
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     token = generate_token(num_bytes=settings.session_token_bytes)
     session_expires_at = now + timedelta(days=settings.session_ttl_days)
@@ -295,9 +294,7 @@ async def google_exchange(body: ExchangeRequest) -> ExchangeResponse:
     if authenticated_email is None:
         raise HTTPException(status_code=400, detail="invalid_or_expired_code")
 
-    return ExchangeResponse(
-        token=token, email=authenticated_email, expires_at=session_expires_at
-    )
+    return ExchangeResponse(token=token, email=authenticated_email, expires_at=session_expires_at)
 
 
 class WhoamiResponse(BaseModel):

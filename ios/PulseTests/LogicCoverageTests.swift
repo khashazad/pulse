@@ -46,7 +46,7 @@ final class PeriodIntakeBucketTests: XCTestCase {
         let logs = [
             log(cal.date(from: DateComponents(year: 2026, month: 5, day: 18))!, kcal: 2000, entries: 2),
             log(cal.date(from: DateComponents(year: 2026, month: 5, day: 19))!, kcal: 0, entries: 0),
-            log(cal.date(from: DateComponents(year: 2026, month: 5, day: 6))!, kcal: 1000, entries: 1),
+            log(cal.date(from: DateComponents(year: 2026, month: 5, day: 6))!, kcal: 1000, entries: 1)
         ]
         let buckets = PeriodIntakeModel.weeklyBuckets(logs, today: today, calendar: cal)
         XCTAssertEqual(buckets.count, 2, "two distinct week-start groups expected")
@@ -74,7 +74,7 @@ final class PeriodIntakeBucketTests: XCTestCase {
             log(cal.date(from: DateComponents(year: 2026, month: 5, day: 1))!, kcal: 2000, entries: 1),
             log(cal.date(from: DateComponents(year: 2026, month: 5, day: 2))!, kcal: 1000, entries: 1),
             log(cal.date(from: DateComponents(year: 2026, month: 5, day: 3))!, kcal: 9999, entries: 0),
-            log(cal.date(from: DateComponents(year: 2026, month: 3, day: 15))!, kcal: 1500, entries: 1),
+            log(cal.date(from: DateComponents(year: 2026, month: 3, day: 15))!, kcal: 1500, entries: 1)
         ]
         let buckets = PeriodIntakeModel.monthlyBuckets(logs, today: today, calendar: cal)
         XCTAssertEqual(buckets.count, 2)

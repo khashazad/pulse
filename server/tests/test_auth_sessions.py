@@ -9,8 +9,6 @@ from __future__ import annotations
 
 import hashlib
 
-import pytest
-
 from pulse_server.auth.sessions import (
     email_to_user_key,
     generate_token,

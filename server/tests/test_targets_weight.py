@@ -8,9 +8,9 @@ middleware mocked.
 from __future__ import annotations
 
 import os
+from datetime import UTC
 from datetime import datetime as DateTimeValue
 from datetime import timedelta as TimeDeltaValue
-from datetime import timezone as TimezoneValue
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -26,7 +26,7 @@ def _now() -> DateTimeValue:
     **Outputs:**
     - datetime: Aware ``datetime`` in UTC.
     """
-    return DateTimeValue.now(tz=TimezoneValue.utc)
+    return DateTimeValue.now(tz=UTC)
 
 
 @pytest.fixture
@@ -46,14 +46,13 @@ def client() -> TestClient:
     db_ctx.__aenter__.return_value = fake_db_session
     db_ctx.__aexit__.return_value = None
 
-    with patch("pulse_server.db.init_pool", new_callable=AsyncMock), patch(
-        "pulse_server.db.bootstrap_schema", new_callable=AsyncMock
-    ), patch("pulse_server.db.close_pool", new_callable=AsyncMock), patch(
-        "pulse_server.usda.USDAClient"
-    ) as mock_usda_client, patch(
-        "pulse_server.auth.middleware.get_session", return_value=db_ctx
-    ), patch(
-        "pulse_server.auth.middleware.SessionsRepository", return_value=session_repo
+    with (
+        patch("pulse_server.db.init_pool", new_callable=AsyncMock),
+        patch("pulse_server.db.bootstrap_schema", new_callable=AsyncMock),
+        patch("pulse_server.db.close_pool", new_callable=AsyncMock),
+        patch("pulse_server.usda.USDAClient") as mock_usda_client,
+        patch("pulse_server.auth.middleware.get_session", return_value=db_ctx),
+        patch("pulse_server.auth.middleware.SessionsRepository", return_value=session_repo),
     ):
         mock_usda_client.return_value.close = AsyncMock()
         from pulse_server.app import app
@@ -80,9 +79,7 @@ HEADERS = {"Authorization": "Bearer tok"}
 
 def test_get_targets_includes_target_weight(client: TestClient) -> None:
     """`GET /targets` exposes `target_weight_lb` in the response payload."""
-    with patch(
-        "pulse_server.routers.targets.TargetsRepository"
-    ) as MockRepo:
+    with patch("pulse_server.routers.targets.TargetsRepository") as MockRepo:
         instance = MockRepo.return_value
         instance.get_target_profile = AsyncMock(
             return_value={
@@ -100,9 +97,7 @@ def test_get_targets_includes_target_weight(client: TestClient) -> None:
 
 def test_get_targets_null_target_weight(client: TestClient) -> None:
     """`GET /targets` returns `target_weight_lb=null` when unset in the DB."""
-    with patch(
-        "pulse_server.routers.targets.TargetsRepository"
-    ) as MockRepo:
+    with patch("pulse_server.routers.targets.TargetsRepository") as MockRepo:
         instance = MockRepo.return_value
         instance.get_target_profile = AsyncMock(
             return_value={
@@ -120,9 +115,7 @@ def test_get_targets_null_target_weight(client: TestClient) -> None:
 
 def test_put_targets_writes_target_weight(client: TestClient) -> None:
     """`PUT /targets` forwards `target_weight_lb` to the repository upsert."""
-    with patch(
-        "pulse_server.routers.targets.TargetsRepository"
-    ) as MockRepo:
+    with patch("pulse_server.routers.targets.TargetsRepository") as MockRepo:
         instance = MockRepo.return_value
         instance.upsert_targets = AsyncMock(return_value=None)
         resp = client.put(

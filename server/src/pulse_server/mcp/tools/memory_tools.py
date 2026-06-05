@@ -61,36 +61,35 @@ def register(mcp: FastMCP, ctx: ToolContext) -> None:
         cleaned_aliases: list[str] | None = None
         if aliases is not None:
             cleaned_aliases = normalize_alias_list(aliases, canonical_normalized_name=normalized)
-        async with get_session() as session:
-            async with transaction(session):
-                if cleaned_aliases:
-                    for a in cleaned_aliases:
-                        try:
-                            await assert_food_alias_available(
-                                session=session,
-                                user_key=user_key,
-                                alias=a,
-                                exclude_normalized_name=normalized,
-                            )
-                        except ValueError as exc:
-                            raise ToolError(str(exc)) from exc
-                repo = FoodMemoryRepository(session)
-                row = await repo.upsert_usda(
-                    user_key=user_key,
-                    name=name,
-                    normalized_name=normalized,
-                    usda_fdc_id=fdc_id,
-                    usda_description=usda_description,
-                    basis=basis,
-                    serving_size=serving_size,
-                    serving_size_unit=serving_size_unit,
-                    calories=calories,
-                    protein_g=protein_g,
-                    carbs_g=carbs_g,
-                    fat_g=fat_g,
-                    now=now,
-                    aliases=cleaned_aliases,
-                )
+        async with get_session() as session, transaction(session):
+            if cleaned_aliases:
+                for a in cleaned_aliases:
+                    try:
+                        await assert_food_alias_available(
+                            session=session,
+                            user_key=user_key,
+                            alias=a,
+                            exclude_normalized_name=normalized,
+                        )
+                    except ValueError as exc:
+                        raise ToolError(str(exc)) from exc
+            repo = FoodMemoryRepository(session)
+            row = await repo.upsert_usda(
+                user_key=user_key,
+                name=name,
+                normalized_name=normalized,
+                usda_fdc_id=fdc_id,
+                usda_description=usda_description,
+                basis=basis,
+                serving_size=serving_size,
+                serving_size_unit=serving_size_unit,
+                calories=calories,
+                protein_g=protein_g,
+                carbs_g=carbs_g,
+                fat_g=fat_g,
+                now=now,
+                aliases=cleaned_aliases,
+            )
         return food_memory_entry(row)
 
     @mcp.tool

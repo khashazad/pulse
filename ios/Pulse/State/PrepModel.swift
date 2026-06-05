@@ -53,7 +53,7 @@ final class PrepModel {
     var targets: [TargetEntry] = []
     var weighIns: [WeighIn] = []
     /// When nil, `portions` follows `containerCount`; once set, the two decouple.
-    var portionsOverride: Int? = nil
+    var portionsOverride: Int?
 
     /// UserDefaults-backed persistence for the calculator state. Owned by the model
     /// so `PrepView` stays a renderer and delegates load/save/reconcile here.

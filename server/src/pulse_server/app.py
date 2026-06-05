@@ -22,23 +22,35 @@ from pulse_server import db
 from pulse_server.auth import SessionAuthMiddleware
 from pulse_server.config import get_settings
 from pulse_server.mcp import build_mcp
-
+from pulse_server.routers import auth as auth_router
 from pulse_server.routers import (
     containers as containers_router,
+)
+from pulse_server.routers import (
     custom_foods as custom_foods_router,
+)
+from pulse_server.routers import (
     entries,
-    food_memory as food_memory_router,
     logs,
-    meals as meals_router,
-    measures_photos as measures_photos_router,
-    measures_photo_tags as measures_photo_tags_router,
     summary,
     targets,
-    weight as weight_router,
+)
+from pulse_server.routers import (
+    food_memory as food_memory_router,
+)
+from pulse_server.routers import (
+    meals as meals_router,
+)
+from pulse_server.routers import (
+    measures_photo_tags as measures_photo_tags_router,
+)
+from pulse_server.routers import (
+    measures_photos as measures_photos_router,
 )
 from pulse_server.routers import usda as usda_router
-
-from pulse_server.routers import auth as auth_router
+from pulse_server.routers import (
+    weight as weight_router,
+)
 from pulse_server.usda import USDAClient
 from pulse_server.usda_provider import get_usda_client, set_usda_client
 

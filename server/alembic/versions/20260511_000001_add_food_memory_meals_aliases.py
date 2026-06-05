@@ -7,10 +7,9 @@ Create Date: 2026-05-11T00:00:00Z
 
 from __future__ import annotations
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy.dialects import postgresql
-
 
 revision = "20260511_000001"
 down_revision = "20260510_000001"
@@ -108,14 +107,18 @@ def upgrade() -> None:
         "not (normalized_name = ANY(aliases))",
     )
 
-    op.execute(_TRIGGER_FN_TMPL.format(
-        fn_name="check_food_memory_alias_uniqueness",
-        table="food_memory",
-    ))
-    op.execute(_TRIGGER_FN_TMPL.format(
-        fn_name="check_meals_alias_uniqueness",
-        table="meals",
-    ))
+    op.execute(
+        _TRIGGER_FN_TMPL.format(
+            fn_name="check_food_memory_alias_uniqueness",
+            table="food_memory",
+        )
+    )
+    op.execute(
+        _TRIGGER_FN_TMPL.format(
+            fn_name="check_meals_alias_uniqueness",
+            table="meals",
+        )
+    )
 
     op.execute(
         "create trigger food_memory_alias_uniqueness "

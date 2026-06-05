@@ -12,9 +12,9 @@ import pytest
 from PIL import Image
 
 from pulse_server.services.image_processing import (
-    ImageProcessingError,
     MAX_FULL_PX,
     MAX_THUMB_PX,
+    ImageProcessingError,
     process_photo,
 )
 

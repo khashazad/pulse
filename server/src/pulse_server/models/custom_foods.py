@@ -59,7 +59,7 @@ class CustomFoodUpdate(BaseModel):
     notes: str | None = None
 
     @model_validator(mode="after")
-    def _reject_explicit_nulls(self) -> "CustomFoodUpdate":
+    def _reject_explicit_nulls(self) -> CustomFoodUpdate:
         """Reject an explicit ``null`` for any NOT NULL column.
 
         Distinguishes "omitted" (absent from the request → no-op) from

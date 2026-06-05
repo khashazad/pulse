@@ -13,12 +13,12 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from pulse_server.models import ResolvedFood
+from pulse_server.models import CustomFoodResponse, ResolvedFood
+from pulse_server.models.adapters import custom_food_response
 from pulse_server.repositories.food_memory import FoodMemoryRepository
 from pulse_server.repositories.tables import food_memory
 from pulse_server.services.alias_utils import assert_alias_available
-from pulse_server.services.normalize import normalize_name
-from pulse_server.services.normalize import optional_float
+from pulse_server.services.normalize import normalize_name, optional_float
 
 
 async def resolve_food_by_name(
@@ -80,34 +80,36 @@ async def resolve_food_by_name(
     )
 
 
-def _custom_food_from_row(row: dict[str, Any]) -> dict[str, Any]:
-    """Project the joined ``cf_*`` columns of a memory row back into a custom-food dict.
+def _custom_food_from_row(row: dict[str, Any]) -> CustomFoodResponse:
+    """Project the joined ``cf_*`` columns of a memory row into the custom-food DTO.
 
     **Inputs:**
     - row (dict[str, Any]): Joined memory+custom-food row keyed by the
       ``cf_<column>`` aliases used in the join.
 
     **Outputs:**
-    - dict[str, Any]: Custom-food fields shaped like the bare custom_foods
-      row (``id``, ``user_key``, ``name``, ``basis``, macros, timestamps).
+    - CustomFoodResponse: Wire DTO built from the projected ``cf_*`` columns
+      via the shared :func:`custom_food_response` adapter.
     """
-    return {
-        "id": row["cf_id"],
-        "user_key": row["cf_user_key"],
-        "name": row["cf_name"],
-        "normalized_name": row["cf_normalized_name"],
-        "basis": row["cf_basis"],
-        "serving_size": optional_float(row["cf_serving_size"]),
-        "serving_size_unit": row["cf_serving_size_unit"],
-        "calories": int(row["cf_calories"]),
-        "protein_g": float(row["cf_protein_g"]),
-        "carbs_g": float(row["cf_carbs_g"]),
-        "fat_g": float(row["cf_fat_g"]),
-        "source": row["cf_source"],
-        "notes": row["cf_notes"],
-        "created_at": row["cf_created_at"],
-        "updated_at": row["cf_updated_at"],
-    }
+    return custom_food_response(
+        {
+            "id": row["cf_id"],
+            "user_key": row["cf_user_key"],
+            "name": row["cf_name"],
+            "normalized_name": row["cf_normalized_name"],
+            "basis": row["cf_basis"],
+            "serving_size": optional_float(row["cf_serving_size"]),
+            "serving_size_unit": row["cf_serving_size_unit"],
+            "calories": int(row["cf_calories"]),
+            "protein_g": float(row["cf_protein_g"]),
+            "carbs_g": float(row["cf_carbs_g"]),
+            "fat_g": float(row["cf_fat_g"]),
+            "source": row["cf_source"],
+            "notes": row["cf_notes"],
+            "created_at": row["cf_created_at"],
+            "updated_at": row["cf_updated_at"],
+        }
+    )
 
 
 async def assert_food_alias_available(

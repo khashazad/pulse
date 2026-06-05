@@ -99,21 +99,17 @@ class MealsRepository:
         **Outputs:**
         - dict[str, Any]: The inserted meal row.
         """
-        values: dict[str, Any] = dict(
-            user_key=user_key,
-            name=name,
-            normalized_name=normalized_name,
-            notes=notes,
-            created_at=now,
-            updated_at=now,
-        )
+        values: dict[str, Any] = {
+            "user_key": user_key,
+            "name": name,
+            "normalized_name": normalized_name,
+            "notes": notes,
+            "created_at": now,
+            "updated_at": now,
+        }
         if aliases is not None:
             values["aliases"] = aliases
-        stmt = (
-            pg_insert(meals)
-            .values(**values)
-            .returning(*_meal_columns())
-        )
+        stmt = pg_insert(meals).values(**values).returning(*_meal_columns())
         result = await self._session.execute(stmt)
         return dict(result.mappings().one())
 
@@ -188,7 +184,9 @@ class MealsRepository:
         **Outputs:**
         - int: ``max(position)+1``, or ``0`` when the meal has no items yet.
         """
-        stmt = select(func.coalesce(func.max(meal_items.c.position), -1) + 1).where(meal_items.c.meal_id == meal_id)
+        stmt = select(func.coalesce(func.max(meal_items.c.position), -1) + 1).where(
+            meal_items.c.meal_id == meal_id
+        )
         result = await self._session.execute(stmt)
         return int(result.scalar_one())
 
@@ -256,14 +254,18 @@ class MealsRepository:
                 meals.c.notes,
                 meals.c.aliases,
                 func.count(meal_items.c.id).label("item_count"),
-                cast(func.coalesce(func.sum(meal_items.c.calories), 0), Integer).label("total_calories"),
+                cast(func.coalesce(func.sum(meal_items.c.calories), 0), Integer).label(
+                    "total_calories"
+                ),
                 func.coalesce(func.sum(meal_items.c.protein_g), 0).label("total_protein_g"),
                 func.coalesce(func.sum(meal_items.c.carbs_g), 0).label("total_carbs_g"),
                 func.coalesce(func.sum(meal_items.c.fat_g), 0).label("total_fat_g"),
             )
             .select_from(meals.outerjoin(meal_items, meal_items.c.meal_id == meals.c.id))
             .where(meals.c.user_key == user_key)
-            .group_by(meals.c.id, meals.c.name, meals.c.normalized_name, meals.c.notes, meals.c.aliases)
+            .group_by(
+                meals.c.id, meals.c.name, meals.c.normalized_name, meals.c.notes, meals.c.aliases
+            )
             .order_by(meals.c.normalized_name)
         )
         result = await self._session.execute(stmt)
@@ -340,12 +342,12 @@ class MealsRepository:
         - dict[str, Any] | None: Updated meal-item row, or ``None`` when not found.
         """
         if not fields:
-            stmt = (
+            select_stmt = (
                 select(*_meal_item_columns())
                 .where(meal_items.c.id == meal_item_id)
                 .where(meal_items.c.meal_id == meal_id)
             )
-            result = await self._session.execute(stmt)
+            result = await self._session.execute(select_stmt)
             row = result.mappings().first()
             return dict(row) if row else None
         stmt = (

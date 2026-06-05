@@ -8,8 +8,6 @@ Create Date: 2026-05-13T00:00:00Z
 from __future__ import annotations
 
 from alembic import op
-import sqlalchemy as sa
-
 
 revision = "20260513_000001"
 down_revision = "20260511_000001"
@@ -37,8 +35,7 @@ def upgrade() -> None:
         "on weight_entries(user_key, log_date)"
     )
     op.execute(
-        "alter table daily_target_profile "
-        "add column if not exists target_weight_lb numeric(6,2)"
+        "alter table daily_target_profile add column if not exists target_weight_lb numeric(6,2)"
     )
 
 

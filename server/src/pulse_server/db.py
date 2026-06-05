@@ -13,13 +13,18 @@ no other module is permitted to construct engines or session factories.
 from __future__ import annotations
 
 import socket
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import AsyncIterator
 from urllib.parse import urlparse, urlunparse
 
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 
 _engine: AsyncEngine | None = None
 _session_factory: async_sessionmaker[AsyncSession] | None = None
@@ -181,7 +186,8 @@ async def bootstrap_schema() -> None:
     if _engine is None:
         raise RuntimeError("Database pool not initialized")
 
-    schema_path = Path(__file__).resolve().parents[2] / "schema.sql"
+    # One-shot blocking read during startup/bootstrap only — not on a request path.
+    schema_path = Path(__file__).resolve().parents[2] / "schema.sql"  # noqa: ASYNC240
     sql_script = schema_path.read_text()
     statements = _split_sql_statements(sql_script)
     async with _engine.begin() as conn:

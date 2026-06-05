@@ -31,7 +31,8 @@ async def daily_summary(
     summary_date: DateValue,
     session: AsyncSession = Depends(get_session_dependency),
 ) -> DailySummaryResponse:
-    """Return a daily diet summary combining targets, consumed totals, remaining budget, and entries.
+    """Return a daily diet summary combining targets, consumed totals, remaining
+    budget, and entries.
 
     **Inputs:**
     - request (Request): Active request providing ``user_key``.

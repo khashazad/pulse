@@ -141,12 +141,17 @@ extension PulseClient {
     ///   - size: requested image size variant.
     /// Outputs: the prepared `URLRequest` with bearer auth attached.
     nonisolated func containerPhotoRequest(id: UUID, size: ContainerPhotoSize) -> URLRequest {
-        var comps = URLComponents(
-            url: http.baseURL.appendingPathComponent("/containers/\(id.uuidString.lowercased())/photo"),
-            resolvingAgainstBaseURL: false
-        )!
+        let photoURL = http.baseURL.appendingPathComponent("/containers/\(id.uuidString.lowercased())/photo")
+        guard
+            var comps = URLComponents(url: photoURL, resolvingAgainstBaseURL: false)
+        else {
+            preconditionFailure("containerPhotoRequest: malformed photo URL \(photoURL)")
+        }
         comps.queryItems = [URLQueryItem(name: "size", value: size.rawValue)]
-        var req = URLRequest(url: comps.url!)
+        guard let url = comps.url else {
+            preconditionFailure("containerPhotoRequest: components produced no URL")
+        }
+        var req = URLRequest(url: url)
         req.setValue("Bearer \(http.sessionToken)", forHTTPHeaderField: "Authorization")
         return req
     }

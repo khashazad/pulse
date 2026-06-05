@@ -10,8 +10,9 @@ boundary.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from datetime import datetime as DateTimeValue
-from typing import Any, Iterable
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession

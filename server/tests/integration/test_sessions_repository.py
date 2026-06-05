@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 import sqlalchemy as sa
@@ -55,9 +55,11 @@ async def test_create_and_lookup(session):
     from pulse_server.repositories.sessions import SessionsRepository
 
     repo = SessionsRepository(session)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     expires = now + timedelta(days=7)
-    await repo.create(token_hash=_hash("tok"), email="user@example.com", now=now, expires_at=expires)
+    await repo.create(
+        token_hash=_hash("tok"), email="user@example.com", now=now, expires_at=expires
+    )
     await session.commit()
 
     row = await repo.get(_hash("tok"))
@@ -71,9 +73,11 @@ async def test_slide_extends_expiry(session):
     from pulse_server.repositories.sessions import SessionsRepository
 
     repo = SessionsRepository(session)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     h = _hash("tok2")
-    await repo.create(token_hash=h, email="u@example.com", now=now, expires_at=now + timedelta(days=1))
+    await repo.create(
+        token_hash=h, email="u@example.com", now=now, expires_at=now + timedelta(days=1)
+    )
     await session.commit()
 
     new_now = now + timedelta(hours=1)
@@ -92,9 +96,11 @@ async def test_delete_returns_count(session):
     from pulse_server.repositories.sessions import SessionsRepository
 
     repo = SessionsRepository(session)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     h = _hash("tok3")
-    await repo.create(token_hash=h, email="u@example.com", now=now, expires_at=now + timedelta(days=1))
+    await repo.create(
+        token_hash=h, email="u@example.com", now=now, expires_at=now + timedelta(days=1)
+    )
     await session.commit()
 
     count = await repo.delete(h)

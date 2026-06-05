@@ -12,9 +12,10 @@ in the codebase allowed to issue ``sessions`` SQL.
 from __future__ import annotations
 
 from datetime import datetime as DateTimeValue
-from typing import Any
+from typing import Any, cast
 
 from sqlalchemy import delete, insert, select, update
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pulse_server.repositories.tables import sessions
@@ -104,7 +105,7 @@ class SessionsRepository:
             .where(sessions.c.token_hash == token_hash)
             .values(last_used_at=now, expires_at=new_expires_at)
         )
-        return result.rowcount or 0
+        return cast(CursorResult[Any], result).rowcount or 0
 
     async def delete(self, token_hash: bytes) -> int:
         """Delete the session row matching the given token hash.
@@ -121,4 +122,4 @@ class SessionsRepository:
         result = await self._session.execute(
             delete(sessions).where(sessions.c.token_hash == token_hash)
         )
-        return result.rowcount or 0
+        return cast(CursorResult[Any], result).rowcount or 0

@@ -7,10 +7,9 @@ Create Date: 2026-05-08T00:00:00Z
 
 from __future__ import annotations
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy.dialects import postgresql
-
 
 revision = "20260508_000001"
 down_revision = "20260506_000001"
@@ -35,8 +34,18 @@ def upgrade() -> None:
         sa.Column("photo", sa.LargeBinary(), nullable=True),
         sa.Column("photo_thumb", sa.LargeBinary(), nullable=True),
         sa.Column("photo_mime", sa.Text(), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
         sa.CheckConstraint("tare_weight_g > 0", name="containers_tare_weight_g_check"),
     )
     op.create_index(

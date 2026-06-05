@@ -11,8 +11,8 @@ name constraint, and the rule that list rows must NOT include the ``photo`` or
 from __future__ import annotations
 
 import os
+from datetime import UTC
 from datetime import datetime as DateTimeValue
-from datetime import timezone as TimezoneValue
 
 import pytest
 import pytest_asyncio
@@ -71,7 +71,7 @@ def _now() -> DateTimeValue:
     **Outputs:**
     - datetime: timezone-aware UTC ``datetime``.
     """
-    return DateTimeValue.now(tz=TimezoneValue.utc)
+    return DateTimeValue.now(tz=UTC)
 
 
 @pytest.mark.asyncio
@@ -202,7 +202,9 @@ async def test_set_then_get_photo_round_trip(session: AsyncSession) -> None:
     repo = ContainersRepository(session)
     async with transaction(session):
         row = await repo.create("khash", "RT", "rt", 50.0, _now())
-        await repo.set_photo(row["id"], "khash", b"\x89PNG-FULL", b"\x89PNG-THUMB", "image/jpeg", _now())
+        await repo.set_photo(
+            row["id"], "khash", b"\x89PNG-FULL", b"\x89PNG-THUMB", "image/jpeg", _now()
+        )
     full = await repo.get_photo(row["id"], "khash", thumb=False)
     thumb = await repo.get_photo(row["id"], "khash", thumb=True)
     assert full == (b"\x89PNG-FULL", "image/jpeg")

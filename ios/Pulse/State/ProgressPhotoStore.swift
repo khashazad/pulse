@@ -126,8 +126,7 @@ final class ProgressPhotoStore {
         photos[day]?.removeAll { $0.id == meta.id }
         if photos[day]?.isEmpty == true { photos[day] = nil }
         guard let client = auth?.makeProgressPhotoClient() else { return }
-        do { try await client.delete(photoId: meta.id) }
-        catch { lastError = error.localizedDescription }
+        do { try await client.delete(photoId: meta.id) } catch { lastError = error.localizedDescription }
     }
 
     // MARK: sync
