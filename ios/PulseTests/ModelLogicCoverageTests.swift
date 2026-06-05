@@ -82,18 +82,21 @@ final class ModelLogicCoverageTests: XCTestCase {
 
     /// Verifies `save` PUTs the given targets once — with all five snake_case
     /// fields in the body — and publishes the server-echoed value on success.
+    /// The stub echoes calories=1801 to prove the cache holds the echo.
     func test_save_putsAllFieldsAndUpdatesCache() async throws {
         let auth = signedInAuth { req in
             XCTAssertEqual(req.httpMethod, "PUT")
             XCTAssertEqual(req.url?.path, "/targets")
-            let body = #"{"calories":1800,"protein_g":160,"carbs_g":150,"fat_g":55,"target_weight_lb":168}"#
+            let body = #"{"calories":1801,"protein_g":160,"carbs_g":150,"fat_g":55,"target_weight_lb":168}"#
             return (self.http(req, 200), body.data(using: .utf8)!)
         }
         let store = UserTargetsStore()
         let targets = MacroTargets(calories: 1800, proteinG: 160, carbsG: 150,
                                    fatG: 55, targetWeightLb: 168)
         try await store.save(targets, client: auth.makeClient()!)
-        XCTAssertEqual(store.targets, targets)
+        XCTAssertEqual(store.targets?.calories, 1801,
+                       "cache must hold the server-echoed value, not the input")
+        XCTAssertEqual(store.targets?.proteinG, 160)
 
         let sent = try JSONSerialization.jsonObject(
             with: activeStubs.last?.lastRequestBody ?? Data()) as? [String: Any]
