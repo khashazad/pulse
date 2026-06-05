@@ -22,6 +22,12 @@ COPY alembic/ ./alembic/
 
 RUN uv sync --frozen --no-dev
 
+# The app runs entirely from the uv-managed venv; the base image's bundled
+# pip/setuptools/wheel are unused at runtime. Removing them drops their CVE
+# surface and the ability to install packages in a compromised container.
+# (/usr/local/bin/python is the system interpreter; plain `python` would hit the venv.)
+RUN /usr/local/bin/python -m pip uninstall -y pip setuptools wheel
+
 # Run as an unprivileged user. The app writes nothing to disk (photos live in
 # Postgres), so the runtime user only needs read access to /app.
 RUN groupadd --system --gid 10001 app \
