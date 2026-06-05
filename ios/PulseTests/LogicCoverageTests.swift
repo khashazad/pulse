@@ -1,7 +1,7 @@
 // PulseTests/LogicCoverageTests.swift
 /// Pure-logic unit tests for under-covered non-view code: PeriodIntakeModel
 /// bucketing, WeightTrendsModel regression math, DateOnly encode/decode/fallback,
-/// UserTargetsStore.saveTargetWeight, Meal/MealSummary totals, PulseError
+/// Meal/MealSummary totals, PulseError
 /// userMessage mapping, and CameraCaptureView's coordinator delegate. These are
 /// deterministic and need no run-loop pump; network-dependent paths use the
 /// shared `StubURLProtocol` with a dedicated test keychain slot.

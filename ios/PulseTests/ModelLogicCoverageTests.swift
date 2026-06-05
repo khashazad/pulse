@@ -1,6 +1,6 @@
 // PulseTests/ModelLogicCoverageTests.swift
 /// Integration-style logic tests for view-model branches the success/failure
-/// suites don't reach: UserTargetsStore.saveTargetWeight, MealDetailModel log
+/// suites don't reach: UserTargetsStore.save, MealDetailModel log
 /// success + stale-data retention, WeightLogModel.todayEntry and the
 /// upsert-from-empty path, and AuthSession's exchange transport/server error
 /// branches. All use a scoped `StubURLProtocol` session and a dedicated test
@@ -45,38 +45,6 @@ final class ModelLogicCoverageTests: XCTestCase {
     }
 
     private let targetsJSON = #"{"calories":2000,"protein_g":150,"carbs_g":200,"fat_g":60,"target_weight_lb":175}"#
-
-    // MARK: - UserTargetsStore.saveTargetWeight
-
-    /// Verifies `saveTargetWeight` fetches current targets, PUTs an updated copy
-    /// swapping in the new weight, and publishes the merged value on success.
-    func test_saveTargetWeight_fetchesPutsAndUpdatesCache() async {
-        let auth = signedInAuth { req in
-            // Both GET (fetch) and PUT (upsert) hit /targets; echo back the body
-            // for PUT so the persisted value reflects the new weight.
-            if req.httpMethod == "PUT" {
-                let body = #"{"calories":2000,"protein_g":150,"carbs_g":200,"fat_g":60,"target_weight_lb":190.5}"#
-                return (self.http(req, 200), body.data(using: .utf8)!)
-            }
-            return (self.http(req, 200), self.targetsJSON.data(using: .utf8)!)
-        }
-        let store = UserTargetsStore()
-        let client = auth.makeClient()!
-        await store.saveTargetWeight(lb: 190.5, client: client)
-        XCTAssertEqual(store.targets?.targetWeightLb, 190.5)
-        XCTAssertEqual(store.targets?.calories, 2000, "non-weight fields are carried over from the fetched targets")
-    }
-
-    /// Verifies a server failure during `saveTargetWeight` is swallowed (no crash,
-    /// cache left untouched) so the caller can retry.
-    func test_saveTargetWeight_serverFailureIsSwallowed() async {
-        let auth = signedInAuth { req in (self.http(req, 500), Data()) }
-        let store = UserTargetsStore()
-        store.update(MacroTargets(calories: 1, proteinG: 1, carbsG: 1, fatG: 1, targetWeightLb: 100))
-        await store.saveTargetWeight(lb: 200, client: auth.makeClient()!)
-        // Unchanged: the prior cached value survives the failed save.
-        XCTAssertEqual(store.targets?.targetWeightLb, 100)
-    }
 
     // MARK: - UserTargetsStore.save
 

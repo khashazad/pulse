@@ -46,27 +46,4 @@ final class UserTargetsStore {
         return persisted
     }
 
-    /// Persists a new target weight by fetching the current macro targets and
-    /// PUTting an updated copy that swaps in `lb`, then updates the in-memory
-    /// cache on success. Failures are swallowed so the caller can retry.
-    /// Inputs:
-    ///   - lb: the new target weight in pounds.
-    ///   - client: authenticated client used to fetch and upsert targets.
-    /// Outputs: nothing.
-    func saveTargetWeight(lb: Double, client: PulseClient) async {
-        do {
-            let current = try await client.fetchTargets()
-            let updated = MacroTargets(
-                calories: current.calories,
-                proteinG: current.proteinG,
-                carbsG: current.carbsG,
-                fatG: current.fatG,
-                targetWeightLb: lb
-            )
-            _ = try await client.upsertTargets(updated)
-            update(updated)
-        } catch {
-            // Silent failure on save — user can retry. Matches existing macro-target save behavior.
-        }
-    }
 }
