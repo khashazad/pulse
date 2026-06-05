@@ -19,8 +19,6 @@ struct TargetsDraft: Equatable {
     static let caloriesLimit = 20_000
     /// Exclusive upper bound for a valid macro grams value.
     static let macroGramsLimit = 2_000.0
-    /// Exclusive upper bound for a valid weight in the entered unit.
-    static let weightLimit = 2_000.0
 
     // MARK: - seeding / unit
 
@@ -42,11 +40,11 @@ struct TargetsDraft: Equatable {
             return
         }
         caloriesInput = String(t.calories)
-        proteinInput = Self.formatGrams(t.proteinG)
-        carbsInput = Self.formatGrams(t.carbsG)
-        fatInput = Self.formatGrams(t.fatG)
+        proteinInput = NumericInput.formatBare(t.proteinG)
+        carbsInput = NumericInput.formatBare(t.carbsG)
+        fatInput = NumericInput.formatBare(t.fatG)
         weightInput = t.targetWeightLb
-            .map { Self.formatWeight(WeightFormatter.fromLb($0, to: unit)) } ?? ""
+            .map { WeightFormatter.entryString(WeightFormatter.fromLb($0, to: unit)) } ?? ""
     }
 
     /// Switches the weight-entry unit, converting the current input in place.
@@ -59,37 +57,61 @@ struct TargetsDraft: Equatable {
     mutating func setUnit(_ newUnit: WeightUnit) {
         guard newUnit != weightUnit else { return }
         if !isWeightEdited, let baseLb = baseline?.targetWeightLb {
-            weightInput = Self.formatWeight(WeightFormatter.fromLb(baseLb, to: newUnit))
-        } else if let v = Self.parse(weightInput) {
+            weightInput = WeightFormatter.entryString(WeightFormatter.fromLb(baseLb, to: newUnit))
+        } else if let v = NumericInput.parseDecimal(weightInput) {
             let lb = WeightFormatter.toLb(v, from: weightUnit)
-            weightInput = Self.formatWeight(WeightFormatter.fromLb(lb, to: newUnit))
+            weightInput = WeightFormatter.entryString(WeightFormatter.fromLb(lb, to: newUnit))
         }
         weightUnit = newUnit
     }
 
     // MARK: - parsed values
 
-    /// Parsed calories input, or nil when unparseable.
-    var parsedCalories: Int? { Int(caloriesInput.trimmingCharacters(in: .whitespaces)) }
+    /// Parsed calories input, or nil when unparseable. Accepts plain integers
+    /// and integral decimals ("1800.0" -> 1800); fractional values and
+    /// thousands separators stay nil so they read as invalid rather than
+    /// silently mis-parsing.
+    var parsedCalories: Int? {
+        let trimmed = caloriesInput.trimmingCharacters(in: .whitespaces)
+        if let whole = Int(trimmed) { return whole }
+        guard let value = Double(trimmed), value == value.rounded(),
+              let whole = Int(exactly: value) else { return nil }
+        return whole
+    }
+
     /// Parsed protein grams, or nil when unparseable.
-    var parsedProtein: Double? { Self.parse(proteinInput) }
+    var parsedProtein: Double? { NumericInput.parseDecimal(proteinInput) }
     /// Parsed carbs grams, or nil when unparseable.
-    var parsedCarbs: Double? { Self.parse(carbsInput) }
+    var parsedCarbs: Double? { NumericInput.parseDecimal(carbsInput) }
     /// Parsed fat grams, or nil when unparseable.
-    var parsedFat: Double? { Self.parse(fatInput) }
+    var parsedFat: Double? { NumericInput.parseDecimal(fatInput) }
 
     // MARK: - validity
 
-    /// Whether every field parses inside its bounds: calories 1..<20000,
-    /// macros 0..<2000, weight empty or 0 < v < 2000 (entered unit).
-    var isValid: Bool {
-        guard let cal = parsedCalories, (1..<Self.caloriesLimit).contains(cal) else { return false }
-        for grams in [parsedProtein, parsedCarbs, parsedFat] {
-            guard let g = grams, g >= 0, g < Self.macroGramsLimit else { return false }
-        }
+    /// Whether the calories input parses inside 1..<20000.
+    var isCaloriesFieldValid: Bool {
+        parsedCalories.map { (1..<Self.caloriesLimit).contains($0) } ?? false
+    }
+
+    /// Whether the protein input parses inside 0..<2000.
+    var isProteinFieldValid: Bool { Self.gramsValid(parsedProtein) }
+    /// Whether the carbs input parses inside 0..<2000.
+    var isCarbsFieldValid: Bool { Self.gramsValid(parsedCarbs) }
+    /// Whether the fat input parses inside 0..<2000.
+    var isFatFieldValid: Bool { Self.gramsValid(parsedFat) }
+
+    /// Whether the weight input is empty (no goal) or parses with
+    /// 0 < v < WeightFormatter.entryLimit in the entered unit.
+    var isWeightFieldValid: Bool {
         if weightInput.isEmpty { return true }
-        guard let w = Self.parse(weightInput) else { return false }
-        return w > 0 && w < Self.weightLimit
+        guard let w = NumericInput.parseDecimal(weightInput) else { return false }
+        return w > 0 && w < WeightFormatter.entryLimit
+    }
+
+    /// Whether every field is individually valid (see the per-field flags).
+    var isValid: Bool {
+        isCaloriesFieldValid && isProteinFieldValid && isCarbsFieldValid
+            && isFatFieldValid && isWeightFieldValid
     }
 
     // MARK: - dirty detection
@@ -97,18 +119,18 @@ struct TargetsDraft: Equatable {
     /// Whether the calories input differs from the baseline.
     var isCaloriesEdited: Bool { parsedCalories != baseline?.calories }
     /// Whether the protein input differs from the baseline.
-    var isProteinEdited: Bool { !Self.nearlyEqual(parsedProtein, baseline?.proteinG) }
+    var isProteinEdited: Bool { Self.gramsEdited(proteinInput, baseline: baseline?.proteinG) }
     /// Whether the carbs input differs from the baseline.
-    var isCarbsEdited: Bool { !Self.nearlyEqual(parsedCarbs, baseline?.carbsG) }
+    var isCarbsEdited: Bool { Self.gramsEdited(carbsInput, baseline: baseline?.carbsG) }
     /// Whether the fat input differs from the baseline.
-    var isFatEdited: Bool { !Self.nearlyEqual(parsedFat, baseline?.fatG) }
+    var isFatEdited: Bool { Self.gramsEdited(fatInput, baseline: baseline?.fatG) }
 
     /// Whether the weight input differs from the baseline rendered in the
     /// current unit at one decimal — so unit-toggle rewrites stay clean.
     var isWeightEdited: Bool {
         let base = baseline?.targetWeightLb
             .map { Self.round1(WeightFormatter.fromLb($0, to: weightUnit)) }
-        let current = Self.parse(weightInput).map(Self.round1)
+        let current = NumericInput.parseDecimal(weightInput).map(Self.round1)
         return current != base
     }
 
@@ -132,53 +154,61 @@ struct TargetsDraft: Equatable {
     }
 
     /// Builds the wire DTO from the draft.
+    /// Inputs:
+    ///   - fresh: latest server truth fetched just before saving, or nil.
+    ///     Unedited fields take their values from it (falling back to the
+    ///     baseline) so a save can't clobber concurrent changes to fields the
+    ///     user never touched.
     /// Outputs: a `MacroTargets` ready to PUT, or nil while the draft is
-    /// invalid. An empty weight field maps to a nil target weight; an
-    /// unedited weight reuses the baseline value verbatim to avoid unit
-    /// round-trip drift.
-    func toMacroTargets() -> MacroTargets? {
+    /// invalid. An edited-empty weight field maps to nil (deliberate clear);
+    /// an unedited field passes the reference value through verbatim, so no
+    /// format/parse round-trip drift is ever written back.
+    func toMacroTargets(merging fresh: MacroTargets? = nil) -> MacroTargets? {
         guard isValid,
               let cal = parsedCalories,
               let p = parsedProtein,
               let c = parsedCarbs,
               let f = parsedFat else { return nil }
+        let reference = fresh ?? baseline
         let weightLb: Double?
-        if weightInput.isEmpty {
-            weightLb = nil
-        } else if !isWeightEdited, let base = baseline?.targetWeightLb {
-            weightLb = base
+        if isWeightEdited {
+            weightLb = weightInput.isEmpty
+                ? nil
+                : NumericInput.parseDecimal(weightInput)
+                    .map { WeightFormatter.toLb($0, from: weightUnit) }
         } else {
-            weightLb = Self.parse(weightInput)
-                .map { WeightFormatter.toLb($0, from: weightUnit) }
+            weightLb = reference?.targetWeightLb
         }
-        return MacroTargets(calories: cal, proteinG: p, carbsG: c, fatG: f,
-                            targetWeightLb: weightLb)
+        return MacroTargets(
+            calories: isCaloriesEdited ? cal : (reference?.calories ?? cal),
+            proteinG: isProteinEdited ? p : (reference?.proteinG ?? p),
+            carbsG: isCarbsEdited ? c : (reference?.carbsG ?? c),
+            fatG: isFatEdited ? f : (reference?.fatG ?? f),
+            targetWeightLb: weightLb)
     }
 
     // MARK: - helpers
 
-    /// Parses a decimal string, accepting comma decimal separators.
+    /// Whether a grams value parses inside 0..<macroGramsLimit.
     /// Inputs:
-    ///   - s: raw user input.
-    /// Outputs: the parsed value, or nil.
-    private static func parse(_ s: String) -> Double? {
-        Double(s.replacingOccurrences(of: ",", with: "."))
+    ///   - value: parsed grams, or nil when unparseable.
+    /// Outputs: true when present and in bounds.
+    private static func gramsValid(_ value: Double?) -> Bool {
+        guard let g = value else { return false }
+        return g >= 0 && g < Self.macroGramsLimit
     }
 
-    /// Formats grams without trailing zeros (150.0 -> "150", 62.5 -> "62.5").
+    /// Whether a grams input differs from its baseline. The baseline is
+    /// compared through the same format/parse round-trip used by seeding, so
+    /// a high-precision server value (truncated by "%g"'s six significant
+    /// figures) never reads as dirty on an untouched field.
     /// Inputs:
-    ///   - value: grams value.
-    /// Outputs: display string.
-    private static func formatGrams(_ value: Double) -> String {
-        String(format: "%g", value)
-    }
-
-    /// Formats a weight at one decimal place, matching the seeding/toggle path.
-    /// Inputs:
-    ///   - value: weight in the current entry unit.
-    /// Outputs: display string, e.g. "175.0".
-    private static func formatWeight(_ value: Double) -> String {
-        String(format: "%.1f", value)
+    ///   - input: raw field text.
+    ///   - baseline: server truth for the field, or nil.
+    /// Outputs: true when the input no longer matches the seeded baseline.
+    private static func gramsEdited(_ input: String, baseline: Double?) -> Bool {
+        let seeded = baseline.map { NumericInput.parseDecimal(NumericInput.formatBare($0)) ?? $0 }
+        return !nearlyEqual(NumericInput.parseDecimal(input), seeded)
     }
 
     /// Rounds to one decimal place.

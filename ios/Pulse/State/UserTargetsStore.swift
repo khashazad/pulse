@@ -40,11 +40,9 @@ final class UserTargetsStore {
     ///   - client: authenticated client used for the upsert.
     /// Outputs: the server-echoed `MacroTargets` that was cached.
     /// Throws: `PulseError` when the upsert fails; the cache is left untouched.
-    @discardableResult
     func save(_ targets: MacroTargets, client: PulseClient) async throws -> MacroTargets {
         let persisted = try await client.upsertTargets(targets)
         update(persisted)
         return persisted
     }
-
 }

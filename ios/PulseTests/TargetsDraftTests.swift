@@ -210,4 +210,61 @@ final class TargetsDraftTests: XCTestCase {
         d.caloriesInput = ""
         XCTAssertNil(d.toMacroTargets())
     }
+
+    // MARK: - precision / parsing edge cases
+
+    /// Verifies a high-precision server value (truncated by "%g"'s six
+    /// significant figures when seeding) does not read as dirty untouched,
+    /// and is written back verbatim rather than at display precision.
+    func test_seed_highPrecisionGramsStaysCleanAndSavesVerbatim() {
+        var d = TargetsDraft()
+        let precise = MacroTargets(calories: 2000, proteinG: 1234.567, carbsG: 200,
+                                   fatG: 60, targetWeightLb: nil)
+        d.seed(from: precise, unit: .lb)
+        XCTAssertFalse(d.isDirty, "%g truncation of 1234.567 must not read as an edit")
+        d.caloriesInput = "1900" // dirty the draft without touching protein
+        XCTAssertEqual(d.toMacroTargets()?.proteinG, 1234.567,
+                       "unedited macro must pass the baseline through verbatim")
+    }
+
+    /// Verifies calories accepts integral decimals but rejects fractional
+    /// values and thousands separators (which must not mis-parse as 1.8).
+    func test_parsedCalories_decimalTolerance() {
+        var d = seeded()
+        d.caloriesInput = "1800.0"
+        XCTAssertTrue(d.isValid)
+        XCTAssertEqual(d.toMacroTargets()?.calories, 1800)
+        d.caloriesInput = "1800.5"
+        XCTAssertFalse(d.isValid)
+        d.caloriesInput = "1,800"
+        XCTAssertFalse(d.isValid, "thousands separator must read invalid, not as 1.8")
+    }
+
+    // MARK: - merging
+
+    /// Verifies unedited fields take their values from the freshly fetched
+    /// server profile, so saving doesn't clobber concurrent changes.
+    func test_toMacroTargets_mergingPrefersFreshForUneditedFields() {
+        var d = seeded() // baseline 2000 / 150 / 200 / 60 / 175
+        d.proteinInput = "190" // only protein edited
+        let fresh = MacroTargets(calories: 1800, proteinG: 120, carbsG: 210,
+                                 fatG: 65, targetWeightLb: 168)
+        let merged = d.toMacroTargets(merging: fresh)
+        XCTAssertEqual(merged?.calories, 1800, "unedited calories take the fresh value")
+        XCTAssertEqual(merged?.proteinG, 190, "edited protein keeps the draft value")
+        XCTAssertEqual(merged?.carbsG, 210)
+        XCTAssertEqual(merged?.fatG, 65)
+        XCTAssertEqual(merged?.targetWeightLb, 168, "unedited weight takes the fresh value")
+    }
+
+    /// Verifies an edited field (including a deliberate weight clear) beats
+    /// the freshly fetched value.
+    func test_toMacroTargets_mergingEditedFieldsWin() {
+        var d = seeded()
+        d.weightInput = "" // deliberate clear (edited)
+        let fresh = MacroTargets(calories: 2000, proteinG: 150, carbsG: 200,
+                                 fatG: 60, targetWeightLb: 168)
+        XCTAssertNil(d.toMacroTargets(merging: fresh)?.targetWeightLb,
+                     "cleared weight must override the fresh server value")
+    }
 }

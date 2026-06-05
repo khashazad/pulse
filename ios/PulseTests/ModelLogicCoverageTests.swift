@@ -84,7 +84,7 @@ final class ModelLogicCoverageTests: XCTestCase {
         store.update(MacroTargets(calories: 1, proteinG: 1, carbsG: 1,
                                   fatG: 1, targetWeightLb: 100))
         do {
-            try await store.save(
+            _ = try await store.save(
                 MacroTargets(calories: 2, proteinG: 2, carbsG: 2, fatG: 2, targetWeightLb: 200),
                 client: auth.makeClient()!)
             XCTFail("expected save to throw on HTTP 500")
