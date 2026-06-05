@@ -123,7 +123,7 @@ The `ios/build/` directory is the local DerivedData (gitignored).
   - **Meals:** `MealsModel`.
   - **Prep:** `ContainersListModel`, `ContainerEditModel`, `PrepModel`.
   - **Measures:** `WeightLogModel`, `WeightTrendsModel`, `WeightAnalytics`, `ProgressPhotoStore`, `ProgressPhotoCache`, `ProgressPhotoTagStore`, `PhotoUploadQueue`.
-  - **App-wide:** `AuthSession` (signed-in lifecycle, Keychain token, `makeClient()`), `LoadState`.
+  - **App-wide:** `AuthSession` (signed-in lifecycle, Keychain token, `makeClient()`), `LoadState`, `TargetsDraft` (plain value type holding the Settings sheet's pending macro-target/weight-goal edits — dirty/validation/DTO logic, saved via `UserTargetsStore.save`).
 - `Views/` — SwiftUI. `RootView` owns four `NavigationStack`s (one per tab) and a `FloatingDock` overlay; the dock auto-hides when the active stack has pushed views. Tabs (`DockTab` enum):
   - **Intake** (`.intake`) — day/week/month/year macro views (`DayMacroView`, `WeekView`, `MonthView`, `YearView`, `LogView`).
   - **Meals** (`.meals`) — saved meal templates (`MealsView`, `MealDetailView`).

@@ -1,6 +1,7 @@
 /// UserTargetsStore: app-wide cache of the user's macro targets.
-/// Holds the most-recent MacroTargets and exposes update/clear/refresh hooks so
-/// any view-model can read or refresh targets without duplicating the call.
+/// Holds the most-recent MacroTargets and exposes update/clear/refresh/save
+/// methods so any view-model can read, refresh, or persist targets without
+/// duplicating the call.
 /// Role: shared observable injected into views/models that need target values.
 import Foundation
 import Observation
