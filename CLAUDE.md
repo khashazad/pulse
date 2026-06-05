@@ -9,7 +9,7 @@ This is a single git repo (monorepo) containing two subprojects for one product 
 - `server/` — FastAPI + Postgres backend. Google-OAuth session/Bearer auth for the app; MCP endpoint at `/mcp` with GitHub-OAuth + service-token paths. Feature surface: food entries, meals, prep containers, custom foods, food memory, weight, progress photos (+ tags), USDA proxy. See **Server** below.
 - `ios/` — SwiftUI iOS 17+ client (four tabs: Intake, Meals, Prep, Measures). Auth is Google sign-in → opaque Bearer session token (stored in Keychain); base URL is configured in Settings. The Login/AuthSession flow is the live and only client auth path. See **iOS** below.
 
-There is no shared tooling or build at this level — `cd` into the relevant subdirectory before running anything. Each subproject keeps its own `.gitignore`; documentation lives only at the root (`README.md` + `CLAUDE.md` + the `AGENTS.md` pointer) — there are no nested READMEs.
+There is no shared tooling or build at this level — `cd` into the relevant subdirectory before running anything. Each subproject keeps its own `.gitignore`; documentation lives at the root (`README.md` + `CLAUDE.md` + the `AGENTS.md` pointer) and in `docs/` (`docs/ci-cd.md` — high-level guide to the GitHub Actions pipeline) — there are no nested per-subproject READMEs.
 
 ## Cross-cutting contract
 
