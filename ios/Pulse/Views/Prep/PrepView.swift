@@ -267,7 +267,8 @@ struct PrepView: View {
     private var fillTargetRows: some View {
         if model.containerCount > 0, model.perContainerNetGrams != nil {
             if model.targetTaresAreUniform, let entry = model.targets.first {
-                resultRow("Fill each container to", value: model.targetGross(for: entry)) // Safe: targetTaresAreUniform guarantees every entry shares a tare, so any works.
+                // Safe: targetTaresAreUniform guarantees every entry shares a tare, so any works.
+                resultRow("Fill each container to", value: model.targetGross(for: entry))
             } else {
                 ForEach(model.targets) { entry in
                     resultRow("Fill \(entry.container.name) to", value: model.targetGross(for: entry))

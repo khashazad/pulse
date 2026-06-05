@@ -212,8 +212,12 @@ struct WeightTrendsView: View {
                    let days = result.recentWindowDays {
                     let deficitKcalDay = Int((-lbPerWeek / 7.0 * 3500.0).rounded())
                     let sign = deficitKcalDay >= 0 ? "+" : "−"
-                    Text("Last \(days) consecutive logged days: \(avg.formatted()) avg intake \(sign) \(abs(deficitKcalDay)) kcal/day (\(String(format: "%+.1f", lbPerWeek)) lb/wk × 3500)")
-                        .font(.system(size: 11)).foregroundStyle(Theme.FG.tertiary)
+                    let rate = String(format: "%+.1f", lbPerWeek)
+                    Text(
+                        "Last \(days) consecutive logged days: \(avg.formatted()) avg intake"
+                            + " \(sign) \(abs(deficitKcalDay)) kcal/day (\(rate) lb/wk × 3500)"
+                    )
+                    .font(.system(size: 11)).foregroundStyle(Theme.FG.tertiary)
                 }
             } else {
                 Text("Need more recent weight + calorie data for a maintenance estimate.")

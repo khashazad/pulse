@@ -10,3 +10,4 @@ disabled_rules:
   - line_length
   - cyclomatic_complexity
   - file_length
+  - static_over_final_class # StubURLProtocol must `override class func` URLProtocol methods

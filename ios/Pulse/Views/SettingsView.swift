@@ -74,7 +74,10 @@ struct SettingsView: View {
                             row(label: "Palette") {
                                 HStack(spacing: 8) {
                                     HStack(spacing: 3) {
-                                        ForEach([Theme.CTP.blue, Theme.CTP.mauve, Theme.CTP.pink, Theme.CTP.peach, Theme.CTP.green], id: \.self.description) { color in
+                                        ForEach(
+                                            [Theme.CTP.blue, Theme.CTP.mauve, Theme.CTP.pink, Theme.CTP.peach, Theme.CTP.green],
+                                            id: \.self.description
+                                        ) { color in
                                             Circle().fill(color).frame(width: 10, height: 10)
                                         }
                                     }

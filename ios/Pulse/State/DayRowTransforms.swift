@@ -121,7 +121,7 @@ func groupDayEntries(_ entries: [FoodEntry]) -> [DayRow] {
                 let group = MealGroup(
                     id: mealId.map { "meal:\($0.uuidString)" } ?? "anon:\(entryGroupId.uuidString)",
                     mealId: mealId,
-                    displayName: (mealName?.isEmpty == false ? mealName! : "Meal"),
+                    displayName: mealName.flatMap { $0.isEmpty ? nil : $0 } ?? "Meal",
                     count: 1,
                     items: items,
                     totals: totals,
