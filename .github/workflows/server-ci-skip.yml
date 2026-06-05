@@ -1,0 +1,22 @@
+# Companion to server-ci.yml: reports a passing `server-gate` check on PRs that
+# touch no server files, so `server-gate` can be a required status check without
+# blocking iOS-only or docs-only PRs. This is GitHub's documented pattern for
+# path-filtered required checks.
+name: Server CI
+
+on:
+  pull_request:
+    paths-ignore:
+      - "server/**"
+      - ".github/workflows/server-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  server-gate:
+    name: server-gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: No server changes
+        run: echo "No server files changed — server checks not required."
