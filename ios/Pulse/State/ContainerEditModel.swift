@@ -30,7 +30,7 @@ final class ContainerEditModel {
         self.auth = auth
         self.name = existing?.name ?? ""
         if let g = existing?.tareWeightG {
-            self.tareWeightText = String(format: "%g", g)
+            self.tareWeightText = NumericInput.formatBare(g)
         } else {
             self.tareWeightText = ""
         }

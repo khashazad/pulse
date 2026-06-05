@@ -42,4 +42,17 @@ enum WeightFormatter {
         let value = fromLb(lb, to: unit)
         return String(format: "%.1f %@", value, unit.rawValue)
     }
+
+    /// Exclusive upper bound accepted by weight entry fields, in the entered
+    /// unit. Shared by every surface that validates a typed weight.
+    static let entryLimit: Double = 2000
+
+    /// Formats a weight value for an editable entry field or bare numeric
+    /// display, at one decimal place without a unit suffix.
+    /// Inputs:
+    ///   - value: weight in the unit being rendered.
+    /// Outputs: display string, e.g. `"175.0"`.
+    static func entryString(_ value: Double) -> String {
+        String(format: "%.1f", value)
+    }
 }

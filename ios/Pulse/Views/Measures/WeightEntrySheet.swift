@@ -53,7 +53,7 @@ struct WeightEntrySheet: View {
         }
         .onAppear {
             if let existing {
-                input = String(format: "%.1f", WeightFormatter.fromLb(existing.weightLb, to: unit))
+                input = WeightFormatter.entryString(WeightFormatter.fromLb(existing.weightLb, to: unit))
             }
         }
     }
@@ -126,10 +126,10 @@ struct WeightEntrySheet: View {
         }
     }
 
-    private var parsed: Double? { Double(input.replacingOccurrences(of: ",", with: ".")) }
+    private var parsed: Double? { NumericInput.parseDecimal(input) }
 
     private var isValid: Bool {
         guard let value = parsed else { return false }
-        return value > 0 && value < 2000
+        return value > 0 && value < WeightFormatter.entryLimit
     }
 }

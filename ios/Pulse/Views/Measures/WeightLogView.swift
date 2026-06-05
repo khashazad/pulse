@@ -134,7 +134,7 @@ struct WeightLogView: View {
                     sheetState = .edit(entry)
                 } label: {
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text(String(format: "%.1f", WeightFormatter.fromLb(entry.weightLb, to: unit)))
+                        Text(WeightFormatter.entryString(WeightFormatter.fromLb(entry.weightLb, to: unit)))
                             .font(.system(size: 34, weight: .bold, design: .rounded))
                             .foregroundStyle(Theme.FG.primary)
                             .monospacedDigit()
