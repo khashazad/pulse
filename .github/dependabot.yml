@@ -20,4 +20,12 @@ updates:
         patterns:
           - "*"
 
+  # Keep the Dockerfile's digest-pinned base images (python:3.11-slim and the
+  # uv binary image) current — the github-actions/uv ecosystems do not touch
+  # Dockerfile FROM/COPY digests.
+  - package-ecosystem: docker
+    directory: "/server"
+    schedule:
+      interval: weekly
+
   # No `swift` ecosystem entry: the iOS app has no SPM packages to track.

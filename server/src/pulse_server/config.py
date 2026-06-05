@@ -257,6 +257,4 @@ def get_settings() -> Settings:
     - pydantic_core.ValidationError: Raised when required settings are missing
       or validators reject the configuration.
     """
-    # pydantic-settings populates required fields from the environment at runtime,
-    # which mypy cannot see — hence the call-arg ignore.
-    return Settings()  # type: ignore[call-arg]
+    return Settings()

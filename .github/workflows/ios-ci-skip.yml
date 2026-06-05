@@ -6,6 +6,9 @@ name: iOS CI
 
 on:
   pull_request:
+    # KEEP IN SYNC: this list must stay an exact mirror of the `paths` list in
+    # ios-ci.yml, or PRs can end up with an `ios-gate` required check that
+    # never reports (blocked forever).
     paths-ignore:
       - "ios/**"
       - ".github/workflows/ios-ci.yml"

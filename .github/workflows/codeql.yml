@@ -1,23 +1,22 @@
 name: CodeQL
 
+# No paths filter: CodeQL must report on EVERY PR so 'CodeQL (python)' can be a
+# required status check without deadlocking iOS-only/docs-only PRs (a
+# path-filtered required check never reports on out-of-path PRs). The analysis
+# is cheap enough to run unconditionally.
 on:
   push:
     branches: [main]
-    paths:
-      - "server/**"
-      - ".github/workflows/codeql.yml"
   pull_request:
-    paths:
-      - "server/**"
-      - ".github/workflows/codeql.yml"
   schedule:
     - cron: "17 6 * * 1" # weekly, Monday 06:17 UTC
 
 permissions:
   contents: read
 
+# Cancel superseded runs on PR branches, but never on main (per-SHA group there).
 concurrency:
-  group: codeql-${{ github.ref }}
+  group: codeql-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
   cancel-in-progress: true
 
 jobs:

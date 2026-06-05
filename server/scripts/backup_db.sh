@@ -24,7 +24,13 @@
 #
 # Exits non-zero if DATABASE_URL is unset, the supabase CLI or Docker daemon
 # is unavailable, a dump command fails, any resulting file is missing/empty,
-# or data.sql contains no COPY statements.
+# data.sql contains no COPY statements, or any COPY block is missing its
+# terminator (truncated dump).
+#
+# SECURITY: `supabase db dump` only accepts the connection string via the
+# --db-url CLI flag (no env/stdin alternative), so the password-bearing URL is
+# visible in `ps`/proc to other local processes for the duration of each dump.
+# Run this only on a single-user machine you trust.
 
 set -euo pipefail
 
@@ -82,6 +88,14 @@ check_dump "$WORK/roles.sql"
 check_dump "$WORK/schema.sql"
 check_dump "$WORK/data.sql"
 grep -q '^COPY ' "$WORK/data.sql" || die "data.sql contains no COPY statements — dump has no data"
+
+# Every COPY block in a plain-format dump ends with a lone "\." terminator; a
+# count mismatch means the dump was truncated mid-COPY and must not be promoted
+# to a verified backup.
+copy_count=$(grep -c '^COPY ' "$WORK/data.sql")
+term_count=$(grep -c '^\\\.$' "$WORK/data.sql" || true)
+[[ "$copy_count" -eq "$term_count" ]] \
+  || die "data.sql looks truncated: $copy_count COPY statements but $term_count terminators"
 
 [[ -e "$DEST" ]] && die "backup directory appeared during run, leaving $WORK in place: $DEST"
 mv "$WORK" "$DEST"

@@ -10,6 +10,11 @@ jobs:
   dependency-review:
     name: dependency-review
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Required for comment-summary-in-pr — without it the action's failure
+      # summary comment 403s and is silently dropped.
+      pull-requests: write
     steps:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3

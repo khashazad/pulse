@@ -1,0 +1,12 @@
+# Trivy ignore file for the pulse-server image and fs scans.
+#
+# Escape hatch for the CI gates in server-ci.yml (image scan) and security.yml
+# (fs scan): when a CRITICAL/HIGH CVE has an upstream fix that is not yet
+# available in our pinned base image, add it here so unrelated PRs can merge.
+#
+# Every entry MUST carry a justification and an expiry, e.g.:
+#   # CVE-2026-12345 — fixed upstream, waiting for python:3.11-slim rebuild;
+#   # remove by 2026-07-01
+#   CVE-2026-12345 exp:2026-07-01
+#
+# Keep this file empty in the steady state.

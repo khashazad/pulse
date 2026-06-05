@@ -6,17 +6,25 @@ on:
     paths:
       - "server/**"
       - ".github/workflows/server-ci.yml"
+      - ".github/actions/setup-server/**"
   pull_request:
+    # KEEP IN SYNC: this list must stay an exact mirror of the `paths-ignore`
+    # list in server-ci-skip.yml, or PRs can end up with a `server-gate`
+    # required check that never reports (blocked forever).
     paths:
       - "server/**"
       - ".github/workflows/server-ci.yml"
+      - ".github/actions/setup-server/**"
 
 # Least privilege: jobs only read the checkout. Override per-job if a step needs more.
 permissions:
   contents: read
 
+# Cancel superseded runs on PR branches, but never on main: each main commit is
+# keyed by SHA so a quick follow-up merge can't cancel the previous commit's
+# checks (Railway "wait for CI" and commit history both read per-commit status).
 concurrency:
-  group: server-ci-${{ github.ref }}
+  group: server-ci-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
   cancel-in-progress: true
 
 defaults:
@@ -33,14 +41,8 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Setup uv
-        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
-        with:
-          enable-cache: true
-          cache-dependency-glob: server/uv.lock
-
-      - name: Install dependencies
-        run: uv sync --frozen --all-extras
+      - name: Setup server toolchain
+        uses: ./.github/actions/setup-server
 
       - name: Ruff lint
         run: uv run ruff check .
@@ -57,14 +59,8 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Setup uv
-        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
-        with:
-          enable-cache: true
-          cache-dependency-glob: server/uv.lock
-
-      - name: Install dependencies
-        run: uv sync --frozen --all-extras
+      - name: Setup server toolchain
+        uses: ./.github/actions/setup-server
 
       - name: mypy
         run: uv run mypy src
@@ -83,15 +79,10 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Setup uv
-        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+      - name: Setup server toolchain
+        uses: ./.github/actions/setup-server
         with:
-          enable-cache: true
-          cache-dependency-glob: server/uv.lock
           python-version: ${{ matrix.python }}
-
-      - name: Install dependencies
-        run: uv sync --frozen --all-extras
 
       - name: Run unit tests
         env:
@@ -128,14 +119,13 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Setup uv
-        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+      # Pinned to 3.11 so the full suite (integration included) runs on the same
+      # interpreter as the production image (python:3.11-slim). 3.12 coverage of
+      # the unit tests comes from the unit matrix.
+      - name: Setup server toolchain
+        uses: ./.github/actions/setup-server
         with:
-          enable-cache: true
-          cache-dependency-glob: server/uv.lock
-
-      - name: Install dependencies
-        run: uv sync --frozen --all-extras
+          python-version: "3.11"
 
       - name: Migration smoke test
         run: uv run alembic upgrade head
@@ -197,13 +187,19 @@ jobs:
           exit-code: "1"
           severity: CRITICAL,HIGH
           ignore-unfixed: true
+          trivyignores: server/.trivyignore
 
-      - name: Boot smoke test
+      # APP_ENV=production so the non-local startup validators (MCP auth, HTTPS
+      # redirect, allowlist) actually run — a local-mode boot would skip them
+      # all. The dummy MCP_SERVICE_TOKEN is the minimal valid non-local config.
+      - name: Boot smoke test (production mode)
         working-directory: .
         run: |
           docker run -d --name pulse-smoke --network host \
             -e DATABASE_URL=postgresql://postgres:postgres@localhost:5432/pulse_smoke \
             -e USDA_API_KEY=smoke \
+            -e APP_ENV=production \
+            -e MCP_SERVICE_TOKEN=ci-smoke-dummy-token-0123456789abcdefghijklmnop \
             pulse-server:ci
           for _ in $(seq 1 30); do
             if curl -fsS http://localhost:8787/health > /dev/null 2>&1; then
@@ -222,6 +218,9 @@ jobs:
     needs: [lint, typecheck, unit, integration, docker-build]
     if: always()
     steps:
+      # Deliberately strict: anything other than 'success' (failure, cancelled,
+      # AND skipped) fails the gate, so a future `if:` on a needed job can't
+      # silently pass unvalidated code.
       - name: Check all jobs passed
         working-directory: .
         env:

@@ -7,6 +7,9 @@ on:
       - "ios/**"
       - ".github/workflows/ios-ci.yml"
   pull_request:
+    # KEEP IN SYNC: this list must stay an exact mirror of the `paths-ignore`
+    # list in ios-ci-skip.yml, or PRs can end up with an `ios-gate` required
+    # check that never reports (blocked forever).
     paths:
       - "ios/**"
       - ".github/workflows/ios-ci.yml"
@@ -15,8 +18,10 @@ on:
 permissions:
   contents: read
 
+# Cancel superseded runs on PR branches, but never on main (per-SHA group there)
+# so a quick follow-up merge can't cancel the previous commit's checks.
 concurrency:
-  group: ios-ci-${{ github.ref }}
+  group: ios-ci-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -37,6 +42,12 @@ jobs:
   build-test:
     name: build + test (simulator)
     runs-on: macos-15
+    env:
+      # Pin the toolchain so a macos-15 image refresh can't silently rotate the
+      # Swift compiler/SDK under the build (the swiftlint container is pinned —
+      # this keeps the compiler equally deterministic). When GitHub retires this
+      # Xcode from the image, the job fails loudly here: bump the path then.
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app
     steps:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3

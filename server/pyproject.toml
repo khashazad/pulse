@@ -65,23 +65,22 @@ extend-immutable-calls = [
 
 [tool.ruff.lint.per-file-ignores]
 # Tests legitimately nest `with patch(...)` blocks (SIM117), assert on broad
-# exceptions (B017), adjust sys.path before imports in conftest (E402), and
-# use long literal fixture/assertion lines (E501).
+# exceptions (B017), defer some imports until after module-level env/monkeypatch
+# setup (E402), and use long literal fixture/assertion lines (E501).
 "tests/**" = ["SIM117", "B017", "E402", "E501"]
 
 [tool.mypy]
 python_version = "3.11"
 files = ["src"]
+# The pydantic plugin teaches mypy that BaseSettings/BaseModel fields are
+# populated at runtime (env vars, validation), so Settings() needs no ignore.
+plugins = ["pydantic.mypy"]
 # Basic mode, not strict: the codebase is consistently hinted but not exhaustively
 # annotated. check_untyped_defs still type-checks un-annotated function bodies.
 ignore_missing_imports = true
 check_untyped_defs = true
 warn_unused_ignores = true
 warn_redundant_casts = true
-
-[[tool.mypy.overrides]]
-module = "tests.*"
-ignore_errors = true
 
 [tool.coverage.run]
 source = ["pulse_server"]

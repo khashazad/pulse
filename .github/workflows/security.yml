@@ -10,8 +10,9 @@ on:
 permissions:
   contents: read
 
+# Cancel superseded runs on PR branches, but never on main (per-SHA group there).
 concurrency:
-  group: security-${{ github.ref }}
+  group: security-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -76,8 +77,12 @@ jobs:
           format: sarif
           output: trivy-fs.sarif
           exit-code: "0"
+          trivyignores: server/.trivyignore
 
+      # Fork PRs get a read-only GITHUB_TOKEN (security-events is downgraded),
+      # so the upload would 403 — skip it there; the gate pass below still runs.
       - name: Upload SARIF
+        if: ${{ !github.event.pull_request.head.repo.fork }}
         uses: github/codeql-action/upload-sarif@c35d1b164463ee62a100735382aaaa525c5d3496 # codeql-bundle-v2.25.6
         with:
           sarif_file: trivy-fs.sarif
@@ -94,6 +99,7 @@ jobs:
           exit-code: "1"
           severity: CRITICAL,HIGH
           ignore-unfixed: true
+          trivyignores: server/.trivyignore
 
   zizmor:
     name: zizmor (workflow audit)

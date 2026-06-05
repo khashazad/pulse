@@ -6,9 +6,13 @@ name: Server CI
 
 on:
   pull_request:
+    # KEEP IN SYNC: this list must stay an exact mirror of the `paths` list in
+    # server-ci.yml, or PRs can end up with a `server-gate` required check that
+    # never reports (blocked forever).
     paths-ignore:
       - "server/**"
       - ".github/workflows/server-ci.yml"
+      - ".github/actions/setup-server/**"
 
 permissions:
   contents: read
