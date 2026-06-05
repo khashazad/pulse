@@ -21,7 +21,7 @@ struct ProgressPhotosView: View {
 
     private let gridColumns = [
         GridItem(.flexible(), spacing: 12),
-        GridItem(.flexible(), spacing: 12),
+        GridItem(.flexible(), spacing: 12)
     ]
 
     var body: some View {

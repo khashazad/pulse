@@ -103,7 +103,8 @@ def register(mcp: FastMCP, ctx: ToolContext) -> None:
         - `custom_food_id` (UUID string) for entries backed by a saved custom food
 
         `calories`/`protein_g`/`carbs_g`/`fat_g` are the FINAL values for the consumed quantity
-        (already scaled). `display_name` is the user-facing label; `quantity_text` is the raw phrase.
+        (already scaled). `display_name` is the user-facing label; `quantity_text` is
+        the raw phrase.
 
         Backdate or future-date by passing `consumed_at`. Accepts either
         `YYYY-MM-DD` (expands to noon of that day in server tz) or a full

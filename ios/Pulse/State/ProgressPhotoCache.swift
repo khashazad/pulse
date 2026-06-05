@@ -20,8 +20,7 @@ final class ProgressPhotoCache {
         if let r = rootDirectory {
             self.root = r
         } else {
-            let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
-            self.root = caches.appendingPathComponent("ProgressPhotos", isDirectory: true)
+            self.root = URL.cachesDirectory.appendingPathComponent("ProgressPhotos", isDirectory: true)
         }
         try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         memory.totalCostLimit = 50 * 1024 * 1024

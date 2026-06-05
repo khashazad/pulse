@@ -1,0 +1,25 @@
+# Companion to ios-ci.yml: reports a passing `ios-gate` check on PRs that touch
+# no ios files, so `ios-gate` can be a required status check without blocking
+# server-only or docs-only PRs. This is GitHub's documented pattern for
+# path-filtered required checks.
+name: iOS CI
+
+on:
+  pull_request:
+    # KEEP IN SYNC: this list must stay an exact mirror of the `paths` list in
+    # ios-ci.yml, or PRs can end up with an `ios-gate` required check that
+    # never reports (blocked forever).
+    paths-ignore:
+      - "ios/**"
+      - ".github/workflows/ios-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  ios-gate:
+    name: ios-gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: No ios changes
+        run: echo "No ios files changed — ios checks not required."

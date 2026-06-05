@@ -11,7 +11,6 @@ from unittest.mock import MagicMock
 
 import pytest
 
-
 SERVICE_TOKEN = "s" * 40
 
 

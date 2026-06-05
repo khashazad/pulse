@@ -48,7 +48,7 @@ class FoodEntryCreate(MacroFields):
     consumed_at: DateTimeValue | None = None
 
     @model_validator(mode="after")
-    def _exactly_one_source(self) -> "FoodEntryCreate":
+    def _exactly_one_source(self) -> FoodEntryCreate:
         """Enforce that exactly one of USDA or custom_food identifies the food source.
 
         **Outputs:**

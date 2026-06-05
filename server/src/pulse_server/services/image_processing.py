@@ -18,7 +18,7 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 
 MAX_FULL_PX: Final[int] = 1600
 # Thumbnails are rendered up to full-screen width on iPhone Pro Max (~430pt
-# × 3x = 1290px), so we keep them at 1024 long-edge — sharp at every grid
+# x 3x = 1290px), so we keep them at 1024 long-edge — sharp at every grid
 # density the app shows while still encoding small enough to cache cheaply.
 MAX_THUMB_PX: Final[int] = 1024
 JPEG_QUALITY: Final[int] = 82
@@ -59,7 +59,7 @@ def _resize(img: Image.Image, max_edge: int) -> Image.Image:
     if longest <= max_edge:
         return img.copy()
     scale = max_edge / longest
-    return img.resize((round(w * scale), round(h * scale)), Image.LANCZOS)
+    return img.resize((round(w * scale), round(h * scale)), Image.Resampling.LANCZOS)
 
 
 def _encode_jpeg(img: Image.Image) -> bytes:
@@ -104,17 +104,15 @@ def process_photo(
       protection trips.
     """
     if len(raw) > max_bytes:
-        raise PhotoTooLargeError(
-            f"photo exceeds {max_bytes} bytes (got {len(raw)})"
-        )
+        raise PhotoTooLargeError(f"photo exceeds {max_bytes} bytes (got {len(raw)})")
     data = bytes(raw)
     try:
         with Image.open(io.BytesIO(data)) as im:
             if im.width * im.height > MAX_PIXELS:
                 raise UnsupportedImageError("photo exceeds pixel budget")
-            im = ImageOps.exif_transpose(im) or im
-            im.load()
-            full = _resize(im, MAX_FULL_PX)
+            oriented = ImageOps.exif_transpose(im) or im
+            oriented.load()
+            full = _resize(oriented, MAX_FULL_PX)
             thumb = _resize(full, MAX_THUMB_PX)
             return _encode_jpeg(full), _encode_jpeg(thumb), "image/jpeg"
     except ImageProcessingError:

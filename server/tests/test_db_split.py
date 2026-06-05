@@ -56,6 +56,7 @@ def test_skips_empty_statements() -> None:
 def test_schema_sql_contains_sessions_table():
     """`schema.sql` still defines the `sessions` table and its expected indexes."""
     from pathlib import Path
+
     sql = Path("schema.sql").read_text()
     lower = sql.lower()
     assert "create table if not exists sessions" in lower

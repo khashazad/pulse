@@ -182,9 +182,7 @@ def register(mcp: FastMCP, ctx: ToolContext) -> None:
                     raise ToolError("Meal not found")
                 if item.custom_food_id is not None:
                     try:
-                        await assert_custom_foods_owned(
-                            session, user_key, [item.custom_food_id]
-                        )
+                        await assert_custom_foods_owned(session, user_key, [item.custom_food_id])
                     except CrossTenantReferenceError as exc:
                         raise ToolError(str(exc)) from exc
                 position = await repo.next_position(meal_uuid)

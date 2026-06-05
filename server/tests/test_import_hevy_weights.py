@@ -26,7 +26,9 @@ def _load_run():
 
 
 @pytest.mark.asyncio
-async def test_empty_csv_dry_run_does_not_crash(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+async def test_empty_csv_dry_run_does_not_crash(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A header-only Hevy CSV exits cleanly in dry-run mode."""
     csv_path = tmp_path / "empty.csv"
     csv_path.write_text("date,weight_lbs,fat_percent\n")

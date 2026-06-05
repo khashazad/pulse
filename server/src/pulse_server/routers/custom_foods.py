@@ -90,7 +90,8 @@ async def update_custom_food(
     body: CustomFoodUpdate,
     session: AsyncSession = Depends(get_session_dependency),
 ) -> CustomFoodResponse:
-    """Partially update a custom food's fields. Recomputes ``normalized_name`` when ``name`` changes.
+    """Partially update a custom food's fields. Recomputes ``normalized_name`` when
+    ``name`` changes.
 
     **Inputs:**
     - request (Request): Active request providing ``user_key``.
@@ -104,7 +105,8 @@ async def update_custom_food(
     **Exceptions:**
     - HTTPException(409): Raised when renaming would collide with another custom food's name.
     - HTTPException(404): Raised when no custom food with that id is owned by the user.
-    - HTTPException(422): Raised when a non-nullable field is explicitly set to null (model validation).
+    - HTTPException(422): Raised when a non-nullable field is explicitly set to null
+      (model validation).
     """
     user_key = request.state.user_key
     fields = body.model_dump(exclude_unset=True)
@@ -139,7 +141,8 @@ async def delete_custom_food(
     - session (AsyncSession): DB session dependency.
 
     **Exceptions:**
-    - HTTPException(409): Raised when foreign-key references from past entries or meal items prevent deletion.
+    - HTTPException(409): Raised when foreign-key references from past entries or meal
+      items prevent deletion.
     - HTTPException(404): Raised when no custom food with that id is owned by the user.
     """
     user_key = request.state.user_key

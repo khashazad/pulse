@@ -40,6 +40,7 @@ def _env(monkeypatch):
     monkeypatch.setenv("APP_ENV", "local")
     monkeypatch.setenv("SESSION_TTL_DAYS", "7")
     from pulse_server.config import get_settings
+
     get_settings.cache_clear()
 
 
@@ -89,12 +90,16 @@ def test_full_signin_flow(client):
     assert pkce_cookie == challenge
 
     # /callback (mock Google) → returns a one-time code, not the token
-    with patch(
-        "pulse_server.routers.auth.exchange_code_for_id_token",
-        new_callable=AsyncMock, return_value="jwt",
-    ), patch(
-        "pulse_server.routers.auth.verify_id_token",
-        return_value=("khashzd@gmail.com", "sub"),
+    with (
+        patch(
+            "pulse_server.routers.auth.exchange_code_for_id_token",
+            new_callable=AsyncMock,
+            return_value="jwt",
+        ),
+        patch(
+            "pulse_server.routers.auth.verify_id_token",
+            return_value=("khashzd@gmail.com", "sub"),
+        ),
     ):
         client.cookies.set("oauth_state", state_cookie, path="/auth/google")
         client.cookies.set("oauth_pkce", pkce_cookie, path="/auth/google")

@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from alembic import op
 
-
 revision = "20260519_000001"
 down_revision = "20260518_000001"
 branch_labels = None
@@ -17,9 +16,7 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.execute(
-        "alter table progress_photos add column if not exists idempotency_key uuid"
-    )
+    op.execute("alter table progress_photos add column if not exists idempotency_key uuid")
     op.execute(
         "create unique index if not exists uq_progress_photos_user_idem "
         "on progress_photos (user_key, idempotency_key) "

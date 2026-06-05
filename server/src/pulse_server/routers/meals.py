@@ -14,6 +14,7 @@ from uuid import UUID
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -28,8 +29,8 @@ from pulse_server.models import (
     MealItemCreate,
     MealItemResponse,
     MealResponse,
-    MealUpdate,
     MealsListResponse,
+    MealUpdate,
     meal_item_response,
     meal_response,
     meal_summary,
@@ -41,7 +42,6 @@ from pulse_server.services.custom_foods_service import (
 )
 from pulse_server.services.meals_service import create_meal_with_items, log_meal
 from pulse_server.services.normalize import normalize_name
-from pydantic import BaseModel
 
 settings = get_settings()
 router = APIRouter(dependencies=[Depends(require_session)])
@@ -230,7 +230,8 @@ async def add_meal_item(
     - MealItemResponse: The newly created item.
 
     **Exceptions:**
-    - HTTPException(422): Raised when food-pointer cardinality is wrong, USDA description is missing, or custom_food_id is not owned by the user.
+    - HTTPException(422): Raised when food-pointer cardinality is wrong, USDA
+      description is missing, or custom_food_id is not owned by the user.
     - HTTPException(404): Raised when the meal does not exist for this user.
     """
     user_key = request.state.user_key

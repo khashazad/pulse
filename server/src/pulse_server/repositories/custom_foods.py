@@ -147,8 +147,7 @@ class CustomFoodsRepository:
         )
         if on_conflict_update:
             set_: dict[str, Any] = {
-                col: getattr(insert_stmt.excluded, col)
-                for col in _CUSTOM_FOOD_MUTABLE_COLUMNS
+                col: getattr(insert_stmt.excluded, col) for col in _CUSTOM_FOOD_MUTABLE_COLUMNS
             }
             set_["updated_at"] = now
             stmt = insert_stmt.on_conflict_do_update(

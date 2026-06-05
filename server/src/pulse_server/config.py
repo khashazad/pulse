@@ -17,7 +17,6 @@ from functools import lru_cache
 from pydantic import model_validator
 from pydantic_settings import BaseSettings
 
-
 # Synthetic GitHub-style `login` claim attached to service-token requests so
 # `GitHubAllowlistMiddleware` can gate them with the same machinery used for
 # real GitHub OAuth users. Auto-injected into the effective allowlist whenever a
@@ -153,7 +152,7 @@ class Settings(BaseSettings):
         return (self.app_env or "").lower() in {"local", "dev", "test"}
 
     @model_validator(mode="after")
-    def _enforce_https_redirect_outside_local(self) -> "Settings":
+    def _enforce_https_redirect_outside_local(self) -> Settings:
         """Reject non-HTTPS OAuth redirect URIs outside local-style environments.
 
         **Outputs:**
@@ -170,7 +169,7 @@ class Settings(BaseSettings):
         return self
 
     @model_validator(mode="after")
-    def _require_mcp_auth_outside_local(self) -> "Settings":
+    def _require_mcp_auth_outside_local(self) -> Settings:
         """Refuse to boot non-local deployments with an unauthenticated MCP layer.
 
         ``/mcp`` is exempt from ``SessionAuthMiddleware`` so the MCP layer must
@@ -200,7 +199,7 @@ class Settings(BaseSettings):
         return self
 
     @model_validator(mode="after")
-    def _require_github_allowlist_with_oauth(self) -> "Settings":
+    def _require_github_allowlist_with_oauth(self) -> Settings:
         """Refuse to boot non-local deployments that enable GitHub OAuth with an empty allowlist.
 
         ``GitHubAllowlistMiddleware`` runs in open-mode (passes every caller)
@@ -230,7 +229,7 @@ class Settings(BaseSettings):
         return self
 
     @model_validator(mode="after")
-    def _require_strong_service_token(self) -> "Settings":
+    def _require_strong_service_token(self) -> Settings:
         """Reject short ``MCP_SERVICE_TOKEN`` values that would be trivially guessable.
 
         **Outputs:**

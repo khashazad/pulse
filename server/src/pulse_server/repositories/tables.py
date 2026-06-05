@@ -94,7 +94,9 @@ custom_foods = Table(
     Column("notes", Text, nullable=True),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
-    CheckConstraint("basis in ('per_100g','per_serving','per_unit')", name="custom_foods_basis_check"),
+    CheckConstraint(
+        "basis in ('per_100g','per_serving','per_unit')", name="custom_foods_basis_check"
+    ),
     CheckConstraint("source in ('manual','photo','corrected')", name="custom_foods_source_check"),
     Index("idx_custom_foods_user_key_name", "user_key", "normalized_name", unique=True),
     Index("idx_custom_foods_user_key", "user_key"),
@@ -153,7 +155,9 @@ meal_items = Table(
     "meal_items",
     metadata,
     Column("id", UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")),
-    Column("meal_id", UUID(as_uuid=True), ForeignKey("meals.id", ondelete="CASCADE"), nullable=False),
+    Column(
+        "meal_id", UUID(as_uuid=True), ForeignKey("meals.id", ondelete="CASCADE"), nullable=False
+    ),
     Column("position", Integer, nullable=False),
     Column("display_name", Text, nullable=False),
     Column("quantity_text", Text, nullable=False),
@@ -184,7 +188,12 @@ food_entries = Table(
     "food_entries",
     metadata,
     Column("id", UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")),
-    Column("daily_log_id", UUID(as_uuid=True), ForeignKey("daily_logs.id", ondelete="CASCADE"), nullable=False),
+    Column(
+        "daily_log_id",
+        UUID(as_uuid=True),
+        ForeignKey("daily_logs.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
     Column("user_key", Text, nullable=False),
     Column("entry_group_id", UUID(as_uuid=True), nullable=False),
     Column("display_name", Text, nullable=False),

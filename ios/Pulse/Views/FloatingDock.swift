@@ -15,9 +15,9 @@ struct FloatingDock: View {
 
     var body: some View {
         HStack(spacing: 4) {
-            tabButton(.intake, system: "circle.fill",  label: "Intake")
-            tabButton(.meals, system: "fork.knife",   label: "Meals")
-            tabButton(.prep,  system: "cube.box.fill", label: "Prep")
+            tabButton(.intake, system: "circle.fill", label: "Intake")
+            tabButton(.meals, system: "fork.knife", label: "Meals")
+            tabButton(.prep, system: "cube.box.fill", label: "Prep")
             tabButton(.measures, system: "figure.arms.open", label: "Measures")
         }
         .padding(6)

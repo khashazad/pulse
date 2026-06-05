@@ -19,7 +19,6 @@ from google.oauth2 import id_token
 
 from pulse_server.config import get_settings
 
-
 GOOGLE_AUTHORIZE_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 

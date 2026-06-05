@@ -7,10 +7,9 @@ Create Date: 2026-05-06T00:00:00Z
 
 from __future__ import annotations
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy.dialects import postgresql
-
 
 revision = "20260506_000001"
 down_revision = "20260406_000001"
@@ -40,8 +39,18 @@ def upgrade() -> None:
         sa.Column("fat_g", sa.Numeric(), nullable=False),
         sa.Column("source", sa.Text(), nullable=False, server_default=sa.text("'manual'")),
         sa.Column("notes", sa.Text(), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
         sa.CheckConstraint(
             "basis in ('per_100g','per_serving','per_unit')",
             name="custom_foods_basis_check",
@@ -51,7 +60,12 @@ def upgrade() -> None:
             name="custom_foods_source_check",
         ),
     )
-    op.create_index("idx_custom_foods_user_key_name", "custom_foods", ["user_key", "normalized_name"], unique=True)
+    op.create_index(
+        "idx_custom_foods_user_key_name",
+        "custom_foods",
+        ["user_key", "normalized_name"],
+        unique=True,
+    )
     op.create_index("idx_custom_foods_user_key", "custom_foods", ["user_key"], unique=False)
 
     op.create_table(
@@ -81,15 +95,27 @@ def upgrade() -> None:
         sa.Column("protein_g", sa.Numeric(), nullable=True),
         sa.Column("carbs_g", sa.Numeric(), nullable=True),
         sa.Column("fat_g", sa.Numeric(), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
         sa.CheckConstraint(
             "(usda_fdc_id is not null and custom_food_id is null) or "
             "(usda_fdc_id is null and custom_food_id is not null)",
             name="food_memory_one_target",
         ),
     )
-    op.create_index("idx_food_memory_user_key_name", "food_memory", ["user_key", "normalized_name"], unique=True)
+    op.create_index(
+        "idx_food_memory_user_key_name", "food_memory", ["user_key", "normalized_name"], unique=True
+    )
     op.create_index("idx_food_memory_user_key", "food_memory", ["user_key"], unique=False)
 
     op.create_table(
@@ -105,10 +131,22 @@ def upgrade() -> None:
         sa.Column("name", sa.Text(), nullable=False),
         sa.Column("normalized_name", sa.Text(), nullable=False),
         sa.Column("notes", sa.Text(), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
     )
-    op.create_index("idx_meals_user_key_name", "meals", ["user_key", "normalized_name"], unique=True)
+    op.create_index(
+        "idx_meals_user_key_name", "meals", ["user_key", "normalized_name"], unique=True
+    )
     op.create_index("idx_meals_user_key", "meals", ["user_key"], unique=False)
 
     op.create_table(
@@ -143,7 +181,12 @@ def upgrade() -> None:
         sa.Column("protein_g", sa.Numeric(), nullable=False),
         sa.Column("carbs_g", sa.Numeric(), nullable=False),
         sa.Column("fat_g", sa.Numeric(), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
         sa.CheckConstraint(
             "(usda_fdc_id is not null and custom_food_id is null) or "
             "(usda_fdc_id is null and custom_food_id is not null)",
@@ -169,7 +212,9 @@ def upgrade() -> None:
         "(usda_fdc_id is not null and custom_food_id is null) or "
         "(usda_fdc_id is null and custom_food_id is not null)",
     )
-    op.create_index("idx_food_entries_custom_food_id", "food_entries", ["custom_food_id"], unique=False)
+    op.create_index(
+        "idx_food_entries_custom_food_id", "food_entries", ["custom_food_id"], unique=False
+    )
 
 
 def downgrade() -> None:

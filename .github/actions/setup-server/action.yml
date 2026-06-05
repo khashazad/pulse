@@ -1,0 +1,26 @@
+name: Setup server toolchain
+description: >
+  Install uv (with cache wired to server/uv.lock) and sync the server project's
+  locked dependencies. Single source of truth for the setup block shared by the
+  server CI and security jobs — bump the setup-uv pin or sync flags here only.
+
+inputs:
+  python-version:
+    description: Python version for uv to install/use (empty = newest satisfying requires-python)
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Setup uv
+      uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+      with:
+        enable-cache: true
+        cache-dependency-glob: server/uv.lock
+        python-version: ${{ inputs.python-version }}
+
+    - name: Install dependencies
+      shell: bash
+      working-directory: server
+      run: uv sync --frozen --all-extras

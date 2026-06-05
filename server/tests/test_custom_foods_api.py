@@ -10,8 +10,8 @@ no database.
 from __future__ import annotations
 
 import uuid
+from datetime import UTC
 from datetime import datetime as DateTimeValue
-from datetime import timezone as TimezoneValue
 from unittest.mock import AsyncMock, patch
 
 from fastapi.testclient import TestClient
@@ -26,7 +26,7 @@ def _now() -> DateTimeValue:
     **Outputs:**
     - datetime: Aware ``datetime`` in UTC.
     """
-    return DateTimeValue.now(tz=TimezoneValue.utc)
+    return DateTimeValue.now(tz=UTC)
 
 
 def _row(name: str = "My Wrap", basis: str = "per_serving") -> dict:

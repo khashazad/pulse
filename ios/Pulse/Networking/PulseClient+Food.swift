@@ -28,7 +28,7 @@ extension PulseClient {
             path: "/logs",
             query: [
                 URLQueryItem(name: "from", value: DateOnly.string(from: from)),
-                URLQueryItem(name: "to", value: DateOnly.string(from: to)),
+                URLQueryItem(name: "to", value: DateOnly.string(from: to))
             ]
         )
         return try await fetch(url: url)
@@ -62,7 +62,7 @@ extension PulseClient {
     func searchUSDA(query: String, limit: Int) async throws -> [USDAFoodResult] {
         let url = try http.makeURL(path: "/usda/search", query: [
             URLQueryItem(name: "q", value: query),
-            URLQueryItem(name: "limit", value: String(limit)),
+            URLQueryItem(name: "limit", value: String(limit))
         ])
         let resp: USDASearchResponse = try await fetch(url: url)
         return resp.results

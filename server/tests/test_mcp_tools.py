@@ -70,5 +70,6 @@ async def test_build_mcp_emits_workflow_instructions() -> None:
 async def test_workflow_instructions_mention_aliases() -> None:
     """Workflow instructions reference the alias-management tools."""
     from pulse_server.mcp.server import WORKFLOW_INSTRUCTIONS
+
     assert "add_meal_alias" in WORKFLOW_INSTRUCTIONS
     assert "add_food_alias" in WORKFLOW_INSTRUCTIONS

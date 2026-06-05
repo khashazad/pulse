@@ -15,11 +15,12 @@ from __future__ import annotations
 from datetime import date as DateValue
 from datetime import datetime as DateTimeValue
 from decimal import Decimal
-from typing import Any
+from typing import Any, cast
 
 from sqlalchemy import delete as sa_delete
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pulse_server.repositories.tables import weight_entries
@@ -71,7 +72,7 @@ class WeightRepository:
             source_unit=source_unit,
             updated_at=updated_at,
         )
-        stmt = stmt.on_conflict_do_update(
+        upsert = stmt.on_conflict_do_update(
             index_elements=[weight_entries.c.user_key, weight_entries.c.log_date],
             set_={
                 "weight_lb": stmt.excluded.weight_lb,
@@ -79,7 +80,7 @@ class WeightRepository:
                 "updated_at": updated_at,
             },
         ).returning(*weight_entries.c)
-        result = await self._session.execute(stmt)
+        result = await self._session.execute(upsert)
         row = result.mappings().first()
         assert row is not None
         return dict(row)
@@ -157,4 +158,4 @@ class WeightRepository:
             .where(weight_entries.c.log_date == log_date)
         )
         result = await self._session.execute(stmt)
-        return result.rowcount > 0
+        return cast(CursorResult[Any], result).rowcount > 0

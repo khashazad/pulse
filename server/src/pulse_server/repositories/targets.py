@@ -44,7 +44,11 @@ class TargetsRepository:
         **Exceptions:**
         - sqlalchemy.exc.SQLAlchemyError: Raised when SQL execution fails.
         """
-        stmt = select(*daily_target_profile.c).where(daily_target_profile.c.user_key == user_key).limit(1)
+        stmt = (
+            select(*daily_target_profile.c)
+            .where(daily_target_profile.c.user_key == user_key)
+            .limit(1)
+        )
         result = await self._session.execute(stmt)
         row = result.mappings().first()
         if row is None:

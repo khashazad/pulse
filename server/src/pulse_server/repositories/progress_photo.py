@@ -13,7 +13,8 @@ allowed to issue ``progress_photos`` SQL.
 
 from __future__ import annotations
 
-from datetime import date as DateValue, datetime as DateTimeValue
+from datetime import date as DateValue
+from datetime import datetime as DateTimeValue
 from typing import Any
 from uuid import UUID
 
@@ -120,8 +121,8 @@ class ProgressPhotoRepository:
                 index_where=progress_photos.c.idempotency_key.isnot(None),
                 set_={"updated_at": progress_photos.c.updated_at},
             )
-        stmt = stmt.returning(*_summary_columns())
-        result = await self._session.execute(stmt)
+        returning_stmt = stmt.returning(*_summary_columns())
+        result = await self._session.execute(returning_stmt)
         return dict(result.mappings().one())
 
     async def list_metadata(

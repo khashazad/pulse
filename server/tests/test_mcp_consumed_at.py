@@ -16,7 +16,6 @@ from fastmcp.exceptions import ToolError
 
 from pulse_server.mcp.server import _parse_consumed_at
 
-
 TZ = ZoneInfo("America/Toronto")
 
 

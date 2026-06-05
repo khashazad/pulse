@@ -13,9 +13,9 @@ need no database.
 from __future__ import annotations
 
 import uuid
+from datetime import UTC
 from datetime import datetime as DateTimeValue
-from datetime import timezone as TimezoneValue
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 from fastapi.testclient import TestClient
 from sqlalchemy.exc import IntegrityError
@@ -31,7 +31,7 @@ def _now() -> DateTimeValue:
     **Outputs:**
     - datetime: Aware ``datetime`` in UTC.
     """
-    return DateTimeValue.now(tz=TimezoneValue.utc)
+    return DateTimeValue.now(tz=UTC)
 
 
 def _meal_row(name: str = "Breakfast") -> dict:
@@ -117,7 +117,9 @@ def test_list_meals(rest_client: TestClient) -> None:
     """`GET /meals` returns per-meal summaries from the repository."""
     with patch("pulse_server.routers.meals.MealsRepository") as MockRepo:
         instance = MockRepo.return_value
-        instance.list_meals = AsyncMock(return_value=[_summary_row("Breakfast"), _summary_row("Lunch")])
+        instance.list_meals = AsyncMock(
+            return_value=[_summary_row("Breakfast"), _summary_row("Lunch")]
+        )
         resp = rest_client.get("/meals", headers=AUTH_HEADERS)
     assert resp.status_code == 200
     body = resp.json()
@@ -363,10 +365,13 @@ def test_add_meal_item_cross_tenant_custom_food_returns_422(rest_client: TestCli
     from pulse_server.services.custom_foods_service import CrossTenantReferenceError
 
     meal = _meal_row()
-    with patch("pulse_server.routers.meals.MealsRepository") as MockRepo, patch(
-        "pulse_server.routers.meals.assert_custom_foods_owned",
-        new_callable=AsyncMock,
-    ) as assert_owned:
+    with (
+        patch("pulse_server.routers.meals.MealsRepository") as MockRepo,
+        patch(
+            "pulse_server.routers.meals.assert_custom_foods_owned",
+            new_callable=AsyncMock,
+        ) as assert_owned,
+    ):
         instance = MockRepo.return_value
         instance.get_meal = AsyncMock(return_value=meal)
         assert_owned.side_effect = CrossTenantReferenceError("not yours")
@@ -393,9 +398,7 @@ def test_delete_meal_item_204(rest_client: TestClient) -> None:
         instance = MockRepo.return_value
         instance.get_meal = AsyncMock(return_value=meal)
         instance.delete_meal_item = AsyncMock(return_value=True)
-        resp = rest_client.delete(
-            f"/meals/{meal['id']}/items/{uuid.uuid4()}", headers=AUTH_HEADERS
-        )
+        resp = rest_client.delete(f"/meals/{meal['id']}/items/{uuid.uuid4()}", headers=AUTH_HEADERS)
     assert resp.status_code == 204
 
 
@@ -417,9 +420,7 @@ def test_delete_meal_item_item_not_found_returns_404(rest_client: TestClient) ->
         instance = MockRepo.return_value
         instance.get_meal = AsyncMock(return_value=meal)
         instance.delete_meal_item = AsyncMock(return_value=False)
-        resp = rest_client.delete(
-            f"/meals/{meal['id']}/items/{uuid.uuid4()}", headers=AUTH_HEADERS
-        )
+        resp = rest_client.delete(f"/meals/{meal['id']}/items/{uuid.uuid4()}", headers=AUTH_HEADERS)
     assert resp.status_code == 404
 
 

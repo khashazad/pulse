@@ -1,0 +1,13 @@
+# Nested SwiftLint config for the test target: tests intentionally force-unwrap
+# fixtures, use terse helper idioms, and table-style render tests with long literal
+# lines that would be violations in app code.
+
+disabled_rules:
+  - force_unwrapping
+  - force_try
+  - xctfail_message
+  - non_optional_string_data_conversion
+  - line_length
+  - cyclomatic_complexity
+  - file_length
+  - static_over_final_class # StubURLProtocol must `override class func` URLProtocol methods

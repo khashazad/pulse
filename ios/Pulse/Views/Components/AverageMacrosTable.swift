@@ -33,8 +33,8 @@ struct AverageMacrosTable: View {
 
             VStack(spacing: 8) {
                 row(.protein, value: avgProteinG)
-                row(.carbs,   value: avgCarbsG)
-                row(.fat,     value: avgFatG)
+                row(.carbs, value: avgCarbsG)
+                row(.fat, value: avgFatG)
             }
         }
         .padding(.horizontal, 16)

@@ -92,7 +92,7 @@ final class DayProximityClusteringTests: XCTestCase {
         let rows = [
             single(1, at: date(8, 0)),
             single(2, at: date(8, 10)),
-            single(3, at: date(8, 30)),
+            single(3, at: date(8, 30))
         ]
         let clusters = clusterByProximity(rows)
         XCTAssertEqual(clusters.count, 1)
@@ -104,7 +104,7 @@ final class DayProximityClusteringTests: XCTestCase {
         let rows = [
             single(1, at: date(8, 0)),
             single(2, at: date(8, 5)),
-            single(3, at: date(13, 0)),  // hours later → new occasion
+            single(3, at: date(13, 0))  // hours later → new occasion
         ]
         let clusters = clusterByProximity(rows)
         XCTAssertEqual(clusters.count, 2)
@@ -117,13 +117,13 @@ final class DayProximityClusteringTests: XCTestCase {
     func testThresholdBoundaryIsInclusive() {
         let exact = [
             single(1, at: date(8, 0)),
-            single(2, at: date(8, 0).addingTimeInterval(DayProximity.gap)),
+            single(2, at: date(8, 0).addingTimeInterval(DayProximity.gap))
         ]
         XCTAssertEqual(clusterByProximity(exact).count, 1)
 
         let justOver = [
             single(1, at: date(8, 0)),
-            single(2, at: date(8, 0).addingTimeInterval(DayProximity.gap + 1)),
+            single(2, at: date(8, 0).addingTimeInterval(DayProximity.gap + 1))
         ]
         XCTAssertEqual(clusterByProximity(justOver).count, 2)
     }
@@ -146,7 +146,7 @@ final class DayProximityClusteringTests: XCTestCase {
             entry(groupId: "11111111-1111-1111-1111-111111111111", name: "Coffee", consumedAt: date(8, 0)),
             entry(groupId: g, name: "Oats", mealId: mealA, mealName: "Breakfast", consumedAt: date(8, 10)),
             entry(groupId: g, name: "Yogurt", mealId: mealA, mealName: "Breakfast", consumedAt: date(8, 10)),
-            entry(groupId: "22222222-2222-2222-2222-222222222222", name: "Apple", consumedAt: date(15, 0)),
+            entry(groupId: "22222222-2222-2222-2222-222222222222", name: "Apple", consumedAt: date(15, 0))
         ]
         let rows = groupDayEntries(entries)
         let clusters = clusterByProximity(rows)

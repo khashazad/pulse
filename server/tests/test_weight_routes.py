@@ -10,10 +10,10 @@ from __future__ import annotations
 
 import os
 import uuid
+from datetime import UTC
 from datetime import date as DateValue
 from datetime import datetime as DateTimeValue
 from datetime import timedelta as TimeDeltaValue
-from datetime import timezone as TimezoneValue
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -30,7 +30,7 @@ def _now() -> DateTimeValue:
     **Outputs:**
     - datetime: Aware ``datetime`` in UTC.
     """
-    return DateTimeValue.now(tz=TimezoneValue.utc)
+    return DateTimeValue.now(tz=UTC)
 
 
 def _row(log_date: DateValue, weight_lb: Decimal = Decimal("180.50")) -> dict:
@@ -71,14 +71,13 @@ def client() -> TestClient:
     db_ctx.__aenter__.return_value = fake_db_session
     db_ctx.__aexit__.return_value = None
 
-    with patch("pulse_server.db.init_pool", new_callable=AsyncMock), patch(
-        "pulse_server.db.bootstrap_schema", new_callable=AsyncMock
-    ), patch("pulse_server.db.close_pool", new_callable=AsyncMock), patch(
-        "pulse_server.usda.USDAClient"
-    ) as mock_usda_client, patch(
-        "pulse_server.auth.middleware.get_session", return_value=db_ctx
-    ), patch(
-        "pulse_server.auth.middleware.SessionsRepository", return_value=session_repo
+    with (
+        patch("pulse_server.db.init_pool", new_callable=AsyncMock),
+        patch("pulse_server.db.bootstrap_schema", new_callable=AsyncMock),
+        patch("pulse_server.db.close_pool", new_callable=AsyncMock),
+        patch("pulse_server.usda.USDAClient") as mock_usda_client,
+        patch("pulse_server.auth.middleware.get_session", return_value=db_ctx),
+        patch("pulse_server.auth.middleware.SessionsRepository", return_value=session_repo),
     ):
         mock_usda_client.return_value.close = AsyncMock()
         from pulse_server.app import app
@@ -117,6 +116,7 @@ def test_put_weight_lb(client: TestClient) -> None:
         new_callable=AsyncMock,
     ) as upsert:
         from pulse_server.models.weight import WeightEntryResponse
+
         upsert.return_value = WeightEntryResponse(**row)
         resp = client.put(
             f"/weight/{log_date.isoformat()}",
@@ -139,6 +139,7 @@ def test_put_weight_kg(client: TestClient) -> None:
         new_callable=AsyncMock,
     ) as upsert:
         from pulse_server.models.weight import WeightEntryResponse
+
         upsert.return_value = WeightEntryResponse(**row)
         resp = client.put(
             f"/weight/{log_date.isoformat()}",
@@ -191,6 +192,7 @@ def test_get_weight_200(client: TestClient) -> None:
         new_callable=AsyncMock,
     ) as g:
         from pulse_server.models.weight import WeightEntryResponse
+
         g.return_value = WeightEntryResponse(**row)
         resp = client.get(f"/weight/{DateValue.today().isoformat()}", headers=HEADERS)
     assert resp.status_code == 200
@@ -205,6 +207,7 @@ def test_list_range(client: TestClient) -> None:
         new_callable=AsyncMock,
     ) as lst:
         from pulse_server.models.weight import WeightEntryResponse
+
         lst.return_value = [WeightEntryResponse(**r) for r in rows]
         resp = client.get(
             f"/weight?from={(today - TimeDeltaValue(days=7)).isoformat()}&to={today.isoformat()}",

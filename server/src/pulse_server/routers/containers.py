@@ -26,8 +26,8 @@ from pulse_server.models import (
     ContainerCreate,
     ContainerPhotoStatus,
     ContainerResponse,
-    ContainerUpdate,
     ContainersListResponse,
+    ContainerUpdate,
     container_response,
 )
 from pulse_server.repositories.containers import ContainersRepository
@@ -128,7 +128,9 @@ async def create_container(
                 now=now,
             )
     except IntegrityError as exc:
-        raise HTTPException(status_code=409, detail="A container with that name already exists") from exc
+        raise HTTPException(
+            status_code=409, detail="A container with that name already exists"
+        ) from exc
     return container_response(row)
 
 
@@ -193,7 +195,9 @@ async def update_container(
         async with transaction(session):
             row = await repo.update_fields(container_id, user_key, fields, now)
     except IntegrityError as exc:
-        raise HTTPException(status_code=409, detail="A container with that name already exists") from exc
+        raise HTTPException(
+            status_code=409, detail="A container with that name already exists"
+        ) from exc
     if row is None:
         raise HTTPException(status_code=404, detail="Container not found")
     return container_response(row)

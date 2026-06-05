@@ -13,8 +13,8 @@ from __future__ import annotations
 
 import os
 import uuid
+from datetime import UTC
 from datetime import datetime as DateTimeValue
-from datetime import timezone as TimezoneValue
 
 import pytest
 import pytest_asyncio
@@ -97,7 +97,7 @@ async def session(session_factory):
 async def test_food_memory_has_aliases_column(session: AsyncSession) -> None:
     """``food_memory.aliases`` accepts and round-trips a ``text[]`` value."""
     user_key = f"user-{uuid.uuid4()}"
-    now = DateTimeValue.now(tz=TimezoneValue.utc)
+    now = DateTimeValue.now(tz=UTC)
     await session.execute(
         text(
             "insert into food_memory (user_key, name, normalized_name, usda_fdc_id, usda_description, basis, calories, protein_g, carbs_g, fat_g, aliases, created_at, updated_at) "
@@ -105,10 +105,16 @@ async def test_food_memory_has_aliases_column(session: AsyncSession) -> None:
         ),
         {"uk": user_key, "now": now},
     )
-    row = (await session.execute(
-        text("select aliases from food_memory where user_key = :uk"),
-        {"uk": user_key},
-    )).mappings().first()
+    row = (
+        (
+            await session.execute(
+                text("select aliases from food_memory where user_key = :uk"),
+                {"uk": user_key},
+            )
+        )
+        .mappings()
+        .first()
+    )
     assert row is not None
     assert list(row["aliases"]) == ["peanut butter"]
 
@@ -117,7 +123,7 @@ async def test_food_memory_has_aliases_column(session: AsyncSession) -> None:
 async def test_meals_has_aliases_column(session: AsyncSession) -> None:
     """``meals.aliases`` accepts and round-trips a ``text[]`` value."""
     user_key = f"user-{uuid.uuid4()}"
-    now = DateTimeValue.now(tz=TimezoneValue.utc)
+    now = DateTimeValue.now(tz=UTC)
     await session.execute(
         text(
             "insert into meals (user_key, name, normalized_name, aliases, created_at, updated_at) "
@@ -125,10 +131,16 @@ async def test_meals_has_aliases_column(session: AsyncSession) -> None:
         ),
         {"uk": user_key, "now": now},
     )
-    row = (await session.execute(
-        text("select aliases from meals where user_key = :uk"),
-        {"uk": user_key},
-    )).mappings().first()
+    row = (
+        (
+            await session.execute(
+                text("select aliases from meals where user_key = :uk"),
+                {"uk": user_key},
+            )
+        )
+        .mappings()
+        .first()
+    )
     assert row is not None
     assert list(row["aliases"]) == ["the wrap"]
 
@@ -137,7 +149,7 @@ async def test_meals_has_aliases_column(session: AsyncSession) -> None:
 async def test_food_memory_check_rejects_alias_equal_to_name(session: AsyncSession) -> None:
     """CHECK constraint rejects a ``food_memory`` row whose alias equals its own normalized name."""
     user_key = f"user-{uuid.uuid4()}"
-    now = DateTimeValue.now(tz=TimezoneValue.utc)
+    now = DateTimeValue.now(tz=UTC)
     with pytest.raises(IntegrityError):
         await session.execute(
             text(
@@ -150,10 +162,12 @@ async def test_food_memory_check_rejects_alias_equal_to_name(session: AsyncSessi
 
 
 @pytest.mark.asyncio
-async def test_food_memory_trigger_rejects_alias_equal_to_other_canonical(session: AsyncSession) -> None:
+async def test_food_memory_trigger_rejects_alias_equal_to_other_canonical(
+    session: AsyncSession,
+) -> None:
     """Trigger rejects an alias that collides with another ``food_memory`` row's canonical name."""
     user_key = f"user-{uuid.uuid4()}"
-    now = DateTimeValue.now(tz=TimezoneValue.utc)
+    now = DateTimeValue.now(tz=UTC)
     await session.execute(
         text(
             "insert into food_memory (user_key, name, normalized_name, usda_fdc_id, usda_description, basis, calories, protein_g, carbs_g, fat_g, created_at, updated_at) "
@@ -177,7 +191,7 @@ async def test_food_memory_trigger_rejects_alias_equal_to_other_canonical(sessio
 async def test_meals_trigger_rejects_alias_overlap(session: AsyncSession) -> None:
     """Trigger rejects a second meal whose aliases overlap an existing meal's aliases."""
     user_key = f"user-{uuid.uuid4()}"
-    now = DateTimeValue.now(tz=TimezoneValue.utc)
+    now = DateTimeValue.now(tz=UTC)
     await session.execute(
         text(
             "insert into meals (user_key, name, normalized_name, aliases, created_at, updated_at) "
@@ -205,7 +219,7 @@ from pulse_server.repositories.meals import MealsRepository
 async def test_food_memory_get_by_name_matches_alias(session: AsyncSession) -> None:
     """``FoodMemoryRepository.get_by_name`` resolves a row through one of its aliases."""
     user_key = f"user-{uuid.uuid4()}"
-    now = DateTimeValue.now(tz=TimezoneValue.utc)
+    now = DateTimeValue.now(tz=UTC)
     await session.execute(
         text(
             "insert into food_memory (user_key, name, normalized_name, usda_fdc_id, usda_description, basis, calories, protein_g, carbs_g, fat_g, aliases, created_at, updated_at) "
@@ -226,7 +240,7 @@ async def test_food_memory_get_by_name_matches_alias(session: AsyncSession) -> N
 async def test_meals_get_by_name_matches_alias(session: AsyncSession) -> None:
     """``MealsRepository.get_meal_by_name`` resolves a meal through one of its aliases."""
     user_key = f"user-{uuid.uuid4()}"
-    now = DateTimeValue.now(tz=TimezoneValue.utc)
+    now = DateTimeValue.now(tz=UTC)
     await session.execute(
         text(
             "insert into meals (user_key, name, normalized_name, aliases, created_at, updated_at) "
@@ -247,7 +261,7 @@ async def test_meals_get_by_name_matches_alias(session: AsyncSession) -> None:
 async def test_meals_list_includes_aliases(session: AsyncSession) -> None:
     """``MealsRepository.list_meals`` returns the ``aliases`` array on each row."""
     user_key = f"user-{uuid.uuid4()}"
-    now = DateTimeValue.now(tz=TimezoneValue.utc)
+    now = DateTimeValue.now(tz=UTC)
     await session.execute(
         text(
             "insert into meals (user_key, name, normalized_name, aliases, created_at, updated_at) "
@@ -267,7 +281,7 @@ async def test_meals_list_includes_aliases(session: AsyncSession) -> None:
 async def test_food_memory_add_alias_appends(session: AsyncSession) -> None:
     """``FoodMemoryRepository.add_alias`` appends a new alias to an existing row."""
     user_key = f"user-{uuid.uuid4()}"
-    now = DateTimeValue.now(tz=TimezoneValue.utc)
+    now = DateTimeValue.now(tz=UTC)
     await session.execute(
         text(
             "insert into food_memory (user_key, name, normalized_name, usda_fdc_id, usda_description, basis, calories, protein_g, carbs_g, fat_g, created_at, updated_at) "
@@ -279,7 +293,10 @@ async def test_food_memory_add_alias_appends(session: AsyncSession) -> None:
 
     repo = FoodMemoryRepository(session)
     updated = await repo.add_alias(
-        user_key=user_key, normalized_name="peanut butter", alias="pb", now=now,
+        user_key=user_key,
+        normalized_name="peanut butter",
+        alias="pb",
+        now=now,
     )
     await session.commit()
     assert updated is not None
@@ -290,7 +307,7 @@ async def test_food_memory_add_alias_appends(session: AsyncSession) -> None:
 async def test_food_memory_add_alias_idempotent(session: AsyncSession) -> None:
     """``FoodMemoryRepository.add_alias`` is a no-op when the alias is already present."""
     user_key = f"user-{uuid.uuid4()}"
-    now = DateTimeValue.now(tz=TimezoneValue.utc)
+    now = DateTimeValue.now(tz=UTC)
     await session.execute(
         text(
             "insert into food_memory (user_key, name, normalized_name, usda_fdc_id, usda_description, basis, calories, protein_g, carbs_g, fat_g, aliases, created_at, updated_at) "
@@ -302,7 +319,10 @@ async def test_food_memory_add_alias_idempotent(session: AsyncSession) -> None:
 
     repo = FoodMemoryRepository(session)
     updated = await repo.add_alias(
-        user_key=user_key, normalized_name="peanut butter", alias="pb", now=now,
+        user_key=user_key,
+        normalized_name="peanut butter",
+        alias="pb",
+        now=now,
     )
     await session.commit()
     assert list(updated["aliases"]) == ["pb"]
@@ -312,7 +332,7 @@ async def test_food_memory_add_alias_idempotent(session: AsyncSession) -> None:
 async def test_food_memory_remove_alias(session: AsyncSession) -> None:
     """``FoodMemoryRepository.remove_alias`` strips one alias and preserves the rest."""
     user_key = f"user-{uuid.uuid4()}"
-    now = DateTimeValue.now(tz=TimezoneValue.utc)
+    now = DateTimeValue.now(tz=UTC)
     await session.execute(
         text(
             "insert into food_memory (user_key, name, normalized_name, usda_fdc_id, usda_description, basis, calories, protein_g, carbs_g, fat_g, aliases, created_at, updated_at) "
@@ -324,7 +344,10 @@ async def test_food_memory_remove_alias(session: AsyncSession) -> None:
 
     repo = FoodMemoryRepository(session)
     updated = await repo.remove_alias(
-        user_key=user_key, normalized_name="peanut butter", alias="pb", now=now,
+        user_key=user_key,
+        normalized_name="peanut butter",
+        alias="pb",
+        now=now,
     )
     await session.commit()
     assert list(updated["aliases"]) == ["pbs"]
@@ -334,7 +357,7 @@ async def test_food_memory_remove_alias(session: AsyncSession) -> None:
 async def test_meals_add_alias_appends(session: AsyncSession) -> None:
     """``MealsRepository.add_alias`` appends a new alias to an existing meal."""
     user_key = f"user-{uuid.uuid4()}"
-    now = DateTimeValue.now(tz=TimezoneValue.utc)
+    now = DateTimeValue.now(tz=UTC)
     result = await session.execute(
         text(
             "insert into meals (user_key, name, normalized_name, created_at, updated_at) "
@@ -347,7 +370,10 @@ async def test_meals_add_alias_appends(session: AsyncSession) -> None:
 
     repo = MealsRepository(session)
     updated = await repo.add_alias(
-        meal_id=meal_id, user_key=user_key, alias="the wrap", now=now,
+        meal_id=meal_id,
+        user_key=user_key,
+        alias="the wrap",
+        now=now,
     )
     await session.commit()
     assert updated is not None
@@ -358,7 +384,7 @@ async def test_meals_add_alias_appends(session: AsyncSession) -> None:
 async def test_meals_remove_alias(session: AsyncSession) -> None:
     """``MealsRepository.remove_alias`` removes a single alias from a meal's array."""
     user_key = f"user-{uuid.uuid4()}"
-    now = DateTimeValue.now(tz=TimezoneValue.utc)
+    now = DateTimeValue.now(tz=UTC)
     result = await session.execute(
         text(
             "insert into meals (user_key, name, normalized_name, aliases, created_at, updated_at) "
@@ -371,7 +397,10 @@ async def test_meals_remove_alias(session: AsyncSession) -> None:
 
     repo = MealsRepository(session)
     updated = await repo.remove_alias(
-        meal_id=meal_id, user_key=user_key, alias="the wrap", now=now,
+        meal_id=meal_id,
+        user_key=user_key,
+        alias="the wrap",
+        now=now,
     )
     await session.commit()
     assert list(updated["aliases"]) == ["lunch"]
@@ -383,7 +412,7 @@ async def test_food_memory_alias_collision_pre_check(session: AsyncSession) -> N
     from pulse_server.services.food_memory_service import assert_food_alias_available
 
     user_key = f"user-{uuid.uuid4()}"
-    now = DateTimeValue.now(tz=TimezoneValue.utc)
+    now = DateTimeValue.now(tz=UTC)
     await session.execute(
         text(
             "insert into food_memory (user_key, name, normalized_name, usda_fdc_id, usda_description, basis, calories, protein_g, carbs_g, fat_g, created_at, updated_at) "
@@ -409,7 +438,7 @@ async def test_food_memory_alias_collision_excludes_own_row(session: AsyncSessio
     from pulse_server.services.food_memory_service import assert_food_alias_available
 
     user_key = f"user-{uuid.uuid4()}"
-    now = DateTimeValue.now(tz=TimezoneValue.utc)
+    now = DateTimeValue.now(tz=UTC)
     await session.execute(
         text(
             "insert into food_memory (user_key, name, normalized_name, usda_fdc_id, usda_description, basis, calories, protein_g, carbs_g, fat_g, aliases, created_at, updated_at) "
@@ -431,7 +460,7 @@ async def test_food_memory_alias_collision_excludes_own_row(session: AsyncSessio
 async def test_remember_food_persists_aliases(session: AsyncSession) -> None:
     """``upsert_usda`` writes the provided ``aliases`` list and they round-trip via ``get_by_name``."""
     user_key = f"user-{uuid.uuid4()}"
-    now = DateTimeValue.now(tz=TimezoneValue.utc)
+    now = DateTimeValue.now(tz=UTC)
     repo = FoodMemoryRepository(session)
     await repo.upsert_usda(
         user_key=user_key,
@@ -457,26 +486,46 @@ async def test_remember_food_persists_aliases(session: AsyncSession) -> None:
 
 
 @pytest.mark.asyncio
-async def test_remember_food_upsert_preserves_existing_aliases_when_not_provided(session: AsyncSession) -> None:
+async def test_remember_food_upsert_preserves_existing_aliases_when_not_provided(
+    session: AsyncSession,
+) -> None:
     """A subsequent ``upsert_usda`` with ``aliases=None`` preserves the existing aliases array."""
     user_key = f"user-{uuid.uuid4()}"
-    now = DateTimeValue.now(tz=TimezoneValue.utc)
+    now = DateTimeValue.now(tz=UTC)
     repo = FoodMemoryRepository(session)
     await repo.upsert_usda(
-        user_key=user_key, name="PB", normalized_name="peanut butter",
-        usda_fdc_id=1, usda_description="PB", basis="per_100g",
-        serving_size=None, serving_size_unit=None,
-        calories=100, protein_g=1.0, carbs_g=1.0, fat_g=1.0,
-        now=now, aliases=["pb"],
+        user_key=user_key,
+        name="PB",
+        normalized_name="peanut butter",
+        usda_fdc_id=1,
+        usda_description="PB",
+        basis="per_100g",
+        serving_size=None,
+        serving_size_unit=None,
+        calories=100,
+        protein_g=1.0,
+        carbs_g=1.0,
+        fat_g=1.0,
+        now=now,
+        aliases=["pb"],
     )
     await session.commit()
     # Second upsert without aliases — should NOT clobber existing aliases.
     await repo.upsert_usda(
-        user_key=user_key, name="PB", normalized_name="peanut butter",
-        usda_fdc_id=1, usda_description="PB", basis="per_100g",
-        serving_size=None, serving_size_unit=None,
-        calories=200, protein_g=2.0, carbs_g=2.0, fat_g=2.0,
-        now=now, aliases=None,
+        user_key=user_key,
+        name="PB",
+        normalized_name="peanut butter",
+        usda_fdc_id=1,
+        usda_description="PB",
+        basis="per_100g",
+        serving_size=None,
+        serving_size_unit=None,
+        calories=200,
+        protein_g=2.0,
+        carbs_g=2.0,
+        fat_g=2.0,
+        now=now,
+        aliases=None,
     )
     await session.commit()
     row = await repo.get_by_name(user_key=user_key, normalized_name="peanut butter")

@@ -89,7 +89,9 @@ async def test_exchange_code_raises_on_non_2xx():
     mock_response.status_code = 400
 
     def _raise():
-        raise httpx.HTTPStatusError("bad", request=httpx.Request("POST", "x"), response=httpx.Response(400))
+        raise httpx.HTTPStatusError(
+            "bad", request=httpx.Request("POST", "x"), response=httpx.Response(400)
+        )
 
     mock_response.raise_for_status = _raise
     mock_client.__aenter__.return_value = mock_client
@@ -190,9 +192,11 @@ async def test_exchange_code_raises_on_invalid_json():
     mock_client = AsyncMock()
     mock_response = AsyncMock()
     mock_response.status_code = 200
+
     def _bad_json():
         """Inline ``response.json`` substitute that simulates a JSON decode failure."""
         raise ValueError("not json")
+
     mock_response.json = _bad_json
     mock_response.raise_for_status = lambda: None
     mock_client.__aenter__.return_value = mock_client

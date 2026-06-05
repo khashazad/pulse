@@ -93,6 +93,4 @@ async def assert_alias_available(
     result = await session.execute(stmt)
     existing = result.scalar_one_or_none()
     if existing is not None:
-        raise ValueError(
-            f"alias '{alias}' is already used by {entity_label} '{existing}'"
-        )
+        raise ValueError(f"alias '{alias}' is already used by {entity_label} '{existing}'")

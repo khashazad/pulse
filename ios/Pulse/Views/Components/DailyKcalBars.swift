@@ -105,7 +105,7 @@ struct DailyKcalBars: View {
     let kcals = [2300, 2050, 1890, 2210, 2460, 1980, 1240]
     let logs: [DailyLog] = (0..<7).map { i in
         DailyLog(
-            date: cal.date(byAdding: .day, value: -6 + i, to: today)!,
+            date: cal.date(byAdding: .day, value: -6 + i, to: today) ?? today,
             totalCalories: kcals[i],
             totalProteinG: 0, totalCarbsG: 0, totalFatG: 0,
             entryCount: 4

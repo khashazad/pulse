@@ -34,8 +34,7 @@ from pulse_server.services.custom_foods_service import (
     assert_custom_foods_owned,
 )
 from pulse_server.services.entries_service import create_entries_with_side_effects
-from pulse_server.services.normalize import normalize_name
-from pulse_server.services.normalize import optional_float
+from pulse_server.services.normalize import normalize_name, optional_float
 
 
 def _validate_item_source(item: MealItemCreate) -> None:
@@ -114,7 +113,10 @@ async def create_meal_with_items(
     for a in normalized_aliases:
         try:
             await assert_meal_alias_available(
-                session=session, user_key=user_key, alias=a, exclude_meal_id=None,
+                session=session,
+                user_key=user_key,
+                alias=a,
+                exclude_meal_id=None,
             )
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc

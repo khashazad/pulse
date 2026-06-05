@@ -309,4 +309,3 @@ struct DayMacroView: View {
         }
     }
 }
-

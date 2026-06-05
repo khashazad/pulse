@@ -232,7 +232,7 @@ final class AuthSession {
         }
         comps.queryItems = [
             URLQueryItem(name: "code_challenge", value: codeChallenge),
-            URLQueryItem(name: "code_challenge_method", value: "S256"),
+            URLQueryItem(name: "code_challenge_method", value: "S256")
         ]
         return comps.url
     }

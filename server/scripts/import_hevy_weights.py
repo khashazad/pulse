@@ -61,17 +61,16 @@ async def _run(csv_path: Path, user_key: str, dry_run: bool) -> None:
     now = DateTimeValue.now(tz=tz)
 
     try:
-        async with get_session() as session:
-            async with transaction(session):
-                for log_date, weight in rows:
-                    await upsert_weight(
-                        session=session,
-                        user_key=user_key,
-                        log_date=log_date,
-                        weight=weight,
-                        unit="lb",
-                        now=now,
-                    )
+        async with get_session() as session, transaction(session):
+            for log_date, weight in rows:
+                await upsert_weight(
+                    session=session,
+                    user_key=user_key,
+                    log_date=log_date,
+                    weight=weight,
+                    unit="lb",
+                    now=now,
+                )
         print(f"upserted {len(rows)} weight entries for user_key={user_key}")
     finally:
         await close_pool()

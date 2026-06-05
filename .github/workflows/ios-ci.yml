@@ -1,0 +1,122 @@
+name: iOS CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "ios/**"
+      - ".github/workflows/ios-ci.yml"
+  pull_request:
+    # KEEP IN SYNC: this list must stay an exact mirror of the `paths-ignore`
+    # list in ios-ci-skip.yml, or PRs can end up with an `ios-gate` required
+    # check that never reports (blocked forever).
+    paths:
+      - "ios/**"
+      - ".github/workflows/ios-ci.yml"
+
+# Least privilege: jobs only read the checkout. Override per-job if a step needs more.
+permissions:
+  contents: read
+
+# Cancel superseded runs on PR branches, but never on main (per-SHA group there)
+# so a quick follow-up merge can't cancel the previous commit's checks.
+concurrency:
+  group: ios-ci-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  swiftlint:
+    name: swiftlint
+    runs-on: ubuntu-latest
+    container: ghcr.io/realm/swiftlint:0.63.3 # match the version used locally
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - name: SwiftLint (strict)
+        working-directory: ios
+        run: swiftlint lint --strict --reporter github-actions-logging
+
+  build-test:
+    name: build + test (simulator)
+    runs-on: macos-15
+    env:
+      # Pin the toolchain so a macos-15 image refresh can't silently rotate the
+      # Swift compiler/SDK under the build (the swiftlint container is pinned —
+      # this keeps the compiler equally deterministic). When GitHub retires this
+      # Xcode from the image, the job fails loudly here: bump the path then.
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - name: Install xcodegen
+        run: brew install xcodegen
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      # PULSE_BASE_URL is baked into the generated project; any absolute https URL
+      # satisfies the prebuild guard. DEVELOPMENT_TEAM stays unset (simulator only).
+      - name: Generate Xcode project
+        working-directory: ios
+        env:
+          PULSE_BASE_URL: https://ci.invalid
+        run: xcodegen generate
+
+      - name: Pick simulator
+        id: sim
+        run: |
+          UDID=$(xcrun simctl list devices available --json \
+            | jq -r '[.devices[] | .[] | select(.isAvailable and (.name | test("^iPhone")))] | sort_by(.name) | reverse | .[0].udid')
+          if [ -z "$UDID" ] || [ "$UDID" = "null" ]; then
+            echo "::error::no available iPhone simulator found"
+            xcrun simctl list devices available
+            exit 1
+          fi
+          echo "selected simulator: $UDID"
+          echo "udid=$UDID" >> "$GITHUB_OUTPUT"
+
+      # NOTE: do not pass CODE_SIGNING_ALLOWED=NO — it strips the ad-hoc simulator
+      # signing that Keychain-backed AuthSession tests depend on.
+      - name: Build and test
+        working-directory: ios
+        env:
+          SIM_UDID: ${{ steps.sim.outputs.udid }}
+        run: |
+          set -o pipefail
+          xcodebuild test \
+            -project Pulse.xcodeproj \
+            -scheme Pulse \
+            -destination "platform=iOS Simulator,id=$SIM_UDID" \
+            -resultBundlePath TestResults.xcresult \
+            | xcbeautify
+
+      - name: Upload test results on failure
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ios-test-results
+          path: ios/TestResults.xcresult
+
+  ios-gate:
+    name: ios-gate
+    runs-on: ubuntu-latest
+    needs: [swiftlint, build-test]
+    if: always()
+    steps:
+      - name: Check all jobs passed
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "job results: $RESULTS"
+          for r in $RESULTS; do
+            if [ "$r" != "success" ]; then
+              echo "::error::a required ios job finished with status '$r'"
+              exit 1
+            fi
+          done

@@ -248,7 +248,11 @@ class FoodMemoryRepository:
                 custom_foods.c.created_at.label("cf_created_at"),
                 custom_foods.c.updated_at.label("cf_updated_at"),
             )
-            .select_from(food_memory.outerjoin(custom_foods, custom_foods.c.id == food_memory.c.custom_food_id))
+            .select_from(
+                food_memory.outerjoin(
+                    custom_foods, custom_foods.c.id == food_memory.c.custom_food_id
+                )
+            )
             .where(food_memory.c.user_key == user_key)
             .where(
                 or_(

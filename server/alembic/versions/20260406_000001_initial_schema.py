@@ -1,14 +1,14 @@
 """Create initial diet tracking schema.
 
 Revision ID: 20260406_000001
-Revises: 
+Revises:
 Create Date: 2026-04-06T14:40:00Z
 """
 
 from __future__ import annotations
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
@@ -42,8 +42,18 @@ def upgrade() -> None:
         sa.Column("protein_g_target", sa.Numeric(), nullable=False),
         sa.Column("carbs_g_target", sa.Numeric(), nullable=False),
         sa.Column("fat_g_target", sa.Numeric(), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
     )
     op.create_index(
         "idx_daily_target_profile_user_key",
@@ -57,8 +67,18 @@ def upgrade() -> None:
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True, nullable=False),
         sa.Column("user_key", sa.Text(), nullable=False),
         sa.Column("log_date", sa.Date(), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
         sa.UniqueConstraint("user_key", "log_date", name="uq_daily_logs_user_key_log_date"),
     )
     op.create_index("idx_daily_logs_user_key", "daily_logs", ["user_key"], unique=False)
@@ -91,7 +111,12 @@ def upgrade() -> None:
         sa.Column("carbs_g", sa.Numeric(), nullable=False),
         sa.Column("fat_g", sa.Numeric(), nullable=False),
         sa.Column("consumed_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
     )
     op.create_index("idx_food_entries_user_key", "food_entries", ["user_key"], unique=False)
     op.create_index(

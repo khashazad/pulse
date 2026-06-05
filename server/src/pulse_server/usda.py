@@ -58,7 +58,7 @@ def normalize_food_nutrients(raw: dict[str, Any]) -> dict[str, Any]:
 
         number = float(value)
         if nutrient_id == 1008 or name.startswith("energy"):
-            result["calories"] = int(round(number))
+            result["calories"] = round(number)
         elif nutrient_id == 1003 or name == "protein":
             result["protein_g"] = number
         elif nutrient_id == 1005 or "carbohydrate" in name:

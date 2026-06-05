@@ -12,9 +12,9 @@ from __future__ import annotations
 import hashlib
 import os
 import uuid
+from datetime import UTC
 from datetime import date as DateValue
 from datetime import datetime as DateTimeValue
-from datetime import timezone as TimezoneValue
 
 import pytest
 import pytest_asyncio
@@ -58,7 +58,7 @@ async def session() -> AsyncSession:
 
 def _now() -> DateTimeValue:
     """Return the current UTC timestamp."""
-    return DateTimeValue.now(tz=TimezoneValue.utc)
+    return DateTimeValue.now(tz=UTC)
 
 
 def _jpeg() -> bytes:
@@ -133,15 +133,29 @@ async def test_idempotency_key_dedupes_repeat_insert(session: AsyncSession) -> N
     idem = uuid.uuid4()
     async with transaction(session):
         first = await repo.insert(
-            user_key=user_key, log_date=DateValue(2026, 5, 17), tag_id=tag_id,
-            photo=b"v1bytes", photo_thumb=_thumb(), photo_mime="image/jpeg",
-            bytes_=7, sha256="sha-v1", now=_now(), idempotency_key=idem,
+            user_key=user_key,
+            log_date=DateValue(2026, 5, 17),
+            tag_id=tag_id,
+            photo=b"v1bytes",
+            photo_thumb=_thumb(),
+            photo_mime="image/jpeg",
+            bytes_=7,
+            sha256="sha-v1",
+            now=_now(),
+            idempotency_key=idem,
         )
     async with transaction(session):
         second = await repo.insert(
-            user_key=user_key, log_date=DateValue(2026, 5, 17), tag_id=tag_id,
-            photo=b"v2bytes", photo_thumb=_thumb(), photo_mime="image/jpeg",
-            bytes_=7, sha256="sha-v2", now=_now(), idempotency_key=idem,
+            user_key=user_key,
+            log_date=DateValue(2026, 5, 17),
+            tag_id=tag_id,
+            photo=b"v2bytes",
+            photo_thumb=_thumb(),
+            photo_mime="image/jpeg",
+            bytes_=7,
+            sha256="sha-v2",
+            now=_now(),
+            idempotency_key=idem,
         )
     assert second["id"] == first["id"]
     assert second["sha256"] == "sha-v1"  # pre-existing row returned, not overwritten
@@ -159,15 +173,27 @@ async def test_null_idempotency_keys_dont_collide(session: AsyncSession) -> None
     repo = ProgressPhotoRepository(session)
     async with transaction(session):
         await repo.insert(
-            user_key=user_key, log_date=DateValue(2026, 5, 17), tag_id=tag_id,
-            photo=b"a", photo_thumb=_thumb(), photo_mime="image/jpeg",
-            bytes_=1, sha256="sha-a", now=_now(),
+            user_key=user_key,
+            log_date=DateValue(2026, 5, 17),
+            tag_id=tag_id,
+            photo=b"a",
+            photo_thumb=_thumb(),
+            photo_mime="image/jpeg",
+            bytes_=1,
+            sha256="sha-a",
+            now=_now(),
         )
     async with transaction(session):
         await repo.insert(
-            user_key=user_key, log_date=DateValue(2026, 5, 17), tag_id=tag_id,
-            photo=b"b", photo_thumb=_thumb(), photo_mime="image/jpeg",
-            bytes_=1, sha256="sha-b", now=_now(),
+            user_key=user_key,
+            log_date=DateValue(2026, 5, 17),
+            tag_id=tag_id,
+            photo=b"b",
+            photo_thumb=_thumb(),
+            photo_mime="image/jpeg",
+            bytes_=1,
+            sha256="sha-b",
+            now=_now(),
         )
     rows = await repo.list_metadata(
         user_key=user_key, frm=DateValue(2026, 5, 1), to=DateValue(2026, 5, 31)
@@ -183,15 +209,27 @@ async def test_multiple_photos_per_date_and_tag(session: AsyncSession) -> None:
     repo = ProgressPhotoRepository(session)
     async with transaction(session):
         await repo.insert(
-            user_key=user_key, log_date=DateValue(2026, 5, 17), tag_id=tag_id,
-            photo=b"v1bytes", photo_thumb=_thumb(), photo_mime="image/jpeg",
-            bytes_=7, sha256="sha-v1", now=_now(),
+            user_key=user_key,
+            log_date=DateValue(2026, 5, 17),
+            tag_id=tag_id,
+            photo=b"v1bytes",
+            photo_thumb=_thumb(),
+            photo_mime="image/jpeg",
+            bytes_=7,
+            sha256="sha-v1",
+            now=_now(),
         )
     async with transaction(session):
         await repo.insert(
-            user_key=user_key, log_date=DateValue(2026, 5, 17), tag_id=tag_id,
-            photo=b"v2bytes", photo_thumb=_thumb(), photo_mime="image/jpeg",
-            bytes_=7, sha256="sha-v2", now=_now(),
+            user_key=user_key,
+            log_date=DateValue(2026, 5, 17),
+            tag_id=tag_id,
+            photo=b"v2bytes",
+            photo_thumb=_thumb(),
+            photo_mime="image/jpeg",
+            bytes_=7,
+            sha256="sha-v2",
+            now=_now(),
         )
     rows = await repo.list_metadata(
         user_key=user_key, frm=DateValue(2026, 5, 1), to=DateValue(2026, 5, 31)
@@ -209,9 +247,15 @@ async def test_list_metadata_filters_by_range(session: AsyncSession) -> None:
     async with transaction(session):
         for d in [DateValue(2026, 5, 1), DateValue(2026, 5, 15), DateValue(2026, 6, 1)]:
             await repo.insert(
-                user_key=user_key, log_date=d, tag_id=tag_id,
-                photo=_jpeg(), photo_thumb=_thumb(), photo_mime="image/jpeg",
-                bytes_=len(_jpeg()), sha256=f"sha-{d.isoformat()}", now=_now(),
+                user_key=user_key,
+                log_date=d,
+                tag_id=tag_id,
+                photo=_jpeg(),
+                photo_thumb=_thumb(),
+                photo_mime="image/jpeg",
+                bytes_=len(_jpeg()),
+                sha256=f"sha-{d.isoformat()}",
+                now=_now(),
             )
     rows = await repo.list_metadata(
         user_key=user_key, frm=DateValue(2026, 5, 1), to=DateValue(2026, 5, 31)
@@ -227,18 +271,21 @@ async def test_delete_removes_photo(session: AsyncSession) -> None:
     repo = ProgressPhotoRepository(session)
     async with transaction(session):
         row = await repo.insert(
-            user_key=user_key, log_date=DateValue(2026, 5, 17), tag_id=tag_id,
-            photo=_jpeg(), photo_thumb=_thumb(), photo_mime="image/jpeg",
-            bytes_=len(_jpeg()), sha256="sha", now=_now(),
+            user_key=user_key,
+            log_date=DateValue(2026, 5, 17),
+            tag_id=tag_id,
+            photo=_jpeg(),
+            photo_thumb=_thumb(),
+            photo_mime="image/jpeg",
+            bytes_=len(_jpeg()),
+            sha256="sha",
+            now=_now(),
         )
     photo_id = row["id"]
     async with transaction(session):
         ok = await repo.delete(photo_id=photo_id, user_key=user_key)
     assert ok is True
-    assert (
-        await repo.get_photo(photo_id=photo_id, user_key=user_key, thumb=False)
-        is None
-    )
+    assert await repo.get_photo(photo_id=photo_id, user_key=user_key, thumb=False) is None
 
 
 @pytest.mark.asyncio
@@ -248,12 +295,18 @@ async def test_tag_create_list_rename(session: AsyncSession) -> None:
     repo = ProgressPhotoTagRepository(session)
     async with transaction(session):
         await repo.create(
-            user_key=user_key, name="Morning", normalized_name="morning",
-            sort_order=0, now=_now(),
+            user_key=user_key,
+            name="Morning",
+            normalized_name="morning",
+            sort_order=0,
+            now=_now(),
         )
         await repo.create(
-            user_key=user_key, name="Evening", normalized_name="evening",
-            sort_order=1, now=_now(),
+            user_key=user_key,
+            name="Evening",
+            normalized_name="evening",
+            sort_order=1,
+            now=_now(),
         )
     rows = await repo.list_for_user(user_key)
     assert [r["normalized_name"] for r in rows] == ["morning", "evening"]
@@ -265,8 +318,10 @@ async def test_tag_create_list_rename(session: AsyncSession) -> None:
     morning_id = rows[0]["id"]
     async with transaction(session):
         updated = await repo.update_fields(
-            tag_id=morning_id, user_key=user_key,
-            fields={"name": "AM", "normalized_name": "am"}, now=_now(),
+            tag_id=morning_id,
+            user_key=user_key,
+            fields={"name": "AM", "normalized_name": "am"},
+            now=_now(),
         )
     assert updated is not None
     assert updated["normalized_name"] == "am"
@@ -321,9 +376,7 @@ async def test_tag_update_fields_empty_returns_row_unchanged(session: AsyncSessi
     await session.rollback()
     repo = ProgressPhotoTagRepository(session)
     async with transaction(session):
-        result = await repo.update_fields(
-            tag_id=tag_id, user_key=user_key, fields={}, now=_now()
-        )
+        result = await repo.update_fields(tag_id=tag_id, user_key=user_key, fields={}, now=_now())
     assert result is not None
     assert result["normalized_name"] == "left"
 

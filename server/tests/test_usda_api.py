@@ -80,8 +80,9 @@ def test_search_usda_200(rest_client: TestClient) -> None:
 
 def test_search_usda_rate_limited_returns_429(rest_client: TestClient) -> None:
     """When the per-user rate limiter denies the request, the route returns 429."""
-    with _override_usda_client([_candidate()]), patch(
-        "pulse_server.routers.usda._usda_rate_limiter.allow", return_value=False
+    with (
+        _override_usda_client([_candidate()]),
+        patch("pulse_server.routers.usda._usda_rate_limiter.allow", return_value=False),
     ):
         resp = rest_client.get("/usda/search?q=egg", headers=AUTH_HEADERS)
     assert resp.status_code == 429

@@ -16,7 +16,7 @@ extension PulseClient {
             path: "/weight",
             query: [
                 URLQueryItem(name: "from", value: DateOnly.string(from: from)),
-                URLQueryItem(name: "to", value: DateOnly.string(from: to)),
+                URLQueryItem(name: "to", value: DateOnly.string(from: to))
             ]
         )
         return try await fetch(url: url)
@@ -69,7 +69,7 @@ extension PulseClient {
             path: "/calories_daily",
             query: [
                 URLQueryItem(name: "from", value: DateOnly.string(from: from)),
-                URLQueryItem(name: "to", value: DateOnly.string(from: to)),
+                URLQueryItem(name: "to", value: DateOnly.string(from: to))
             ]
         )
         return try await fetch(url: url)

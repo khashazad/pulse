@@ -9,7 +9,7 @@ metadata routes.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -115,8 +115,10 @@ def test_protected_unknown_session_returns_401():
     """Bearer token that doesn't match any stored session returns 401."""
     app = _build_app()
     repo, ctx = _patched_session_repo(get_return=None)
-    with patch("pulse_server.auth.middleware.get_session", return_value=ctx), \
-         patch("pulse_server.auth.middleware.SessionsRepository", return_value=repo):
+    with (
+        patch("pulse_server.auth.middleware.get_session", return_value=ctx),
+        patch("pulse_server.auth.middleware.SessionsRepository", return_value=repo),
+    ):
         with TestClient(app) as c:
             r = c.get("/me", headers={"Authorization": "Bearer unknown"})
     assert r.status_code == 401
@@ -125,10 +127,12 @@ def test_protected_unknown_session_returns_401():
 def test_protected_expired_session_returns_401_and_deletes():
     """Expired session returns 401 and triggers deletion of the stale row."""
     app = _build_app()
-    past = datetime.now(timezone.utc) - timedelta(days=1)
+    past = datetime.now(UTC) - timedelta(days=1)
     repo, ctx = _patched_session_repo(get_return={"email": "u@e.com", "expires_at": past})
-    with patch("pulse_server.auth.middleware.get_session", return_value=ctx), \
-         patch("pulse_server.auth.middleware.SessionsRepository", return_value=repo):
+    with (
+        patch("pulse_server.auth.middleware.get_session", return_value=ctx),
+        patch("pulse_server.auth.middleware.SessionsRepository", return_value=repo),
+    ):
         with TestClient(app) as c:
             r = c.get("/me", headers={"Authorization": "Bearer tok"})
     assert r.status_code == 401
@@ -138,10 +142,14 @@ def test_protected_expired_session_returns_401_and_deletes():
 def test_protected_happy_path_slides_and_attaches_state():
     """Valid session slides expiry and attaches email + user_key to `request.state`."""
     app = _build_app()
-    future = datetime.now(timezone.utc) + timedelta(days=7)
-    repo, ctx = _patched_session_repo(get_return={"email": "khashzd@gmail.com", "expires_at": future})
-    with patch("pulse_server.auth.middleware.get_session", return_value=ctx), \
-         patch("pulse_server.auth.middleware.SessionsRepository", return_value=repo):
+    future = datetime.now(UTC) + timedelta(days=7)
+    repo, ctx = _patched_session_repo(
+        get_return={"email": "khashzd@gmail.com", "expires_at": future}
+    )
+    with (
+        patch("pulse_server.auth.middleware.get_session", return_value=ctx),
+        patch("pulse_server.auth.middleware.SessionsRepository", return_value=repo),
+    ):
         with TestClient(app) as c:
             r = c.get("/me", headers={"Authorization": "Bearer tok"})
     assert r.status_code == 200

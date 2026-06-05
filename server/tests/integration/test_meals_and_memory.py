@@ -14,8 +14,8 @@ from __future__ import annotations
 
 import os
 import uuid
+from datetime import UTC
 from datetime import datetime as DateTimeValue
-from datetime import timezone as TimezoneValue
 
 import pytest
 import pytest_asyncio
@@ -118,7 +118,7 @@ async def session(session_factory: async_sessionmaker[AsyncSession]) -> AsyncSes
 async def test_save_custom_food_writes_memory_pointer(session: AsyncSession) -> None:
     """``upsert_custom_food_and_remember`` writes a ``food_memory`` row that ``resolve_food_by_name`` returns as ``custom_food``."""
     user_key = f"user-{uuid.uuid4()}"
-    now = DateTimeValue.now(tz=TimezoneValue.utc)
+    now = DateTimeValue.now(tz=UTC)
 
     payload = CustomFoodCreate(
         name="My Wrap",
@@ -155,7 +155,7 @@ async def test_resolve_food_returns_none_when_unknown(session: AsyncSession) -> 
 async def test_food_memory_usda_round_trip(session: AsyncSession) -> None:
     """A USDA-backed ``food_memory`` row written via ``upsert_usda`` resolves via ``resolve_food_by_name`` with macros intact and case-insensitive name match."""
     user_key = f"user-{uuid.uuid4()}"
-    now = DateTimeValue.now(tz=TimezoneValue.utc)
+    now = DateTimeValue.now(tz=UTC)
     repo = FoodMemoryRepository(session)
     async with transaction(session):
         await repo.upsert_usda(
@@ -184,7 +184,7 @@ async def test_food_memory_usda_round_trip(session: AsyncSession) -> None:
 async def test_food_entries_check_constraint_blocks_dual_source(session: AsyncSession) -> None:
     """``food_entries`` CHECK rejects a row that carries both ``usda_fdc_id`` and ``custom_food_id``."""
     user_key = f"user-{uuid.uuid4()}"
-    now = DateTimeValue.now(tz=TimezoneValue.utc)
+    now = DateTimeValue.now(tz=UTC)
     log_date = now.date()
     custom_repo = CustomFoodsRepository(session)
     entries_repo = EntriesRepository(session)
@@ -236,7 +236,7 @@ async def test_food_entries_check_constraint_blocks_dual_source(session: AsyncSe
 async def test_log_meal_expands_into_food_entries(session: AsyncSession) -> None:
     """``log_meal`` expands every meal item into a ``food_entries`` row stamped with the meal id and name and shared ``entry_group_id``."""
     user_key = f"user-{uuid.uuid4()}"
-    now = DateTimeValue.now(tz=TimezoneValue.utc)
+    now = DateTimeValue.now(tz=UTC)
 
     payload = MealCreate(
         name="My Breakfast",
@@ -288,7 +288,7 @@ async def test_log_meal_expands_into_food_entries(session: AsyncSession) -> None
 async def test_delete_custom_food_blocked_when_referenced(session: AsyncSession) -> None:
     """Deleting a ``custom_foods`` row that is still referenced by a ``food_entries`` row fails with ``IntegrityError``."""
     user_key = f"user-{uuid.uuid4()}"
-    now = DateTimeValue.now(tz=TimezoneValue.utc)
+    now = DateTimeValue.now(tz=UTC)
     log_date = now.date()
     custom_repo = CustomFoodsRepository(session)
     entries_repo = EntriesRepository(session)
@@ -348,7 +348,7 @@ async def test_entries_reject_unowned_custom_food_id(session: AsyncSession) -> N
 
     owner = f"user-{uuid.uuid4()}"
     attacker = f"user-{uuid.uuid4()}"
-    now = DateTimeValue.now(tz=TimezoneValue.utc)
+    now = DateTimeValue.now(tz=UTC)
 
     async with transaction(session):
         cf = await CustomFoodsRepository(session).create(
@@ -389,7 +389,7 @@ async def test_entries_allow_owned_custom_food_id(session: AsyncSession) -> None
     from pulse_server.services.entries_service import create_entries_with_side_effects
 
     owner = f"user-{uuid.uuid4()}"
-    now = DateTimeValue.now(tz=TimezoneValue.utc)
+    now = DateTimeValue.now(tz=UTC)
 
     async with transaction(session):
         cf = await CustomFoodsRepository(session).create(
@@ -430,7 +430,7 @@ async def test_meal_create_rejects_unowned_custom_food_id(session: AsyncSession)
 
     owner = f"user-{uuid.uuid4()}"
     attacker = f"user-{uuid.uuid4()}"
-    now = DateTimeValue.now(tz=TimezoneValue.utc)
+    now = DateTimeValue.now(tz=UTC)
 
     async with transaction(session):
         cf = await CustomFoodsRepository(session).create(
@@ -475,7 +475,7 @@ async def test_meal_create_rejects_unowned_custom_food_id(session: AsyncSession)
 async def test_meal_unique_name_per_user(session: AsyncSession) -> None:
     """``create_meal_with_items`` enforces unique normalized meal names per user."""
     user_key = f"user-{uuid.uuid4()}"
-    now = DateTimeValue.now(tz=TimezoneValue.utc)
+    now = DateTimeValue.now(tz=UTC)
     payload = MealCreate(
         name="Lunch",
         items=[
@@ -505,7 +505,7 @@ async def test_meal_unique_name_per_user(session: AsyncSession) -> None:
 async def test_list_meals_includes_item_counts(session: AsyncSession) -> None:
     """``MealsRepository.list_meals`` returns per-meal ``item_count`` and macro totals (including zero for empty meals)."""
     user_key = f"user-{uuid.uuid4()}"
-    now = DateTimeValue.now(tz=TimezoneValue.utc)
+    now = DateTimeValue.now(tz=UTC)
     repo = MealsRepository(session)
 
     payload = MealCreate(
@@ -581,7 +581,7 @@ async def test_list_meals_includes_item_counts(session: AsyncSession) -> None:
 async def test_manual_entry_has_null_meal_link(session: AsyncSession) -> None:
     """Ad-hoc ``create_food_entry`` calls store NULL ``meal_id`` and ``meal_name``."""
     user_key = f"user-{uuid.uuid4()}"
-    now = DateTimeValue.now(tz=TimezoneValue.utc)
+    now = DateTimeValue.now(tz=UTC)
     log_date = now.date()
     entries_repo = EntriesRepository(session)
 
@@ -617,7 +617,7 @@ async def test_manual_entry_has_null_meal_link(session: AsyncSession) -> None:
 async def test_meal_rename_does_not_mutate_historical_entries(session: AsyncSession) -> None:
     """Renaming a meal leaves the stamped ``meal_name`` on already-logged ``food_entries`` rows unchanged."""
     user_key = f"user-{uuid.uuid4()}"
-    now = DateTimeValue.now(tz=TimezoneValue.utc)
+    now = DateTimeValue.now(tz=UTC)
 
     payload = MealCreate(
         name="Original Name",
@@ -647,6 +647,7 @@ async def test_meal_rename_does_not_mutate_historical_entries(session: AsyncSess
 
     # Rename the meal (direct UPDATE — covers the "what if a write happens later" case).
     from sqlalchemy import update as sa_update
+
     from pulse_server.repositories.tables import meals as meals_table
 
     async with transaction(session):
@@ -668,7 +669,7 @@ async def test_meal_rename_does_not_mutate_historical_entries(session: AsyncSess
 async def test_meal_delete_sets_meal_id_null_keeps_meal_name(session: AsyncSession) -> None:
     """Deleting a meal nulls ``meal_id`` on its historical entries while preserving the stamped ``meal_name``."""
     user_key = f"user-{uuid.uuid4()}"
-    now = DateTimeValue.now(tz=TimezoneValue.utc)
+    now = DateTimeValue.now(tz=UTC)
 
     payload = MealCreate(
         name="Doomed Meal",
@@ -691,9 +692,7 @@ async def test_meal_delete_sets_meal_id_null_keeps_meal_name(session: AsyncSessi
             session=session, user_key=user_key, payload=payload, now=now
         )
 
-    await log_meal(
-        session=session, user_key=user_key, meal_id=meal_row["id"], now=now
-    )
+    await log_meal(session=session, user_key=user_key, meal_id=meal_row["id"], now=now)
 
     # Delete the meal directly through the repo.
     repo = MealsRepository(session)
@@ -715,23 +714,25 @@ async def test_public_entries_path_ignores_client_supplied_meal_link(session: As
     from pulse_server.services.entries_service import create_entries_with_side_effects
 
     user_key = f"user-{uuid.uuid4()}"
-    now = DateTimeValue.now(tz=TimezoneValue.utc)
+    now = DateTimeValue.now(tz=UTC)
 
     # Simulate the request payload — extra meal_id / meal_name keys included by a malicious
     # or buggy client. model_validate accepts and silently drops unknown fields.
-    item = FoodEntryCreate.model_validate({
-        "display_name": "ad-hoc",
-        "quantity_text": "1",
-        "usda_fdc_id": 200099,
-        "usda_description": "ad-hoc",
-        "calories": 50,
-        "protein_g": 1,
-        "carbs_g": 10,
-        "fat_g": 2,
-        "consumed_at": now,
-        "meal_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
-        "meal_name": "Forged Meal",
-    })
+    item = FoodEntryCreate.model_validate(
+        {
+            "display_name": "ad-hoc",
+            "quantity_text": "1",
+            "usda_fdc_id": 200099,
+            "usda_description": "ad-hoc",
+            "calories": 50,
+            "protein_g": 1,
+            "carbs_g": 10,
+            "fat_g": 2,
+            "consumed_at": now,
+            "meal_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            "meal_name": "Forged Meal",
+        }
+    )
 
     created_rows, _ = await create_entries_with_side_effects(
         session=session, user_key=user_key, items=[item], now=now

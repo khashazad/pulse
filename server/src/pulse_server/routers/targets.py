@@ -55,7 +55,9 @@ async def get_targets(
         protein_g=float(row["protein_g_target"]),
         carbs_g=float(row["carbs_g_target"]),
         fat_g=float(row["fat_g_target"]),
-        target_weight_lb=float(row["target_weight_lb"]) if row.get("target_weight_lb") is not None else None,
+        target_weight_lb=float(row["target_weight_lb"])
+        if row.get("target_weight_lb") is not None
+        else None,
     )
 
 

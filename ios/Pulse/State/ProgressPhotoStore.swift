@@ -38,7 +38,7 @@ final class ProgressPhotoStore {
     init(auth: AuthSession) {
         self.auth = auth
         self.cache = ProgressPhotoCache()
-        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        let docs = URL.documentsDirectory
         self.queue = PhotoUploadQueue(fileURL: docs.appendingPathComponent("pending_uploads.json"))
         self.monitor = NWPathMonitor()
         startMonitor()
@@ -89,7 +89,8 @@ final class ProgressPhotoStore {
 
     // MARK: write
 
-    /// Persists the image to disk, enqueues a single tagged upload, and restarts the worker so newly due work is not hidden behind an older sleep.
+    /// Persists the image to disk, enqueues a single tagged upload, and restarts the
+    /// worker so newly due work is not hidden behind an older sleep.
     ///
     /// - Parameters:
     ///   - date: Date for the progress photo.
@@ -126,8 +127,7 @@ final class ProgressPhotoStore {
         photos[day]?.removeAll { $0.id == meta.id }
         if photos[day]?.isEmpty == true { photos[day] = nil }
         guard let client = auth?.makeProgressPhotoClient() else { return }
-        do { try await client.delete(photoId: meta.id) }
-        catch { lastError = error.localizedDescription }
+        do { try await client.delete(photoId: meta.id) } catch { lastError = error.localizedDescription }
     }
 
     // MARK: sync

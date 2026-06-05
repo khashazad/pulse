@@ -12,7 +12,6 @@ from zoneinfo import ZoneInfo
 
 from pulse_server.services.entries_service import _effective_log_date
 
-
 TZ = ZoneInfo("America/Toronto")
 
 

@@ -1,0 +1,31 @@
+version: 2
+updates:
+  # Keep SHA-pinned actions current (Dependabot updates the pin + version comment).
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns:
+          - "*"
+
+  # Server Python dependencies via uv.lock.
+  - package-ecosystem: uv
+    directory: "/server"
+    schedule:
+      interval: weekly
+    groups:
+      python:
+        patterns:
+          - "*"
+
+  # Keep the Dockerfile's digest-pinned base images (python:3.11-slim and the
+  # uv binary image) current — the github-actions/uv ecosystems do not touch
+  # Dockerfile FROM/COPY digests.
+  - package-ecosystem: docker
+    directory: "/server"
+    schedule:
+      interval: weekly
+
+  # No `swift` ecosystem entry: the iOS app has no SPM packages to track.

@@ -8,9 +8,9 @@ runs.
 from __future__ import annotations
 
 import os
+from datetime import UTC
 from datetime import datetime as DateTimeValue
 from datetime import timedelta as TimeDeltaValue
-from datetime import timezone as TimezoneValue
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -47,7 +47,7 @@ def rest_client() -> TestClient:
     **Outputs:**
     - TestClient: Client bound to the configured app, cleaned up on teardown.
     """
-    now = DateTimeValue.now(tz=TimezoneValue.utc)
+    now = DateTimeValue.now(tz=UTC)
     fut = now + TimeDeltaValue(days=7)
     session_repo = AsyncMock()
     session_repo.get.return_value = {"email": "khashzd@gmail.com", "expires_at": fut}
@@ -58,14 +58,13 @@ def rest_client() -> TestClient:
     db_ctx.__aenter__.return_value = fake_db_session
     db_ctx.__aexit__.return_value = None
 
-    with patch("pulse_server.db.init_pool", new_callable=AsyncMock), patch(
-        "pulse_server.db.bootstrap_schema", new_callable=AsyncMock
-    ), patch("pulse_server.db.close_pool", new_callable=AsyncMock), patch(
-        "pulse_server.usda.USDAClient"
-    ) as mock_usda_client, patch(
-        "pulse_server.auth.middleware.get_session", return_value=db_ctx
-    ), patch(
-        "pulse_server.auth.middleware.SessionsRepository", return_value=session_repo
+    with (
+        patch("pulse_server.db.init_pool", new_callable=AsyncMock),
+        patch("pulse_server.db.bootstrap_schema", new_callable=AsyncMock),
+        patch("pulse_server.db.close_pool", new_callable=AsyncMock),
+        patch("pulse_server.usda.USDAClient") as mock_usda_client,
+        patch("pulse_server.auth.middleware.get_session", return_value=db_ctx),
+        patch("pulse_server.auth.middleware.SessionsRepository", return_value=session_repo),
     ):
         mock_usda_client.return_value.close = AsyncMock()
         from pulse_server.app import app

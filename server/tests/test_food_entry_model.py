@@ -6,7 +6,7 @@ guarantee that client-supplied `meal_id` / `meal_name` are dropped on
 the way in, and the serialization of those fields on the response model.
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 import pytest
@@ -111,18 +111,20 @@ def test_food_entry_create_ignores_client_supplied_meal_link() -> None:
     # meal_id / meal_name are server-controlled (only set by log_meal). When clients
     # try to forge them in the public payload, FoodEntryCreate must not surface them
     # as attributes that downstream code could trust.
-    entry = FoodEntryCreate.model_validate({
-        "display_name": "oats",
-        "quantity_text": "80 g",
-        "usda_fdc_id": 173904,
-        "usda_description": "Oats, raw",
-        "calories": 320,
-        "protein_g": 10,
-        "carbs_g": 54,
-        "fat_g": 6,
-        "meal_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
-        "meal_name": "Forged Meal",
-    })
+    entry = FoodEntryCreate.model_validate(
+        {
+            "display_name": "oats",
+            "quantity_text": "80 g",
+            "usda_fdc_id": 173904,
+            "usda_description": "Oats, raw",
+            "calories": 320,
+            "protein_g": 10,
+            "carbs_g": 54,
+            "fat_g": 6,
+            "meal_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            "meal_name": "Forged Meal",
+        }
+    )
     assert not hasattr(entry, "meal_id")
     assert not hasattr(entry, "meal_name")
 
@@ -147,8 +149,8 @@ def test_food_entry_response_serializes_meal_link() -> None:
         fat_g=6,
         meal_id=meal_id,
         meal_name="Breakfast",
-        consumed_at=datetime(2026, 5, 6, 8, 30, tzinfo=timezone.utc),
-        created_at=datetime(2026, 5, 6, 8, 31, tzinfo=timezone.utc),
+        consumed_at=datetime(2026, 5, 6, 8, 30, tzinfo=UTC),
+        created_at=datetime(2026, 5, 6, 8, 31, tzinfo=UTC),
     )
     assert response.meal_id == meal_id
     assert response.meal_name == "Breakfast"
@@ -174,8 +176,8 @@ def test_food_entry_response_meal_link_defaults_to_none() -> None:
         protein_g=10,
         carbs_g=54,
         fat_g=6,
-        consumed_at=datetime(2026, 5, 6, 8, 30, tzinfo=timezone.utc),
-        created_at=datetime(2026, 5, 6, 8, 31, tzinfo=timezone.utc),
+        consumed_at=datetime(2026, 5, 6, 8, 30, tzinfo=UTC),
+        created_at=datetime(2026, 5, 6, 8, 31, tzinfo=UTC),
     )
     assert response.meal_id is None
     assert response.meal_name is None

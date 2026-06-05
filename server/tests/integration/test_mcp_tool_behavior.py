@@ -25,7 +25,6 @@ from sqlalchemy import text
 from pulse_server import db
 from pulse_server.mcp import build_mcp
 
-
 pytestmark = pytest.mark.integration
 
 
@@ -496,7 +495,9 @@ async def test_update_custom_food_invalid_id_raises_tool_error(mcp_server) -> No
     """``update_custom_food`` with a non-UUID id raises a ToolError."""
     async with Client(mcp_server) as client:
         with pytest.raises(Exception) as exc_info:
-            await client.call_tool("update_custom_food", {"custom_food_id": "not-a-uuid", "calories": 1})
+            await client.call_tool(
+                "update_custom_food", {"custom_food_id": "not-a-uuid", "calories": 1}
+            )
     assert _raised_tool_error(exc_info)
 
 
@@ -596,7 +597,8 @@ async def test_save_list_update_delete_container(mcp_server) -> None:
         assert any(r["id"] == cid for r in listed.structured_content["result"])
 
         updated = await client.call_tool(
-            "update_container", {"container_id": cid, "name": "Renamed Pyrex", "tare_weight_g": 400.0}
+            "update_container",
+            {"container_id": cid, "name": "Renamed Pyrex", "tare_weight_g": 400.0},
         )
         assert updated.structured_content["name"] == "Renamed Pyrex"
         assert updated.structured_content["tare_weight_g"] == 400.0
@@ -952,7 +954,12 @@ async def test_add_update_delete_meal_item(mcp_server) -> None:
 
         updated = await client.call_tool(
             "update_meal_item",
-            {"meal_id": meal_id, "meal_item_id": item_id, "calories": 230, "display_name": "More Beans"},
+            {
+                "meal_id": meal_id,
+                "meal_item_id": item_id,
+                "calories": 230,
+                "display_name": "More Beans",
+            },
         )
         assert updated.structured_content["calories"] == 230
         assert updated.structured_content["display_name"] == "More Beans"
@@ -1177,7 +1184,11 @@ async def test_remove_meal_alias_drops_alias(mcp_server) -> None:
     async with Client(mcp_server) as client:
         created = await client.call_tool(
             "create_meal",
-            {"name": "Removable Alias", "aliases": ["temp alias"], "items": [dict(_SIMPLE_MEAL_ITEM)]},
+            {
+                "name": "Removable Alias",
+                "aliases": ["temp alias"],
+                "items": [dict(_SIMPLE_MEAL_ITEM)],
+            },
         )
         meal_id = created.structured_content["id"]
         removed = await client.call_tool(

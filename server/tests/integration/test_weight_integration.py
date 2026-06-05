@@ -11,10 +11,10 @@ from __future__ import annotations
 
 import os
 import uuid
+from datetime import UTC
 from datetime import date as DateValue
 from datetime import datetime as DateTimeValue
 from datetime import timedelta as TimeDeltaValue
-from datetime import timezone as TimezoneValue
 from decimal import Decimal
 
 import pytest
@@ -23,14 +23,12 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pulse_server import db
-from pulse_server.repositories.weight import WeightRepository
 from pulse_server.services.weight_service import (
     delete_weight,
     get_weight,
     list_weight_range,
     upsert_weight,
 )
-
 
 pytestmark = pytest.mark.integration
 
@@ -58,7 +56,7 @@ async def session() -> AsyncSession:
 async def test_upsert_then_get(session: AsyncSession) -> None:
     """``upsert_weight`` converts kg→lb (70kg→154.32lb) and ``get_weight`` returns the stored value."""
     today = DateValue.today()
-    now = DateTimeValue.now(tz=TimezoneValue.utc)
+    now = DateTimeValue.now(tz=UTC)
     user_key = "test_user_" + uuid.uuid4().hex[:8]
 
     upserted = await upsert_weight(
@@ -81,16 +79,23 @@ async def test_upsert_then_get(session: AsyncSession) -> None:
 async def test_upsert_replaces_same_date(session: AsyncSession) -> None:
     """A second ``upsert_weight`` on the same date updates the row in place, preserving its id."""
     today = DateValue.today()
-    now = DateTimeValue.now(tz=TimezoneValue.utc)
+    now = DateTimeValue.now(tz=UTC)
     user_key = "test_user_" + uuid.uuid4().hex[:8]
 
     first = await upsert_weight(
-        session=session, user_key=user_key, log_date=today,
-        weight=Decimal("180"), unit="lb", now=now,
+        session=session,
+        user_key=user_key,
+        log_date=today,
+        weight=Decimal("180"),
+        unit="lb",
+        now=now,
     )
     second = await upsert_weight(
-        session=session, user_key=user_key, log_date=today,
-        weight=Decimal("181.5"), unit="lb",
+        session=session,
+        user_key=user_key,
+        log_date=today,
+        weight=Decimal("181.5"),
+        unit="lb",
         now=now + TimeDeltaValue(seconds=1),
     )
     assert second.id == first.id
@@ -101,18 +106,20 @@ async def test_upsert_replaces_same_date(session: AsyncSession) -> None:
 async def test_list_range(session: AsyncSession) -> None:
     """``list_weight_range`` returns all entries in the inclusive window ordered by ``log_date`` ascending."""
     today = DateValue.today()
-    now = DateTimeValue.now(tz=TimezoneValue.utc)
+    now = DateTimeValue.now(tz=UTC)
     user_key = "test_user_" + uuid.uuid4().hex[:8]
     for offset in (3, 2, 1, 0):
         await upsert_weight(
-            session=session, user_key=user_key,
+            session=session,
+            user_key=user_key,
             log_date=today - TimeDeltaValue(days=offset),
             weight=Decimal("180") + Decimal(offset),
             unit="lb",
             now=now,
         )
     rows = await list_weight_range(
-        session=session, user_key=user_key,
+        session=session,
+        user_key=user_key,
         from_date=today - TimeDeltaValue(days=3),
         to_date=today,
     )
@@ -124,11 +131,15 @@ async def test_list_range(session: AsyncSession) -> None:
 async def test_delete(session: AsyncSession) -> None:
     """``delete_weight`` returns ``True`` for an existing row and ``False`` on a repeated delete."""
     today = DateValue.today()
-    now = DateTimeValue.now(tz=TimezoneValue.utc)
+    now = DateTimeValue.now(tz=UTC)
     user_key = "test_user_" + uuid.uuid4().hex[:8]
     await upsert_weight(
-        session=session, user_key=user_key, log_date=today,
-        weight=Decimal("180"), unit="lb", now=now,
+        session=session,
+        user_key=user_key,
+        log_date=today,
+        weight=Decimal("180"),
+        unit="lb",
+        now=now,
     )
     assert await delete_weight(session=session, user_key=user_key, log_date=today) is True
     assert await delete_weight(session=session, user_key=user_key, log_date=today) is False

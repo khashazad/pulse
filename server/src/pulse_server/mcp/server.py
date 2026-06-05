@@ -26,8 +26,12 @@ from fastmcp import FastMCP
 from pulse_server.config import SERVICE_TOKEN_LOGIN, get_settings
 from pulse_server.mcp.auth import GitHubAllowlistMiddleware
 from pulse_server.mcp.context import ToolContext
-from pulse_server.mcp.context import parse_consumed_at as _parse_consumed_at  # noqa: F401  (back-compat import path)
-from pulse_server.mcp.context import target_and_remaining as _target_and_remaining  # noqa: F401  (back-compat import path)
+from pulse_server.mcp.context import (
+    parse_consumed_at as _parse_consumed_at,  # noqa: F401  (back-compat import path)
+)
+from pulse_server.mcp.context import (
+    target_and_remaining as _target_and_remaining,  # noqa: F401  (back-compat import path)
+)
 from pulse_server.mcp.tools import (
     container_tools,
     custom_food_tools,
@@ -36,7 +40,6 @@ from pulse_server.mcp.tools import (
     memory_tools,
     targets_summary_tools,
 )
-
 
 WORKFLOW_INSTRUCTIONS = """
 Diet tracking workflow. Follow this order on every food-related interaction:

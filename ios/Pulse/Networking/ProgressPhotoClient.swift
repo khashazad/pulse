@@ -35,7 +35,7 @@ actor ProgressPhotoClient {
             path: "/measures/photos",
             query: [
                 URLQueryItem(name: "from", value: DateOnly.string(from: frm)),
-                URLQueryItem(name: "to", value: DateOnly.string(from: to)),
+                URLQueryItem(name: "to", value: DateOnly.string(from: to))
             ]
         )
         var req = URLRequest(url: url)
@@ -81,7 +81,7 @@ actor ProgressPhotoClient {
         req.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
         var fields: [(name: String, value: String)] = [
             ("log_date", DateOnly.string(from: date)),
-            ("tag_id", tagId.uuidString.lowercased()),
+            ("tag_id", tagId.uuidString.lowercased())
         ]
         if let idempotencyKey {
             fields.append(("idempotency_key", idempotencyKey.uuidString.lowercased()))

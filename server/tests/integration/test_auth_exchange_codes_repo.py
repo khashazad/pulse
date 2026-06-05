@@ -13,7 +13,7 @@ from __future__ import annotations
 import hashlib
 import os
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 import pytest_asyncio
@@ -59,7 +59,7 @@ def _hash(code: str) -> bytes:
 async def test_create_then_consume_round_trip(session) -> None:
     """``create`` stores a code and ``consume`` returns its email/challenge/expiry exactly once."""
     repo = AuthExchangeCodesRepository(session)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     expires = now + timedelta(minutes=2)
     h = _hash(f"code-{uuid.uuid4()}")
 
@@ -94,7 +94,7 @@ async def test_consume_unknown_code_returns_none(session) -> None:
 async def test_purge_expired_removes_only_expired_rows(session) -> None:
     """``purge_expired`` deletes rows whose expiry has passed and leaves live ones intact."""
     repo = AuthExchangeCodesRepository(session)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     expired_hash = _hash(f"expired-{uuid.uuid4()}")
     live_hash = _hash(f"live-{uuid.uuid4()}")
 
