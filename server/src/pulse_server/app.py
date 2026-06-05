@@ -2,7 +2,7 @@
 
 Constructs the ``app`` instance: registers the lifespan that initializes the
 SQLAlchemy pool, bootstraps schema, and owns the USDA client; installs the
-session-auth and user-key guardrail middlewares (with MCP path exemptions);
+session-auth middleware (with MCP path exemptions);
 mounts every feature router; and grafts the FastMCP server plus its OAuth
 metadata routes at ``/mcp``.
 
@@ -19,7 +19,7 @@ from fastapi import FastAPI
 from fastmcp.utilities.lifespan import combine_lifespans
 
 from pulse_server import db
-from pulse_server.auth import SessionAuthMiddleware, UserKeyGuardrailMiddleware
+from pulse_server.auth import SessionAuthMiddleware
 from pulse_server.config import get_settings
 from pulse_server.mcp import build_mcp
 
@@ -95,11 +95,6 @@ _mcp_exempt_prefixes: tuple[str, ...] = ("/mcp",)
 
 app.add_middleware(
     SessionAuthMiddleware,
-    exempt_paths=_mcp_exempt_paths,
-    exempt_prefixes=_mcp_exempt_prefixes,
-)
-app.add_middleware(
-    UserKeyGuardrailMiddleware,
     exempt_paths=_mcp_exempt_paths,
     exempt_prefixes=_mcp_exempt_prefixes,
 )

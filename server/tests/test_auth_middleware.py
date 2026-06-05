@@ -1,10 +1,10 @@
-"""Behaviour tests for `SessionAuthMiddleware` and `UserKeyGuardrailMiddleware`.
+"""Behaviour tests for `SessionAuthMiddleware`.
 
 Builds a minimal FastAPI app to exercise the middleware stack in isolation:
 unauthenticated pass-through on `/health`, 401 responses for missing/
 malformed/expired/unknown Bearer tokens, happy-path session slide +
-`request.state` attachment, the `user_key` query guardrail, and exemption
-paths for the MCP and OAuth metadata routes.
+`request.state` attachment, and exemption paths for the MCP and OAuth
+metadata routes.
 """
 
 from __future__ import annotations
@@ -40,20 +40,18 @@ def _env(monkeypatch):
 
 
 def _build_app():
-    """Construct a tiny FastAPI app wired with the production auth middlewares.
+    """Construct a tiny FastAPI app wired with the production auth middleware.
 
     **Outputs:**
     - FastAPI: App exposing ``/health`` (public) and ``/me`` (session-required).
     """
     from pulse_server.auth.middleware import (
         SessionAuthMiddleware,
-        UserKeyGuardrailMiddleware,
         require_session,
     )
 
     app = FastAPI()
     app.add_middleware(SessionAuthMiddleware)
-    app.add_middleware(UserKeyGuardrailMiddleware)
 
     @app.get("/health")
     async def health():
@@ -151,47 +149,18 @@ def test_protected_happy_path_slides_and_attaches_state():
     repo.slide.assert_awaited_once()
 
 
-def test_user_key_query_guardrail_returns_400_on_protected_route():
-    """`user_key` query param on a protected route returns 400 before auth runs."""
-    app = _build_app()
-    with TestClient(app) as c:
-        r = c.get("/me?user_key=foo")
-    # Guardrail runs before auth, so 400 (not 401), even with no Bearer header.
-    assert r.status_code == 400
-    assert "user_key" in (r.json().get("error") or "")
-
-
-def test_user_key_query_guardrail_skips_health_and_auth_routes():
-    """`user_key` guardrail does not fire on `/health` or `/auth/*` paths."""
-    app = _build_app()
-    with TestClient(app) as c:
-        r1 = c.get("/health?user_key=foo")
-        # /auth/* not registered on this dummy app — should 404, not 400.
-        r2 = c.get("/auth/google/start?user_key=foo")
-    assert r1.status_code == 200
-    assert r2.status_code != 400
-
-
 def _build_app_with_mcp_exemptions():
-    """Build a FastAPI app whose middlewares exempt `/mcp/*` and OAuth metadata paths.
+    """Build a FastAPI app whose middleware exempts `/mcp/*` and OAuth metadata paths.
 
     **Outputs:**
     - FastAPI: App with ``/mcp/probe``, ``/authorize``, and
       ``/.well-known/oauth-authorization-server`` routes registered.
     """
-    from pulse_server.auth.middleware import (
-        SessionAuthMiddleware,
-        UserKeyGuardrailMiddleware,
-    )
+    from pulse_server.auth.middleware import SessionAuthMiddleware
 
     app = FastAPI()
     app.add_middleware(
         SessionAuthMiddleware,
-        exempt_paths=frozenset({"/authorize", "/token", "/.well-known/oauth-authorization-server"}),
-        exempt_prefixes=("/mcp",),
-    )
-    app.add_middleware(
-        UserKeyGuardrailMiddleware,
         exempt_paths=frozenset({"/authorize", "/token", "/.well-known/oauth-authorization-server"}),
         exempt_prefixes=("/mcp",),
     )

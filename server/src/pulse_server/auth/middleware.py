@@ -1,10 +1,7 @@
 """Request-scope authentication middleware and the ``require_session`` dependency.
 
-Defines two Starlette middlewares and one FastAPI dependency:
+Defines one Starlette middleware and one FastAPI dependency:
 
-- :class:`UserKeyGuardrailMiddleware` rejects any request that smuggles a
-  ``?user_key=`` query param on a protected route — a cutover guardrail that
-  exists while clients migrate off the legacy single-user query identifier.
 - :class:`SessionAuthMiddleware` validates ``Authorization: Bearer <token>``
   against the ``sessions`` table, slides the TTL, and attaches ``email``,
   ``user_key``, and ``session_expires_at`` to ``request.state``.
@@ -30,85 +27,14 @@ from pulse_server.db import get_session
 from pulse_server.repositories.sessions import SessionsRepository
 
 
-# Paths that always bypass session auth + the ?user_key= guardrail. The OAuth bootstrap
-# routes handle their own credential lifecycle; /auth/whoami and /auth/logout still
-# require a valid session and are intentionally NOT exempted here.
+# Paths that always bypass session auth. The OAuth bootstrap routes handle their own
+# credential lifecycle; /auth/whoami and /auth/logout still require a valid session
+# and are intentionally NOT exempted here.
 DEFAULT_EXEMPT_PATHS: frozenset[str] = frozenset({"/health"})
 DEFAULT_EXEMPT_PREFIXES: tuple[str, ...] = ("/auth/google/",)
 
 
-class _ExemptionMixin:
-    _exempt_paths: frozenset[str]
-    _exempt_prefixes: tuple[str, ...]
-
-    def _init_exemptions(
-        self,
-        exempt_paths: frozenset[str] | None,
-        exempt_prefixes: tuple[str, ...] | None,
-    ) -> None:
-        """Merge caller-supplied exemptions with the package defaults.
-
-        **Inputs:**
-        - exempt_paths (frozenset[str] | None): Additional exact paths to bypass.
-        - exempt_prefixes (tuple[str, ...] | None): Additional path prefixes to bypass.
-        """
-        self._exempt_paths = DEFAULT_EXEMPT_PATHS | (exempt_paths or frozenset())
-        self._exempt_prefixes = DEFAULT_EXEMPT_PREFIXES + (exempt_prefixes or ())
-
-    def _is_exempt(self, path: str) -> bool:
-        """Return whether ``path`` should bypass this middleware.
-
-        **Inputs:**
-        - path (str): Request path to check against the exemption sets.
-
-        **Outputs:**
-        - bool: ``True`` when the path is in the exempt set or matches an exempt prefix.
-        """
-        if path in self._exempt_paths:
-            return True
-        return any(path.startswith(prefix) for prefix in self._exempt_prefixes)
-
-
-class UserKeyGuardrailMiddleware(_ExemptionMixin, BaseHTTPMiddleware):
-    """Rejects ``?user_key=`` on protected routes during the cutover window."""
-
-    def __init__(
-        self,
-        app,
-        *,
-        exempt_paths: frozenset[str] | None = None,
-        exempt_prefixes: tuple[str, ...] | None = None,
-    ) -> None:
-        """Wire the middleware into the ASGI app and merge exemptions.
-
-        **Inputs:**
-        - app: Downstream ASGI app.
-        - exempt_paths (frozenset[str] | None): Extra exact paths to bypass the guardrail.
-        - exempt_prefixes (tuple[str, ...] | None): Extra path prefixes to bypass the guardrail.
-        """
-        super().__init__(app)
-        self._init_exemptions(exempt_paths, exempt_prefixes)
-
-    async def dispatch(self, request: Request, call_next):
-        """Short-circuit requests that smuggle a stale ``user_key`` query param.
-
-        **Inputs:**
-        - request (Request): Incoming HTTP request.
-        - call_next (Callable): Downstream handler chain.
-
-        **Outputs:**
-        - Response: 400 JSON when the param is present on a protected route,
-          otherwise the ``call_next`` result.
-        """
-        if not self._is_exempt(request.url.path) and "user_key" in request.query_params:
-            return JSONResponse(
-                status_code=400,
-                content={"error": "user_key query param is no longer accepted"},
-            )
-        return await call_next(request)
-
-
-class SessionAuthMiddleware(_ExemptionMixin, BaseHTTPMiddleware):
+class SessionAuthMiddleware(BaseHTTPMiddleware):
     """Validates Bearer session tokens and slides the session TTL.
 
     Sets ``request.state.email``, ``request.state.user_key``, and
@@ -125,7 +51,7 @@ class SessionAuthMiddleware(_ExemptionMixin, BaseHTTPMiddleware):
         exempt_paths: frozenset[str] | None = None,
         exempt_prefixes: tuple[str, ...] | None = None,
     ) -> None:
-        """Wire the middleware into the ASGI app and merge exemptions.
+        """Wire the middleware into the ASGI app and merge exemptions with the package defaults.
 
         **Inputs:**
         - app: Downstream ASGI app.
@@ -133,7 +59,21 @@ class SessionAuthMiddleware(_ExemptionMixin, BaseHTTPMiddleware):
         - exempt_prefixes (tuple[str, ...] | None): Extra path prefixes to bypass session auth.
         """
         super().__init__(app)
-        self._init_exemptions(exempt_paths, exempt_prefixes)
+        self._exempt_paths = DEFAULT_EXEMPT_PATHS | (exempt_paths or frozenset())
+        self._exempt_prefixes = DEFAULT_EXEMPT_PREFIXES + (exempt_prefixes or ())
+
+    def _is_exempt(self, path: str) -> bool:
+        """Return whether ``path`` should bypass session auth.
+
+        **Inputs:**
+        - path (str): Request path to check against the exemption sets.
+
+        **Outputs:**
+        - bool: ``True`` when the path is in the exempt set or matches an exempt prefix.
+        """
+        if path in self._exempt_paths:
+            return True
+        return any(path.startswith(prefix) for prefix in self._exempt_prefixes)
 
     async def dispatch(self, request: Request, call_next):
         """Authenticate the request by Bearer token, sliding the session TTL on success.

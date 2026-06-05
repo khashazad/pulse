@@ -28,7 +28,7 @@ Google OAuth → opaque Bearer session tokens.
 
 - `/auth/google/start` + `/auth/google/callback` run the handshake, issue a 32-byte URL-safe token, and store `sha256(token)` in the `sessions` table.
 - `SessionAuthMiddleware` validates `Authorization: Bearer <token>` on every non-`/auth/*`/`/health` request and slides the TTL. Allowlist: `ALLOWED_EMAILS` (case-insensitive).
-- The Bearer session token is the only client auth path. `UserKeyGuardrailMiddleware` rejects any `?user_key=` query on protected routes (cutover guardrail; remove next release).
+- The Bearer session token is the only client auth path; the legacy `?user_key=` query parameter is not part of the auth surface and is ignored.
 - MCP has two auth paths: GitHub OAuth (`GITHUB_CLIENT_ID/SECRET` + `PUBLIC_BASE_URL`) for interactive clients, and a static service token (`MCP_SERVICE_TOKEN`, min 32 chars) for headless agents. Both can run together. `/mcp` is exempt from session auth; non-local startup refuses to boot unless GitHub OAuth, the service token, or `MCP_ALLOW_UNAUTH=true` is configured.
 
 ### Architecture
