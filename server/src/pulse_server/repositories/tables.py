@@ -23,6 +23,12 @@ Tables defined here:
 
 Every table is scoped by ``user_key`` so the same schema supports the
 multi-user model while the legacy single-user deployment uses one fixed key.
+
+Constraint names declared here mirror the live database's actual names:
+``schema.sql`` declares some unique constraints anonymously (inline
+``unique (...)``), so their names are Postgres auto-generated
+(``<table>_<col1>_<col2>_key``) — keep these in sync if a constraint is ever
+named explicitly in ``schema.sql``.
 """
 
 from __future__ import annotations
@@ -72,7 +78,7 @@ daily_logs = Table(
     Column("log_date", Date, nullable=False),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
-    UniqueConstraint("user_key", "log_date", name="uq_daily_logs_user_key_log_date"),
+    UniqueConstraint("user_key", "log_date", name="daily_logs_user_key_log_date_key"),
     Index("idx_daily_logs_user_key", "user_key"),
 )
 
@@ -285,7 +291,7 @@ weight_entries = Table(
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     CheckConstraint("weight_lb > 0", name="weight_entries_weight_lb_check"),
     CheckConstraint("source_unit in ('lb','kg')", name="weight_entries_source_unit_check"),
-    UniqueConstraint("user_key", "log_date", name="uq_weight_entries_user_key_log_date"),
+    UniqueConstraint("user_key", "log_date", name="weight_entries_user_key_log_date_key"),
     Index("idx_weight_entries_user_key_log_date", "user_key", "log_date"),
 )
 
@@ -299,7 +305,9 @@ progress_photo_tags = Table(
     Column("sort_order", Integer, nullable=False, server_default=text("0")),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
-    UniqueConstraint("user_key", "normalized_name", name="uq_progress_photo_tags_user_norm"),
+    UniqueConstraint(
+        "user_key", "normalized_name", name="progress_photo_tags_user_key_normalized_name_key"
+    ),
     Index("idx_progress_photo_tags_user_key", "user_key", "sort_order", "normalized_name"),
 )
 

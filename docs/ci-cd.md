@@ -28,7 +28,7 @@ PR / push to main
 
 | Workflow | File | Triggers | What it does |
 |---|---|---|---|
-| Server CI | `server-ci.yml` | PR / main push touching `server/**` | ruff (lint + format), mypy, unit tests on a 3.11/3.12 matrix, full suite + **80% coverage gate** against `postgres:16` (with alembic migration smoke), Docker build + Trivy image scan + production-mode boot smoke, aggregated by `server-gate` |
+| Server CI | `server-ci.yml` | PR / main push touching `server/**` | ruff (lint + format), mypy, unit tests on a 3.11/3.12 matrix, full suite + **80% coverage gate** against `postgres:16`, Docker build + Trivy image scan + production-mode boot smoke, aggregated by `server-gate` |
 | Server CI (skip) | `server-ci-skip.yml` | PRs touching *no* server files | Reports a passing `server-gate` so the required check never deadlocks |
 | iOS CI | `ios-ci.yml` | PR / main push touching `ios/**` | SwiftLint `--strict`, then `xcodegen generate` + `xcodebuild test` on a macos-15 runner with a dynamically picked iPhone simulator, aggregated by `ios-gate` |
 | iOS CI (skip) | `ios-ci-skip.yml` | PRs touching *no* ios files | Reports a passing `ios-gate` |

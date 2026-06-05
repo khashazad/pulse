@@ -82,14 +82,17 @@ def to_sqlalchemy_url(database_url: str) -> str:
 
 
 def _split_sql_statements(sql_script: str) -> list[str]:
-    """Split a SQL script into executable statements, respecting dollar-quoted blocks.
+    """Split a SQL script into executable statements, respecting quoting and comments.
 
     Statements are split on top-level semicolons; semicolons inside ``$tag$ ... $tag$``
-    blocks are preserved so PL/pgSQL bodies stay intact.
+    blocks (PL/pgSQL bodies), ``--`` line comments, ``/* ... */`` block comments
+    (which Postgres allows to nest), and single-quoted string literals (including
+    ``''`` escapes) are preserved. Comments are absorbed into the adjacent
+    statement's text rather than stripped.
 
     **Inputs:**
-    - sql_script (str): Raw SQL text possibly containing multiple statements and
-      dollar-quoted blocks.
+    - sql_script (str): Raw SQL text possibly containing multiple statements,
+      dollar-quoted blocks, comments, and string literals.
 
     **Outputs:**
     - list[str]: Ordered list of executable SQL statements with surrounding
@@ -102,6 +105,47 @@ def _split_sql_statements(sql_script: str) -> list[str]:
     length = len(sql_script)
 
     while i < length:
+        if current_tag is None and sql_script.startswith("--", i):
+            # Line comment: absorbed into the buffer verbatim (it rides along with
+            # the adjacent statement) so a ';' inside never splits.
+            end = sql_script.find("\n", i)
+            end = length if end == -1 else end
+            buffer.append(sql_script[i:end])
+            i = end
+            continue
+        if current_tag is None and sql_script.startswith("/*", i):
+            # Block comment (Postgres allows nesting): absorbed verbatim like
+            # line comments, so a ';' inside never splits.
+            end = i + 2
+            depth = 1
+            while end < length and depth:
+                if sql_script.startswith("/*", end):
+                    depth += 1
+                    end += 2
+                elif sql_script.startswith("*/", end):
+                    depth -= 1
+                    end += 2
+                else:
+                    end += 1
+            buffer.append(sql_script[i:end])
+            i = end
+            continue
+        if current_tag is None and sql_script[i] == "'":
+            # Single-quoted literal: copy verbatim, honouring '' escapes.
+            # NOTE: E'...' escape-strings (where \' also escapes the quote) are
+            # not supported — do not use them in schema.sql.
+            end = i + 1
+            while end < length:
+                if sql_script[end] == "'":
+                    if sql_script.startswith("''", end):
+                        end += 2
+                        continue
+                    break
+                end += 1
+            end = min(end + 1, length)
+            buffer.append(sql_script[i:end])
+            i = end
+            continue
         if current_tag is None and sql_script[i] == "$":
             end = sql_script.find("$", i + 1)
             if end != -1 and all(c.isalnum() or c == "_" for c in sql_script[i + 1 : end]):
