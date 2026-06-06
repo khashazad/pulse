@@ -197,6 +197,10 @@ jobs:
             -e USDA_API_KEY=smoke \
             -e APP_ENV=production \
             -e MCP_SERVICE_TOKEN=ci-smoke-dummy-token-0123456789abcdefghijklmnop \
+            -e S3_ENDPOINT=https://smoke.r2.cloudflarestorage.com \
+            -e S3_BUCKET=pulse-smoke \
+            -e S3_ACCESS_KEY_ID=smoke \
+            -e S3_SECRET_ACCESS_KEY=smoke \
             pulse-server:ci
           for _ in $(seq 1 30); do
             if curl -fsS http://localhost:8787/health > /dev/null 2>&1; then

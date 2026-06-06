@@ -29,6 +29,10 @@ def _isolate_env(monkeypatch):
         "ALLOWED_GITHUB_USERS",
         "MCP_ALLOW_UNAUTH",
         "MCP_SERVICE_TOKEN",
+        "S3_ENDPOINT",
+        "S3_BUCKET",
+        "S3_ACCESS_KEY_ID",
+        "S3_SECRET_ACCESS_KEY",
     ):
         monkeypatch.delenv(k, raising=False)
     monkeypatch.setenv("DATABASE_URL", "postgresql://localhost/test")
@@ -115,6 +119,10 @@ async def test_build_mcp_accepts_service_token_in_prod(monkeypatch):
     """`build_mcp` boots in prod with only a service token and exposes the full tool surface."""
     monkeypatch.setenv("APP_ENV", "prod")
     monkeypatch.setenv("MCP_SERVICE_TOKEN", SERVICE_TOKEN)
+    monkeypatch.setenv("S3_ENDPOINT", "https://acc.r2.cloudflarestorage.com")
+    monkeypatch.setenv("S3_BUCKET", "pulse-photos")
+    monkeypatch.setenv("S3_ACCESS_KEY_ID", "ak")
+    monkeypatch.setenv("S3_SECRET_ACCESS_KEY", "sk")
     _reload_settings()
 
     from pulse_server.mcp import build_mcp

@@ -22,6 +22,7 @@ from pulse_server import db
 from pulse_server.auth import SessionAuthMiddleware
 from pulse_server.config import get_settings
 from pulse_server.mcp import build_mcp
+from pulse_server.photo_store import build_photo_store, set_photo_store
 from pulse_server.routers import auth as auth_router
 from pulse_server.routers import (
     containers as containers_router,
@@ -61,7 +62,9 @@ async def lifespan(app: FastAPI):
 
     Initializes the SQLAlchemy pool, bootstraps the schema, constructs the
     shared USDA client and publishes it to :mod:`pulse_server.usda_provider`,
-    yields while the app is running, then tears down the USDA client and pool.
+    builds the progress-photo object store and publishes it to
+    :mod:`pulse_server.photo_store`, yields while the app is running, then tears
+    down the photo store, USDA client, and pool.
 
     **Inputs:**
     - app (FastAPI): Active FastAPI application instance bound to this lifespan.
@@ -80,7 +83,9 @@ async def lifespan(app: FastAPI):
     await db.bootstrap_schema()
     usda_client = USDAClient(settings.usda_api_key)
     set_usda_client(usda_client)
+    set_photo_store(build_photo_store(settings))
     yield
+    set_photo_store(None)
     await usda_client.close()
     set_usda_client(None)
     await db.close_pool()

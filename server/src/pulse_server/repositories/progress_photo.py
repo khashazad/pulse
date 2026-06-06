@@ -3,8 +3,10 @@
 Provides :class:`ProgressPhotoRepository`, which owns every SQL statement
 against the ``progress_photos`` table: insert keyed by ``photo_id`` (one row
 per photo — multiple per ``(user_key, log_date, tag_id)`` are allowed),
-metadata listing across a date range, photo / thumbnail blob fetch, and
-deletion by photo id.
+metadata listing across a date range, a dual-read variant fetch (the
+``storage_key_prefix`` for object-store rows, with a legacy bytea fallback for
+pre-cutover rows), and deletion by photo id (which surfaces the deleted row's
+prefix so the caller can clean up the backing objects).
 
 Sits between the progress-photo service and the underlying Postgres table
 definition (``repositories/tables.py``); it is the only module in the codebase
@@ -15,7 +17,7 @@ from __future__ import annotations
 
 from datetime import date as DateValue
 from datetime import datetime as DateTimeValue
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from sqlalchemy import delete, select
@@ -29,10 +31,13 @@ def _summary_columns() -> tuple[Any, ...]:
     """Return the projection used for list / insert responses.
 
     Excludes the ``photo`` / ``photo_thumb`` blob columns so summary endpoints
-    never accidentally stream binary data.
+    never accidentally stream binary data, but includes ``storage_key_prefix``
+    so callers can locate the backing objects.
 
     **Outputs:**
-    - tuple[Any, ...]: Ordered SQLAlchemy column elements ready for ``select()``.
+    - tuple[Any, ...]: Ordered SQLAlchemy column elements ready for ``select()``:
+      ``id``, ``user_key``, ``log_date``, ``tag_id``, ``photo_mime``, ``bytes``,
+      ``sha256``, ``storage_key_prefix``, ``created_at``, ``updated_at``.
     """
     return (
         progress_photos.c.id,
@@ -42,6 +47,7 @@ def _summary_columns() -> tuple[Any, ...]:
         progress_photos.c.photo_mime,
         progress_photos.c.bytes,
         progress_photos.c.sha256,
+        progress_photos.c.storage_key_prefix,
         progress_photos.c.created_at,
         progress_photos.c.updated_at,
     )
@@ -63,12 +69,14 @@ class ProgressPhotoRepository:
         user_key: str,
         log_date: DateValue,
         tag_id: UUID,
-        photo: bytes,
-        photo_thumb: bytes,
         photo_mime: str,
         bytes_: int,
         sha256: str,
         now: DateTimeValue,
+        photo_id: UUID | None = None,
+        storage_key_prefix: str | None = None,
+        photo: bytes | None = None,
+        photo_thumb: bytes | None = None,
         idempotency_key: UUID | None = None,
     ) -> dict[str, Any]:
         """Insert a new progress-photo row, returning its summary projection.
@@ -78,26 +86,36 @@ class ProgressPhotoRepository:
         When ``idempotency_key`` is supplied, the row is deduped against the
         partial unique index ``uq_progress_photos_user_idem`` so retries by
         the offline upload queue return the previously-inserted row instead
-        of creating a duplicate.
+        of creating a duplicate. On that conflict path the returned row is the
+        *existing* one, which may carry a different ``id`` than ``photo_id``.
 
         **Inputs:**
         - user_key (str): Owning user's scoping key.
         - log_date (DateValue): Calendar date the photo belongs to.
         - tag_id (UUID): FK into ``progress_photo_tags``.
-        - photo (bytes): Full-resolution photo bytes.
-        - photo_thumb (bytes): Thumbnail bytes.
         - photo_mime (str): MIME type for the stored image.
-        - bytes_ (int): Byte length of ``photo`` for metadata reporting.
+        - bytes_ (int): Byte length of the display encoding for metadata reporting.
         - sha256 (str): Hex digest of the photo content for client cache keys.
         - now (DateTimeValue): Timestamp for ``created_at``/``updated_at``.
+        - photo_id (UUID | None): Optional pre-generated primary key. The service
+          generates this up front so the object keys can embed it before the row
+          exists; ``None`` lets Postgres assign the default.
+        - storage_key_prefix (str | None): Object-store prefix under which the
+          photo's bytes live; ``None`` only for legacy pre-cutover rows.
+        - photo (bytes | None): Full-resolution photo bytes. ``None`` on the
+          object-store path (bytes live in the object store, not Postgres).
+        - photo_thumb (bytes | None): Thumbnail bytes. ``None`` on the
+          object-store path for the same reason.
         - idempotency_key (UUID | None): Optional client-supplied dedup key.
           When set, a second call with the same ``(user_key, idempotency_key)``
           returns the existing row instead of inserting a duplicate.
 
         **Outputs:**
         - dict[str, Any]: Summary row of the inserted (or pre-existing) record.
+          Its ``id`` differs from ``photo_id`` when an idempotent conflict
+          returned the original row.
         """
-        values = {
+        values: dict[str, Any] = {
             "user_key": user_key,
             "log_date": log_date,
             "tag_id": tag_id,
@@ -106,10 +124,13 @@ class ProgressPhotoRepository:
             "photo_mime": photo_mime,
             "bytes": bytes_,
             "sha256": sha256,
+            "storage_key_prefix": storage_key_prefix,
             "created_at": now,
             "updated_at": now,
             "idempotency_key": idempotency_key,
         }
+        if photo_id is not None:
+            values["id"] = photo_id
         stmt = pg_insert(progress_photos).values(**values)
         if idempotency_key is not None:
             # No-op SET so RETURNING fires on conflict and gives us the existing row.
@@ -156,27 +177,39 @@ class ProgressPhotoRepository:
         return [dict(row) for row in result.mappings().all()]
 
     async def get_photo(
-        self, *, photo_id: UUID, user_key: str, thumb: bool
+        self, *, photo_id: UUID, user_key: str, variant: Literal["full", "thumb", "archive"]
     ) -> dict[str, Any] | None:
-        """Fetch the stored photo (or thumbnail) bytes plus cache headers.
+        """Fetch a photo variant's cache headers and legacy bytea fallback.
+
+        Object-store rows carry their bytes under ``storage_key_prefix`` and
+        have ``NULL`` blob columns; the caller streams from the store using
+        that prefix. The ``photo`` field in the result is the legacy bytea
+        fallback (``None`` for migrated rows): the ``thumb`` variant falls back
+        to ``photo_thumb``, while both ``full`` and ``archive`` fall back to the
+        ``photo`` column — there is no archive bytea column, and pre-cutover
+        rows never had an archive derivative, so they resolve to the full image.
 
         **Inputs:**
         - photo_id (UUID): Photo primary key.
         - user_key (str): Owning user's scoping key.
-        - thumb (bool): When ``True`` returns the thumbnail column; otherwise
-          the full photo column.
+        - variant (Literal["full", "thumb", "archive"]): Which size to fetch;
+          selects the fallback column and is used by the caller to pick the
+          object key.
 
         **Outputs:**
-        - dict[str, Any] | None: Mapping with ``photo`` bytes, ``photo_mime``,
-          ``sha256``, and ``updated_at`` when a row exists; ``None`` otherwise.
+        - dict[str, Any] | None: Mapping with the legacy ``photo`` bytea
+          fallback (``None`` for migrated rows), ``photo_mime``, ``sha256``,
+          ``updated_at``, and ``storage_key_prefix`` when a row exists; ``None``
+          otherwise.
         """
-        col = progress_photos.c.photo_thumb if thumb else progress_photos.c.photo
+        fallback = progress_photos.c.photo_thumb if variant == "thumb" else progress_photos.c.photo
         stmt = (
             select(
-                col.label("photo"),
+                fallback.label("photo"),
                 progress_photos.c.photo_mime,
                 progress_photos.c.sha256,
                 progress_photos.c.updated_at,
+                progress_photos.c.storage_key_prefix,
             )
             .where(progress_photos.c.id == photo_id)
             .where(progress_photos.c.user_key == user_key)
@@ -185,22 +218,27 @@ class ProgressPhotoRepository:
         row = result.mappings().first()
         return dict(row) if row else None
 
-    async def delete(self, *, photo_id: UUID, user_key: str) -> bool:
+    async def delete(self, *, photo_id: UUID, user_key: str) -> dict[str, Any] | None:
         """Remove a progress-photo row by id (scoped to its owner).
+
+        Returns the deleted row's ``storage_key_prefix`` so the caller can
+        clean up the backing objects in the photo store.
 
         **Inputs:**
         - photo_id (UUID): Photo primary key.
         - user_key (str): Owning user's scoping key.
 
         **Outputs:**
-        - bool: ``True`` when a row was removed, ``False`` when no matching
-          row existed.
+        - dict[str, Any] | None: Mapping with the deleted row's ``id`` and
+          ``storage_key_prefix`` when a row was removed; ``None`` when no
+          matching row existed.
         """
         stmt = (
             delete(progress_photos)
             .where(progress_photos.c.id == photo_id)
             .where(progress_photos.c.user_key == user_key)
-            .returning(progress_photos.c.id)
+            .returning(progress_photos.c.id, progress_photos.c.storage_key_prefix)
         )
         result = await self._session.execute(stmt)
-        return result.scalar_one_or_none() is not None
+        row = result.mappings().first()
+        return dict(row) if row else None

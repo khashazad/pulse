@@ -1,15 +1,18 @@
 """HTTP endpoints for progress (body-measurement) photos.
 
 Exposes the ``/measures`` router covering ``/photos`` list, single-photo
-fetch (``thumb``/``full``), tagged single-photo upload, and photo-id-based
-delete. Each photo is identified by its ``photo_id`` UUID; many photos may
-share a ``(log_date, tag_id)`` since the legacy four-slot uniqueness has
-been removed. Uploads are streamed with a hard byte cap; storage and
-transcoding live in :mod:`services.progress_photo_service`.
+fetch (``thumb``/``full``/``archive``), tagged single-photo upload, and
+photo-id-based delete. Each photo is identified by its ``photo_id`` UUID; many
+photos may share a ``(log_date, tag_id)`` since the legacy four-slot uniqueness
+has been removed. Photo bytes live in the object store (streamed via the row's
+``storage_key_prefix``), with a legacy bytea fallback for pre-cutover rows.
+Uploads are streamed with a hard byte cap; transcoding and object writes live
+in :mod:`services.progress_photo_service`.
 """
 
 from __future__ import annotations
 
+import logging
 from datetime import date as DateValue
 from typing import Literal
 from uuid import UUID
@@ -31,14 +34,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from pulse_server.auth import require_session
 from pulse_server.db import get_session_dependency, transaction
 from pulse_server.models.progress_photo import ProgressPhotoMetadata
+from pulse_server.photo_store import PhotoStore, get_photo_object, get_photo_store
 from pulse_server.repositories.progress_photo import ProgressPhotoRepository
 from pulse_server.repositories.progress_photo_tag import (
     ProgressPhotoTagRepository,
 )
 from pulse_server.services.progress_photo_service import (
     MAX_UPLOAD_BYTES,
+    VARIANT_OBJECTS,
+    delete_photo_objects,
     insert_one,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/measures", dependencies=[Depends(require_session)])
 
@@ -122,44 +130,60 @@ async def list_photos(
 async def get_photo(
     request: Request,
     photo_id: UUID,
-    size: Literal["full", "thumb"] = "full",
+    size: Literal["full", "thumb", "archive"] = "full",
     session: AsyncSession = Depends(get_session_dependency),
+    store: PhotoStore = Depends(get_photo_store),
 ) -> Response:
     """Return raw progress-photo bytes for one ``photo_id``.
 
-    Sends a strong ``ETag`` derived from the stored sha256 and a 1-year
-    immutable cache header.
+    For migrated rows the bytes are streamed from the object store using the
+    row's ``storage_key_prefix`` and the ``size``→object mapping; pre-cutover
+    rows (no prefix) fall back to the legacy bytea column. The ``archive``
+    variant is the high-resolution preservation copy and, for pre-cutover rows
+    that never had one, falls back to the full bytea image. Sends a strong
+    ``ETag`` derived from the stored sha256 and a 1-year immutable cache header.
 
     **Inputs:**
     - request (Request): Active request providing ``user_key``.
     - photo_id (UUID): Photo primary key.
-    - size (Literal["full","thumb"]): Variant to return; default ``"full"``.
+    - size (Literal["full","thumb","archive"]): Variant to return; default ``"full"``.
     - session (AsyncSession): DB session dependency.
+    - store (PhotoStore): Photo object store dependency.
 
     **Outputs:**
     - Response: Image bytes with the stored MIME type plus caching headers.
 
     **Exceptions:**
-    - HTTPException(404): Raised when no photo exists with that id.
+    - HTTPException(404): Raised when no photo exists with that id, or when a
+      migrated row's object is missing from the store (data inconsistency: row
+      present, object absent — logged at WARNING before raising).
     """
     user_key = request.state.user_key
     repo = ProgressPhotoRepository(session)
-    row = await repo.get_photo(
-        photo_id=photo_id,
-        user_key=user_key,
-        thumb=(size == "thumb"),
-    )
+    row = await repo.get_photo(photo_id=photo_id, user_key=user_key, variant=size)
     if not row:
         raise HTTPException(status_code=404, detail="not found")
+    content: memoryview | bytes
+    if row["storage_key_prefix"]:
+        key = f"{row['storage_key_prefix']}/{VARIANT_OBJECTS[size]}"
+        fetched = await get_photo_object(store, key)
+        if fetched is None:
+            # The key embeds request-derived parts (photo id in the prefix);
+            # strip newlines so a crafted value can't forge extra log lines
+            # (CodeQL py/log-injection).
+            logger.warning(
+                "data inconsistency: photo row exists but object %s is missing from store",
+                key.replace("\r\n", "").replace("\n", ""),
+            )
+            raise HTTPException(status_code=404, detail="not found")
+        content = fetched
+    else:
+        content = bytes(row["photo"])
     headers = {
         "Cache-Control": "private, max-age=31536000, immutable",
         "ETag": f'"{row["sha256"]}"',
     }
-    return Response(
-        content=bytes(row["photo"]),
-        media_type=row["photo_mime"],
-        headers=headers,
-    )
+    return Response(content=content, media_type=row["photo_mime"], headers=headers)
 
 
 @router.post("/photos", status_code=201, response_model=ProgressPhotoMetadata)
@@ -170,6 +194,7 @@ async def create_photo(
     idempotency_key: UUID | None = Form(default=None, alias="idempotency_key"),
     file: UploadFile = File(...),
     session: AsyncSession = Depends(get_session_dependency),
+    store: PhotoStore = Depends(get_photo_store),
 ) -> ProgressPhotoMetadata:
     """Insert a new progress photo tagged with ``tag_id`` for ``log_date``.
 
@@ -187,6 +212,7 @@ async def create_photo(
     - idempotency_key (UUID | None): Optional client-supplied dedup key.
     - file (UploadFile): Multipart image upload.
     - session (AsyncSession): DB session dependency.
+    - store (PhotoStore): Photo object store dependency.
 
     **Outputs:**
     - ProgressPhotoMetadata: Metadata for the inserted (or pre-existing) row.
@@ -205,6 +231,7 @@ async def create_photo(
         row = await insert_one(
             repo=repo,
             tag_repo=tag_repo,
+            store=store,
             user_key=user_key,
             log_date=log_date,
             tag_id=tag_id,
@@ -219,13 +246,20 @@ async def delete_photo(
     request: Request,
     photo_id: UUID,
     session: AsyncSession = Depends(get_session_dependency),
+    store: PhotoStore = Depends(get_photo_store),
 ) -> Response:
     """Delete a progress photo by id and return HTTP 204.
+
+    The row is removed inside the transaction; its object-store copies are
+    deleted **after** commit. A failed object delete only logs and orphans the
+    objects (best-effort cleanup) rather than rolling back the committed row —
+    the row delete is the source of truth.
 
     **Inputs:**
     - request (Request): Active request providing ``user_key``.
     - photo_id (UUID): Photo primary key.
     - session (AsyncSession): DB session dependency.
+    - store (PhotoStore): Photo object store dependency.
 
     **Outputs:**
     - Response: Empty 204 response.
@@ -236,7 +270,9 @@ async def delete_photo(
     user_key = request.state.user_key
     repo = ProgressPhotoRepository(session)
     async with transaction(session):
-        ok = await repo.delete(photo_id=photo_id, user_key=user_key)
-    if not ok:
+        deleted = await repo.delete(photo_id=photo_id, user_key=user_key)
+    if deleted is None:
         raise HTTPException(status_code=404, detail="not found")
+    if deleted["storage_key_prefix"]:
+        await delete_photo_objects(store, deleted["storage_key_prefix"])
     return Response(status_code=204)
