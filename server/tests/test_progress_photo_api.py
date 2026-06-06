@@ -609,6 +609,48 @@ def test_create_photo_cleans_up_objects_when_insert_fails(client: TestClient) ->
         assert _object_missing(store, f"{prefix}/{name}")
 
 
+def test_create_photo_cleans_up_after_partial_upload_failure(client: TestClient) -> None:
+    """A failing 2nd put_async removes the already-uploaded 1st object."""
+    store = _current_store["store"]
+    src = _png_bytes(800, 600)
+    tag_id = uuid.uuid4()
+    captured: dict = {}
+
+    # Count calls so the 2nd put_async raises; delegate the 1st to the real method.
+    call_count = {"n": 0}
+    real_put_async = store.put_async
+
+    async def _put_async_fail_on_second(key: str, data: bytes) -> None:
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            # First object: capture prefix and write it for real so it lands in the store.
+            captured["first_key"] = key
+            return await real_put_async(key, data)
+        raise RuntimeError("simulated partial-upload failure")
+
+    tag_repo = MagicMock()
+    tag_repo.get_by_id = AsyncMock(return_value=_tag_row("front", 0))
+    with (
+        patch.object(store, "put_async", side_effect=_put_async_fail_on_second),
+        patch(
+            "pulse_server.routers.measures_photos.ProgressPhotoTagRepository",
+            return_value=tag_repo,
+        ),
+        pytest.raises(RuntimeError),
+    ):
+        client.post(
+            "/measures/photos",
+            headers=HEADERS,
+            data={"log_date": "2026-05-17", "tag_id": str(tag_id)},
+            files={"file": ("front.png", src, "image/png")},
+        )
+    # The first object was written; cleanup must have removed it.
+    assert captured.get("first_key"), "first put_async was never called"
+    assert _object_missing(store, captured["first_key"]), (
+        "cleanup did not remove the 1st uploaded object after partial failure"
+    )
+
+
 def test_delete_photo_removes_objects(client: TestClient) -> None:
     """`DELETE /measures/photos/{id}` deletes the row's object-store copies."""
     store = _current_store["store"]

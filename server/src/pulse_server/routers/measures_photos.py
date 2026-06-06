@@ -12,6 +12,7 @@ in :mod:`services.progress_photo_service`.
 
 from __future__ import annotations
 
+import logging
 from datetime import date as DateValue
 from typing import Literal
 from uuid import UUID
@@ -45,6 +46,8 @@ from pulse_server.services.progress_photo_service import (
     delete_photo_objects,
     insert_one,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/measures", dependencies=[Depends(require_session)])
 
@@ -153,7 +156,8 @@ async def get_photo(
 
     **Exceptions:**
     - HTTPException(404): Raised when no photo exists with that id, or when a
-      migrated row's object is missing from the store.
+      migrated row's object is missing from the store (data inconsistency: row
+      present, object absent — logged at WARNING before raising).
     """
     user_key = request.state.user_key
     repo = ProgressPhotoRepository(session)
@@ -169,6 +173,11 @@ async def get_photo(
             # S3/R2 backends raise obstore NotFoundError on a missing key, while
             # the local/memory backends raise the stdlib FileNotFoundError — a
             # vanished object is a 404 either way.
+            logger.warning(
+                "data inconsistency: photo row %s exists but object %s is missing from store",
+                photo_id,
+                key,
+            )
             raise HTTPException(status_code=404, detail="not found") from exc
     else:
         content = bytes(row["photo"])
