@@ -95,7 +95,11 @@ async def main() -> int:
             return 0
 
         for i, photo_id in enumerate(ids, start=1):
-            async with get_session() as session:
+            # One transaction wraps the row read AND the update: a bare SELECT
+            # autobegins a transaction on the session, so a later standalone
+            # `transaction(session)` would raise "A transaction is already
+            # begun on this Session".
+            async with get_session() as session, transaction(session):
                 row = (
                     (
                         await session.execute(
@@ -113,17 +117,17 @@ async def main() -> int:
                 )
                 prefix = await copy_row_objects(store, dict(row))
                 # Read-back check before nulling anything: the display object
-                # must hash to the row's stored sha256.
+                # must hash to the row's stored sha256. Returning here commits
+                # a read-only transaction, which is harmless.
                 echoed = await get_photo_object(store, f"{prefix}/display.jpg")
                 if echoed is None or hashlib.sha256(bytes(echoed)).hexdigest() != row["sha256"]:
                     print(f"VERIFY FAILED for {photo_id}; aborting before nulling blobs")
                     return 1
-                async with transaction(session):
-                    await session.execute(
-                        update(progress_photos)
-                        .where(progress_photos.c.id == photo_id)
-                        .values(storage_key_prefix=prefix, photo=None, photo_thumb=None)
-                    )
+                await session.execute(
+                    update(progress_photos)
+                    .where(progress_photos.c.id == photo_id)
+                    .values(storage_key_prefix=prefix, photo=None, photo_thumb=None)
+                )
             print(f"[{i}/{len(ids)}] migrated {photo_id}")
 
         async with get_session() as session:
