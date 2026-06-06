@@ -180,4 +180,24 @@ final class PrepModelTests: XCTestCase {
         m.weighIns = []
         XCTAssertFalse(m.hasUnenteredWeighIns)
     }
+
+    /// Recording applied dates unions with what is already stored.
+    func test_recordAppliedDatesUnions() {
+        let d = UserDefaults(suiteName: "test.prep.\(UUID().uuidString)")!
+        let store = PrepStatePersistence(defaults: d)
+        let m = PrepModel(store: store)
+        m.recordAppliedDates(["2026-06-07"])
+        m.recordAppliedDates(["2026-06-08"])
+        XCTAssertEqual(m.loadAppliedDates(), ["2026-06-07", "2026-06-08"])
+    }
+
+    /// Emptying the batch clears the applied-dates memory (new batch = clean slate).
+    func test_savingEmptyBatchClearsAppliedDates() {
+        let d = UserDefaults(suiteName: "test.prep.\(UUID().uuidString)")!
+        let store = PrepStatePersistence(defaults: d)
+        let m = PrepModel(store: store)
+        m.recordAppliedDates(["2026-06-07"])
+        m.saveBatchItems([])
+        XCTAssertEqual(m.loadAppliedDates(), [])
+    }
 }

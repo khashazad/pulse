@@ -183,11 +183,29 @@ final class PrepModel {
         store.loadBatchItems()
     }
 
-    /// Saves the batch food items, replacing any previously stored list.
+    /// Saves the batch food items, replacing any previously stored list. Emptying
+    /// the batch also clears the applied-dates memory, because a new batch is a
+    /// new identity for the duplicate-apply warning.
     /// Inputs:
     ///   - items: the current batch items to persist.
     /// Outputs: nothing.
     func saveBatchItems(_ items: [BatchFoodItem]) {
         store.saveBatchItems(items)
+        if items.isEmpty { store.saveAppliedDates([]) }
+    }
+
+    /// Loads the day keys (`yyyy-MM-dd`) this batch has already been applied to.
+    /// Outputs: the saved day keys, empty when none.
+    func loadAppliedDates() -> Set<String> {
+        store.loadAppliedDates()
+    }
+
+    /// Records additional applied day keys, unioning with what is stored so
+    /// repeat applies accumulate rather than overwrite.
+    /// Inputs:
+    ///   - newDates: day keys that were just successfully applied.
+    /// Outputs: nothing.
+    func recordAppliedDates(_ newDates: Set<String>) {
+        store.saveAppliedDates(store.loadAppliedDates().union(newDates))
     }
 }

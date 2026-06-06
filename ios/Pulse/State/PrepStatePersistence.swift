@@ -11,6 +11,7 @@ struct PrepStatePersistence {
         static let weighIns = "prep.weighIns"
         static let portionsOverride = "prep.portionsOverride"
         static let batchItems = "prep.batchItems"
+        static let appliedDates = "prep.appliedDates"
     }
 
     /// Wire shape of a persisted target entry.
@@ -104,5 +105,20 @@ struct PrepStatePersistence {
         if let data = try? JSONEncoder().encode(items) {
             defaults.set(data, forKey: Key.batchItems)
         }
+    }
+
+    /// Loads the set of day keys (`yyyy-MM-dd`) this batch has been applied to.
+    /// Outputs: the saved day keys, or an empty set when nothing is stored.
+    func loadAppliedDates() -> Set<String> {
+        Set(defaults.stringArray(forKey: Key.appliedDates) ?? [])
+    }
+
+    /// Saves the set of day keys this batch has been applied to, replacing any
+    /// previously stored set.
+    /// Inputs:
+    ///   - dates: the day keys (`yyyy-MM-dd`) to persist.
+    /// Outputs: nothing.
+    func saveAppliedDates(_ dates: Set<String>) {
+        defaults.set(Array(dates).sorted(), forKey: Key.appliedDates)
     }
 }
