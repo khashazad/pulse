@@ -2,7 +2,8 @@
 
 Covers the per-user tag catalog (seed + list + create + rename) and the
 photo-id-based progress-photo persistence (insert one or many per
-``(user_key, log_date, tag_id)``, range filtering, full vs. thumb retrieval,
+``(user_key, log_date, tag_id)``, range filtering, full / thumb / archive
+variant retrieval with the legacy-bytea fallback, object-store row shape,
 and deletion). Integration test: hits a real Postgres via
 ``TEST_DATABASE_URL``.
 """
@@ -109,14 +110,55 @@ async def test_insert_then_get_round_trip(session: AsyncSession) -> None:
     assert row["sha256"] == sha
     assert row["bytes"] == len(_jpeg())
 
-    got = await repo.get_photo(photo_id=photo_id, user_key=user_key, thumb=False)
+    got = await repo.get_photo(photo_id=photo_id, user_key=user_key, variant="full")
     assert got is not None
     assert got["photo"] == _jpeg()
     assert got["photo_mime"] == "image/jpeg"
+    assert got["storage_key_prefix"] is None
 
-    got_thumb = await repo.get_photo(photo_id=photo_id, user_key=user_key, thumb=True)
+    got_thumb = await repo.get_photo(photo_id=photo_id, user_key=user_key, variant="thumb")
     assert got_thumb is not None
     assert got_thumb["photo"] == _thumb()
+
+
+@pytest.mark.asyncio
+async def test_insert_object_store_row_round_trip(session: AsyncSession) -> None:
+    """``insert`` with a pre-set id + storage key and null blobs round-trips both fields.
+
+    Covers the post-cutover row shape: the service pre-generates ``photo_id``
+    so the object keys can embed it, stores no bytea, and readers route on
+    ``storage_key_prefix``.
+    """
+    user_key = f"test-{uuid.uuid4().hex}"
+    tag_id = await _seed_tag(session, user_key=user_key)
+    repo = ProgressPhotoRepository(session)
+    photo_id = uuid.uuid4()
+    prefix = f"progress/{user_key}/{photo_id}"
+    async with transaction(session):
+        row = await repo.insert(
+            user_key=user_key,
+            log_date=DateValue(2026, 6, 6),
+            tag_id=tag_id,
+            photo_id=photo_id,
+            storage_key_prefix=prefix,
+            photo_mime="image/jpeg",
+            bytes_=42,
+            sha256="sha-object-store",
+            now=_now(),
+        )
+    assert row["id"] == photo_id
+    assert row["storage_key_prefix"] == prefix
+
+    got = await repo.get_photo(photo_id=photo_id, user_key=user_key, variant="archive")
+    assert got is not None
+    assert got["photo"] is None  # no bytea fallback for object-store rows
+    assert got["storage_key_prefix"] == prefix
+
+    await session.rollback()
+    async with transaction(session):
+        deleted = await repo.delete(photo_id=photo_id, user_key=user_key)
+    assert deleted is not None
+    assert deleted["storage_key_prefix"] == prefix
 
 
 @pytest.mark.asyncio
@@ -283,9 +325,11 @@ async def test_delete_removes_photo(session: AsyncSession) -> None:
         )
     photo_id = row["id"]
     async with transaction(session):
-        ok = await repo.delete(photo_id=photo_id, user_key=user_key)
-    assert ok is True
-    assert await repo.get_photo(photo_id=photo_id, user_key=user_key, thumb=False) is None
+        deleted = await repo.delete(photo_id=photo_id, user_key=user_key)
+    assert deleted is not None
+    assert deleted["id"] == photo_id
+    assert deleted["storage_key_prefix"] is None  # bytea-era row, never migrated
+    assert await repo.get_photo(photo_id=photo_id, user_key=user_key, variant="full") is None
 
 
 @pytest.mark.asyncio
