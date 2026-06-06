@@ -168,10 +168,12 @@ async def get_photo(
         key = f"{row['storage_key_prefix']}/{VARIANT_OBJECTS[size]}"
         fetched = await get_photo_object(store, key)
         if fetched is None:
+            # The key embeds request-derived parts (photo id in the prefix);
+            # strip newlines so a crafted value can't forge extra log lines
+            # (CodeQL py/log-injection).
             logger.warning(
-                "data inconsistency: photo row %s exists but object %s is missing from store",
-                photo_id,
-                key,
+                "data inconsistency: photo row exists but object %s is missing from store",
+                key.replace("\r\n", "").replace("\n", ""),
             )
             raise HTTPException(status_code=404, detail="not found")
         content = fetched
