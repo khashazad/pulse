@@ -1,8 +1,9 @@
 import Foundation
 
-/// Non-wire scaling helper for `MacroTotals`. Lives in State/ (not Models/)
-/// because Models/ holds wire DTOs only; this is pure client math shared by the
-/// Prep per-portion preview and the apply-to-days payload builder.
+/// Non-wire math helpers for `MacroTotals`. Lives in Utilities/ (alongside
+/// `WeightFormatter`) because Models/ holds wire DTOs only and State/ holds
+/// @Observable view models; this is pure value math shared by the Prep
+/// per-portion preview, batch totals, and the apply-to-days payload builder.
 extension MacroTotals {
     /// Scales this total to `count` portions out of `portions`, i.e. multiplies
     /// by `count / portions`. Calories round to the nearest Int; gram macros

@@ -69,7 +69,7 @@ final class ApplyBatchModel {
     /// Outputs: nothing; mutates `selections`.
     func toggle(_ date: Date) {
         let day = calendar.startOfDay(for: date)
-        let key = DateOnly.formatter.string(from: day)
+        let key = DateOnly.string(from: day)
         if let idx = selections.firstIndex(where: { $0.dayKey == key }) {
             selections.remove(at: idx)
         } else {
@@ -78,13 +78,12 @@ final class ApplyBatchModel {
         }
     }
 
-    /// True when the day is currently selected.
+    /// True when the day with the given canonical key is currently selected.
     /// Inputs:
-    ///   - date: any instant on the day to check.
+    ///   - dayKey: the day's `yyyy-MM-dd` key.
     /// Outputs: whether the day is in `selections`.
-    func isSelected(_ date: Date) -> Bool {
-        let key = DateOnly.formatter.string(from: calendar.startOfDay(for: date))
-        return selections.contains { $0.dayKey == key }
+    func isSelected(dayKey: String) -> Bool {
+        selections.contains { $0.dayKey == dayKey }
     }
 
     /// Sets the portion count for an already-selected day (min 1); no-op when
@@ -105,11 +104,6 @@ final class ApplyBatchModel {
     /// Warns in the UI; never blocks.
     var isOverAllocated: Bool { allocatedPortions > portions }
 
-    /// Selected day keys that this batch was already applied to, date-ordered.
-    var conflictedDayKeys: [String] {
-        selections.map(\.dayKey).filter(appliedDayKeys.contains)
-    }
-
     /// The macro total landing on one selected day (batch total x count/portions).
     /// Inputs:
     ///   - selection: the day selection to total.
@@ -118,44 +112,64 @@ final class ApplyBatchModel {
         batchTotal.scaled(count: selection.count, portions: portions)
     }
 
+    /// The macros one batch item contributes to one selected day (item macros
+    /// x count/portions). Single source of truth for the review preview and the
+    /// submitted payload, so the two cannot drift.
+    /// Inputs:
+    ///   - item: the batch item.
+    ///   - selection: the day selection supplying the portion count.
+    /// Outputs: the item's scaled `MacroTotals` for that day.
+    func scaledMacros(for item: BatchFoodItem, in selection: DaySelection) -> MacroTotals {
+        item.macros.scaled(count: selection.count, portions: portions)
+    }
+
+    /// Builds one selected day's payload entries: one entry per source-bearing
+    /// batch item, scaled via `scaledMacros(for:in:)`, carrying the item's real
+    /// food source and `consumedAt` mid-day local on the day (the canonical
+    /// `DateOnly.noon` anchor). Sourceless items are skipped (they cannot
+    /// satisfy the server's source validator).
+    /// Inputs:
+    ///   - sel: the day selection to build entries for.
+    /// Outputs: the day's payload entries (empty only for an all-sourceless batch).
+    private func entries(for sel: DaySelection) -> [FoodEntryCreate] {
+        let noon = DateOnly.noon(on: sel.date, calendar: calendar)
+        let qty = "\(sel.count)/\(portions) of prep batch"
+        return items.compactMap { item in
+            let m = scaledMacros(for: item, in: sel)
+            if let fdc = item.usdaFdcId {
+                return .usda(displayName: item.displayName, quantityText: qty,
+                             fdcId: fdc, usdaDescription: item.usdaDescription ?? item.displayName,
+                             calories: m.calories, proteinG: m.proteinG,
+                             carbsG: m.carbsG, fatG: m.fatG, consumedAt: noon)
+            }
+            if let customId = item.customFoodId {
+                return .custom(displayName: item.displayName, quantityText: qty,
+                               customFoodId: customId,
+                               calories: m.calories, proteinG: m.proteinG,
+                               carbsG: m.carbsG, fatG: m.fatG, consumedAt: noon)
+            }
+            return nil
+        }
+    }
+
     /// Builds the full `POST /entries` payload: one entry per (selected day x
-    /// batch item), each scaled by that day's count over `portions`, carrying
-    /// the item's real food source and `consumedAt` at noon local on the day.
-    /// Items with neither a USDA nor a custom-food source are skipped (they
-    /// cannot satisfy the server's source validator).
+    /// source-bearing batch item).
     /// Outputs: the ordered payload (days outer, items inner).
     func buildEntries() -> [FoodEntryCreate] {
-        selections.flatMap { sel -> [FoodEntryCreate] in
-            guard let noon = calendar.date(bySettingHour: 12, minute: 0, second: 0, of: sel.date) else {
-                return []
-            }
-            let qty = "\(sel.count)/\(portions) of prep batch"
-            return items.compactMap { item in
-                let m = item.macros.scaled(count: sel.count, portions: portions)
-                if let fdc = item.usdaFdcId {
-                    return .usda(displayName: item.displayName, quantityText: qty,
-                                 fdcId: fdc, usdaDescription: item.usdaDescription ?? item.displayName,
-                                 calories: m.calories, proteinG: m.proteinG,
-                                 carbsG: m.carbsG, fatG: m.fatG, consumedAt: noon)
-                }
-                if let customId = item.customFoodId {
-                    return .custom(displayName: item.displayName, quantityText: qty,
-                                   customFoodId: customId,
-                                   calories: m.calories, proteinG: m.proteinG,
-                                   carbsG: m.carbsG, fatG: m.fatG, consumedAt: noon)
-                }
-                return nil
-            }
-        }
+        selections.flatMap { entries(for: $0) }
     }
 
     /// Submits the payload as one atomic `POST /entries` batch. All-or-nothing:
     /// on failure nothing was logged and `submitState` carries the error (a 401
     /// additionally routes through `AuthSession`). Concurrent submits are
     /// rejected: if `submitState` is already `.submitting` this returns nil
-    /// immediately. On success returns the applied day keys so the caller can
-    /// record them for duplicate warnings.
-    /// Outputs: the applied day keys on success, nil on failure or if already submitting.
+    /// immediately. On success returns the day keys derived from the payload
+    /// that was actually sent — never from raw selections — so the caller's
+    /// duplicate-warning memory can only record days that truly received
+    /// entries.
+    /// Outputs: the applied day keys on success (empty when the batch produced
+    /// no entries — unreachable from the UI via the `canApply` gate), nil on
+    /// failure or if already submitting.
     @discardableResult
     func submit() async -> Set<String>? {
         guard submitState != .submitting else { return nil }
@@ -163,16 +177,21 @@ final class ApplyBatchModel {
             submitState = .failed(.notSignedIn)
             return nil
         }
+        let contributions = selections.map { (dayKey: $0.dayKey, entries: entries(for: $0)) }
+        let payload = contributions.flatMap(\.entries)
         // Defensive backstop only: PrepView's canApply gate requires at least one
         // source-bearing item (see BatchFoodItem.hasSource), so an empty payload
-        // is unreachable from the UI. Bail without faking a server error.
-        let payload = buildEntries()
-        guard !payload.isEmpty else { return nil }
+        // is unreachable from the UI. Finish as a zero-entry success rather than
+        // faking an error state.
+        guard !payload.isEmpty else {
+            submitState = .finished(entryCount: 0)
+            return []
+        }
         submitState = .submitting
         do {
             let resp = try await client.createEntries(payload)
             submitState = .finished(entryCount: resp.entries.count)
-            return Set(selections.map(\.dayKey))
+            return Set(contributions.filter { !$0.entries.isEmpty }.map(\.dayKey))
         } catch let error as PulseError {
             if error == .unauthorized { auth?.handleUnauthorized() }
             submitState = .failed(error)

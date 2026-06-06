@@ -14,12 +14,13 @@ struct ApplyBatchSheet: View {
     let onApplied: (Set<String>) -> Void
     @Environment(\.dismiss) private var dismiss
 
-    /// Tomorrow → +7 inclusive: the quick-pick week.
-    /// Computed once at init from `model.calendar` so all day math is calendar-consistent.
-    /// Outputs: seven `Date` values at midnight local time, starting tomorrow.
-    private let chipDays: [Date]
+    /// Tomorrow → +7 inclusive: the quick-pick week, as (midnight date, day key)
+    /// pairs. Computed once at init from `model.calendar` so all day math is
+    /// calendar-consistent and the render path does no date formatting.
+    private let chipChoices: [(date: Date, key: String)]
 
-    /// Creates the sheet and pre-computes the chip days using the model's injected calendar.
+    /// Creates the sheet and pre-computes the chip days (with their canonical
+    /// day keys) using the model's injected calendar.
     /// Inputs:
     ///   - model: the fresh `ApplyBatchModel` for this presentation.
     ///   - onApplied: callback receiving applied day keys on successful submit.
@@ -28,7 +29,9 @@ struct ApplyBatchSheet: View {
         self.model = model
         self.onApplied = onApplied
         let start = model.calendar.startOfDay(for: Date())
-        self.chipDays = (1...7).compactMap { model.calendar.date(byAdding: .day, value: $0, to: start) }
+        self.chipChoices = (1...7)
+            .compactMap { model.calendar.date(byAdding: .day, value: $0, to: start) }
+            .map { (date: $0, key: DateOnly.string(from: $0)) }
     }
 
     /// Renders the full apply-to-days sheet: quick-pick chips, multi-date calendar,
@@ -72,8 +75,8 @@ struct ApplyBatchSheet: View {
         SectionCard(header: "Next week") {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
-                    ForEach(chipDays, id: \.self) { day in
-                        chip(for: day)
+                    ForEach(chipChoices, id: \.key) { choice in
+                        chip(for: choice.date, key: choice.key)
                     }
                 }
                 .padding(.horizontal, 16)
@@ -85,11 +88,11 @@ struct ApplyBatchSheet: View {
     /// One day chip; selected state fills with mauve, conflict shows a badge.
     /// Inputs:
     ///   - day: the chip's day (midnight local).
+    ///   - key: the day's pre-computed canonical key.
     /// Outputs: a styled button `View`.
     @ViewBuilder
-    private func chip(for day: Date) -> some View {
-        let key = DateOnly.formatter.string(from: day)
-        let selected = model.isSelected(day)
+    private func chip(for day: Date, key: String) -> some View {
+        let selected = model.isSelected(dayKey: key)
         let conflicted = model.appliedDayKeys.contains(key)
         Button {
             model.toggle(day)
@@ -197,7 +200,7 @@ struct ApplyBatchSheet: View {
                             .foregroundStyle(Theme.CTP.yellow)
                     }
                     ForEach(model.items) { item in
-                        let m = item.macros.scaled(count: sel.count, portions: model.portions)
+                        let m = model.scaledMacros(for: item, in: sel)
                         HStack {
                             Text(item.displayName)
                                 .font(.system(size: 12))

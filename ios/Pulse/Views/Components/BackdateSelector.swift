@@ -58,24 +58,23 @@ struct BackdateSelector: View {
         }
     }
 
-    /// Returns local noon for a day a given number of days before today. Noon
-    /// keeps the formatted wall-clock value clear of midnight day-boundary drift.
+    /// Returns local noon for a day a given number of days before today, via
+    /// the canonical `DateOnly.noon(on:)` day-anchoring rule.
     /// - Parameter daysAgo: Number of days before today (0 = today).
-    /// - Returns: A `Date` at 12:00 local time on that day.
+    /// - Returns: A `Date` at local mid-day on that day.
     private static func noon(daysAgo: Int) -> Date {
         let cal = Calendar.current
         let startOfToday = cal.startOfDay(for: Date())
         let day = cal.date(byAdding: .day, value: -daysAgo, to: startOfToday) ?? startOfToday
-        return cal.date(byAdding: .hour, value: 12, to: day) ?? day
+        return DateOnly.noon(on: day)
     }
 
-    /// Returns local noon for the calendar day containing `someDate`.
+    /// Returns local noon for the calendar day containing `someDate`, via the
+    /// canonical `DateOnly.noon(on:)` day-anchoring rule.
     /// - Parameter someDate: Any instant on the target day.
-    /// - Returns: A `Date` at 12:00 local time on that day.
+    /// - Returns: A `Date` at local mid-day on that day.
     private static func noon(on someDate: Date) -> Date {
-        let cal = Calendar.current
-        let startOfDay = cal.startOfDay(for: someDate)
-        return cal.date(byAdding: .hour, value: 12, to: startOfDay) ?? startOfDay
+        DateOnly.noon(on: someDate)
     }
 
     /// Formats a friendly long-form label for the chosen day (e.g. "Fri, May 30").

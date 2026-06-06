@@ -11,6 +11,10 @@ struct PrepStatePersistence {
         static let weighIns = "prep.weighIns"
         static let portionsOverride = "prep.portionsOverride"
         static let batchItems = "prep.batchItems"
+        /// Batch-agnostic BY DESIGN: one global set for the single in-flight
+        /// prep batch (cleared when the batch empties). If multiple/named
+        /// batches are ever introduced this must become batch-keyed, or
+        /// applied-day warnings will cross-contaminate between batches.
         static let appliedDates = "prep.appliedDates"
     }
 

@@ -54,13 +54,16 @@ final class ApplyBatchModelTests: XCTestCase {
         XCTAssertTrue(m.isOverAllocated)
     }
 
-    /// Selected days already in `appliedDayKeys` are reported as conflicts.
-    func test_conflictDetection() {
-        let key = DateOnly.formatter.string(from: day(1))
+    /// Selections carry the canonical day key the views use for conflict checks
+    /// against `appliedDayKeys`.
+    func test_selectionDayKeysMatchCanonicalFormat() {
+        let key = DateOnly.string(from: day(1))
         let m = ApplyBatchModel(items: [item(fdc: 1, cal: 500, p: 50, c: 40, f: 10)],
                                 portions: 5, appliedDayKeys: [key], auth: nil)
         m.toggle(day(1)); m.toggle(day(2))
-        XCTAssertEqual(m.conflictedDayKeys, [key])
+        XCTAssertEqual(m.selections[0].dayKey, key)
+        XCTAssertTrue(m.appliedDayKeys.contains(m.selections[0].dayKey))
+        XCTAssertFalse(m.appliedDayKeys.contains(m.selections[1].dayKey))
     }
 
     /// buildEntries emits one entry per (selected day x batch item), scaled by
@@ -84,8 +87,7 @@ final class ApplyBatchModelTests: XCTestCase {
         XCTAssertEqual(first.calories, 200)
         XCTAssertEqual(first.proteinG, 20)
         XCTAssertEqual(first.quantityText, "1/5 of prep batch")
-        let noon = cal.date(bySettingHour: 12, minute: 0, second: 0, of: day(1))!
-        XCTAssertEqual(first.consumedAt, noon)
+        XCTAssertEqual(first.consumedAt, DateOnly.noon(on: day(1)))
 
         // Day 2, custom item at count 2: 2/5 of 500 kcal.
         let last = entries[3]
@@ -121,14 +123,16 @@ final class ApplyBatchModelTests: XCTestCase {
     // the precondition. The guard is covered by code review and the existing
     // test_submitWithoutAuthFails demonstrates the surrounding submit flow.
 
-    /// isSelected matches any instant on a selected day and stays false otherwise.
-    func test_isSelectedNormalizesToDay() {
+    /// isSelected(dayKey:) reflects toggle state by canonical day key; toggle
+    /// normalizes any instant on the day to that key.
+    func test_isSelectedByDayKey() {
         let m = ApplyBatchModel(items: [item(fdc: 1, cal: 500, p: 50, c: 40, f: 10)],
                                 portions: 5, appliedDayKeys: [], auth: nil)
-        m.toggle(day(1))
+        // Toggle with a non-midnight instant: normalization happens in toggle.
         let lateOnDay1 = cal.date(byAdding: .hour, value: 23, to: day(1))!
-        XCTAssertTrue(m.isSelected(lateOnDay1))
-        XCTAssertFalse(m.isSelected(day(2)))
+        m.toggle(lateOnDay1)
+        XCTAssertTrue(m.isSelected(dayKey: DateOnly.string(from: day(1))))
+        XCTAssertFalse(m.isSelected(dayKey: DateOnly.string(from: day(2))))
     }
 
     /// dayTotal sums all items' macros and scales them by count/portions.
