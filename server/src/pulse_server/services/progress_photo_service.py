@@ -141,11 +141,14 @@ async def insert_one(
     ``bytes`` recorded describe the **display** encoding, preserving ETag
     continuity with the pre-cutover full image the client cached against.
 
-    If the DB insert fails after the objects were uploaded, the orphaned
-    objects are cleaned up (best-effort) before re-raising. On an idempotent
-    replay the conflict path returns the original row (with a different ``id``
-    than the freshly-generated one), so the just-uploaded objects under the new
-    prefix are unreferenced and likewise removed.
+    The three uploads and the DB insert run inside a single ``try`` so any
+    failure — a partial upload (2nd/3rd ``put_async`` raising after the 1st
+    succeeded) or the insert itself — triggers a best-effort cleanup of every
+    object under the prefix before re-raising; no path can orphan earlier
+    objects. On an idempotent replay the conflict path returns the original row
+    (with a different ``id`` than the freshly-generated one), so the
+    just-uploaded objects under the new prefix are unreferenced and likewise
+    removed.
 
     **Inputs:**
     - repo (ProgressPhotoRepository): Repository bound to the active session.
@@ -175,10 +178,10 @@ async def insert_one(
     photo_id = uuid4()
     prefix = f"progress/{user_key}/{photo_id}"
     sha = hashlib.sha256(processed.display).hexdigest()
-    await store.put_async(f"{prefix}/archive.jpg", processed.archive)
-    await store.put_async(f"{prefix}/display.jpg", processed.display)
-    await store.put_async(f"{prefix}/thumb.jpg", processed.thumb)
     try:
+        await store.put_async(f"{prefix}/archive.jpg", processed.archive)
+        await store.put_async(f"{prefix}/display.jpg", processed.display)
+        await store.put_async(f"{prefix}/thumb.jpg", processed.thumb)
         row = await repo.insert(
             user_key=user_key,
             log_date=log_date,
