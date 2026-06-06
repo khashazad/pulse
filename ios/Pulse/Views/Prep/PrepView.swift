@@ -257,6 +257,16 @@ struct PrepView: View {
             .padding(.vertical, 8)
             divider
             resultRow("Per portion", value: model.perPortionGrams)
+            if !batchModel.items.isEmpty {
+                HStack {
+                    Spacer()
+                    Text(macroLine(batchModel.total.scaled(count: 1, portions: model.portions)))
+                        .font(.system(size: 12, design: .monospaced))
+                        .foregroundStyle(Theme.FG.secondary)
+                }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 10)
+            }
             divider
             fillTargetRows
         }
