@@ -391,15 +391,17 @@ def test_post_photo_rejects_non_image(client: TestClient) -> None:
 def test_get_photo_returns_bytes_with_etag(client: TestClient) -> None:
     """`GET /measures/photos/{id}` returns photo bytes with an ETag header."""
     photo_id = uuid.uuid4()
+    store = _current_store["store"]
+    prefix = f"progress/khash/{uuid.uuid4()}"
+    store.put(f"{prefix}/display.jpg", b"\xff\xd8jpeg-bytes")
     with patch("pulse_server.routers.measures_photos.ProgressPhotoRepository") as MockRepo:
         instance = MockRepo.return_value
         instance.get_photo = AsyncMock(
             return_value={
-                "photo": b"\xff\xd8jpeg-bytes",
                 "photo_mime": "image/jpeg",
                 "sha256": "abc123",
                 "updated_at": _now(),
-                "storage_key_prefix": None,
+                "storage_key_prefix": prefix,
             }
         )
         resp = client.get(
@@ -442,7 +444,7 @@ def test_delete_returns_204(client: TestClient) -> None:
     photo_id = uuid.uuid4()
     with patch("pulse_server.routers.measures_photos.ProgressPhotoRepository") as MockRepo:
         MockRepo.return_value.delete = AsyncMock(
-            return_value={"id": photo_id, "storage_key_prefix": None}
+            return_value={"id": photo_id, "storage_key_prefix": f"progress/khash/{photo_id}"}
         )
         resp = client.delete(f"/measures/photos/{photo_id}", headers=HEADERS)
     assert resp.status_code == 204
@@ -484,7 +486,6 @@ def test_get_photo_streams_from_object_store(client: TestClient) -> None:
     with patch("pulse_server.routers.measures_photos.ProgressPhotoRepository") as MockRepo:
         MockRepo.return_value.get_photo = AsyncMock(
             return_value={
-                "photo": None,
                 "photo_mime": "image/jpeg",
                 "sha256": "cafe",
                 "updated_at": _now(),
@@ -506,7 +507,6 @@ def test_get_photo_thumb_and_archive_variants(client: TestClient) -> None:
 
     def _row():
         return {
-            "photo": None,
             "photo_mime": "image/jpeg",
             "sha256": "cafe",
             "updated_at": _now(),
@@ -523,30 +523,12 @@ def test_get_photo_thumb_and_archive_variants(client: TestClient) -> None:
     assert archive.content == b"archive-bytes"
 
 
-def test_get_photo_bytea_fallback_for_unmigrated_row(client: TestClient) -> None:
-    """`GET /measures/photos/{id}` falls back to legacy bytea when no prefix is set."""
-    with patch("pulse_server.routers.measures_photos.ProgressPhotoRepository") as MockRepo:
-        MockRepo.return_value.get_photo = AsyncMock(
-            return_value={
-                "photo": b"legacy-bytes",
-                "photo_mime": "image/jpeg",
-                "sha256": "cafe",
-                "updated_at": _now(),
-                "storage_key_prefix": None,
-            }
-        )
-        resp = client.get(f"/measures/photos/{uuid.uuid4()}", headers=HEADERS)
-    assert resp.status_code == 200, resp.text
-    assert resp.content == b"legacy-bytes"
-
-
 def test_get_photo_404_when_object_missing(client: TestClient) -> None:
-    """`GET /measures/photos/{id}` returns 404 when a migrated row's object is gone."""
+    """`GET /measures/photos/{id}` returns 404 when a row's object is gone."""
     prefix = f"progress/khash/{uuid.uuid4()}"
     with patch("pulse_server.routers.measures_photos.ProgressPhotoRepository") as MockRepo:
         MockRepo.return_value.get_photo = AsyncMock(
             return_value={
-                "photo": None,
                 "photo_mime": "image/jpeg",
                 "sha256": "cafe",
                 "updated_at": _now(),

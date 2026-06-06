@@ -1,8 +1,8 @@
 """Photo object-store factory and process-wide provider.
 
-Builds the S3-compatible store (Cloudflare R2 in production) used for
-progress-photo bytes, falling back to a local filesystem store in
-local-style environments so dev needs zero setup. Mirrors
+Builds the S3-compatible store used for progress-photo bytes (Backblaze B2 in
+production; any S3-compatible endpoint works), falling back to a local
+filesystem store in local-style environments so dev needs zero setup. Mirrors
 :mod:`pulse_server.usda_provider`: the lifespan publishes the store here and
 routers resolve it via :func:`get_photo_store`. Also owns
 :func:`get_photo_object`, the read primitive that normalizes the backends'
@@ -33,7 +33,7 @@ def build_photo_store(settings: Settings) -> PhotoStore:
       S3 backend, otherwise ``photo_store_dir`` selects a filesystem store.
 
     **Outputs:**
-    - PhotoStore: An ``S3Store`` (region ``auto``, R2-compatible) when S3 is
+    - PhotoStore: An ``S3Store`` (region ``auto``, works on B2 and R2) when S3 is
       configured, else a ``LocalStore`` rooted at ``photo_store_dir`` (created
       if missing).
     """

@@ -2,10 +2,10 @@
 
 Covers the per-user tag catalog (seed + list + create + rename) and the
 photo-id-based progress-photo persistence (insert one or many per
-``(user_key, log_date, tag_id)``, range filtering, full / thumb / archive
-variant retrieval with the legacy-bytea fallback, object-store row shape,
-and deletion). Integration test: hits a real Postgres via
-``TEST_DATABASE_URL``.
+``(user_key, log_date, tag_id)``, range filtering, the object-store metadata
+row shape returned by ``get_photo``, and deletion). Photo bytes live in the
+object store; the repository persists only metadata plus ``storage_key_prefix``.
+Integration test: hits a real Postgres via ``TEST_DATABASE_URL``.
 """
 
 from __future__ import annotations
@@ -63,13 +63,8 @@ def _now() -> DateTimeValue:
 
 
 def _jpeg() -> bytes:
-    """Return a fixed byte payload representing a full-size JPEG body."""
+    """Return a fixed byte payload used to derive a row's ``bytes`` length and sha256."""
     return b"\xff\xd8\xff\xe0fake-jpeg-bytes"
-
-
-def _thumb() -> bytes:
-    """Return a fixed byte payload representing a thumbnail JPEG body."""
-    return b"\xff\xd8\xff\xe0fake-thumb"
 
 
 async def _seed_tag(session: AsyncSession, *, user_key: str, name: str = "front", order: int = 0):
@@ -88,37 +83,36 @@ async def _seed_tag(session: AsyncSession, *, user_key: str, name: str = "front"
 
 @pytest.mark.asyncio
 async def test_insert_then_get_round_trip(session: AsyncSession) -> None:
-    """``insert`` persists photo bytes and ``get_photo`` returns full + thumbnail bytes by id."""
+    """``insert`` persists metadata + prefix and ``get_photo`` returns them by id."""
     user_key = f"test-{uuid.uuid4().hex}"
     tag_id = await _seed_tag(session, user_key=user_key, name="front")
     repo = ProgressPhotoRepository(session)
     sha = hashlib.sha256(_jpeg()).hexdigest()
+    photo_id = uuid.uuid4()
+    prefix = f"progress/{user_key}/{photo_id}"
     async with transaction(session):
         row = await repo.insert(
             user_key=user_key,
             log_date=DateValue(2026, 5, 17),
             tag_id=tag_id,
-            photo=_jpeg(),
-            photo_thumb=_thumb(),
+            photo_id=photo_id,
+            storage_key_prefix=prefix,
             photo_mime="image/jpeg",
             bytes_=len(_jpeg()),
             sha256=sha,
             now=_now(),
         )
-    photo_id = row["id"]
+    assert row["id"] == photo_id
     assert row["tag_id"] == tag_id
     assert row["sha256"] == sha
     assert row["bytes"] == len(_jpeg())
+    assert row["storage_key_prefix"] == prefix
 
-    got = await repo.get_photo(photo_id=photo_id, user_key=user_key, variant="full")
+    got = await repo.get_photo(photo_id=photo_id, user_key=user_key)
     assert got is not None
-    assert got["photo"] == _jpeg()
     assert got["photo_mime"] == "image/jpeg"
-    assert got["storage_key_prefix"] is None
-
-    got_thumb = await repo.get_photo(photo_id=photo_id, user_key=user_key, variant="thumb")
-    assert got_thumb is not None
-    assert got_thumb["photo"] == _thumb()
+    assert got["sha256"] == sha
+    assert got["storage_key_prefix"] == prefix
 
 
 @pytest.mark.asyncio
@@ -149,9 +143,8 @@ async def test_insert_object_store_row_round_trip(session: AsyncSession) -> None
     assert row["id"] == photo_id
     assert row["storage_key_prefix"] == prefix
 
-    got = await repo.get_photo(photo_id=photo_id, user_key=user_key, variant="archive")
+    got = await repo.get_photo(photo_id=photo_id, user_key=user_key)
     assert got is not None
-    assert got["photo"] is None  # no bytea fallback for object-store rows
     assert got["storage_key_prefix"] == prefix
 
     await session.rollback()
@@ -173,13 +166,15 @@ async def test_idempotency_key_dedupes_repeat_insert(session: AsyncSession) -> N
     tag_id = await _seed_tag(session, user_key=user_key)
     repo = ProgressPhotoRepository(session)
     idem = uuid.uuid4()
+    first_id = uuid.uuid4()
+    second_id = uuid.uuid4()
     async with transaction(session):
         first = await repo.insert(
             user_key=user_key,
             log_date=DateValue(2026, 5, 17),
             tag_id=tag_id,
-            photo=b"v1bytes",
-            photo_thumb=_thumb(),
+            photo_id=first_id,
+            storage_key_prefix=f"progress/{user_key}/{first_id}",
             photo_mime="image/jpeg",
             bytes_=7,
             sha256="sha-v1",
@@ -191,8 +186,8 @@ async def test_idempotency_key_dedupes_repeat_insert(session: AsyncSession) -> N
             user_key=user_key,
             log_date=DateValue(2026, 5, 17),
             tag_id=tag_id,
-            photo=b"v2bytes",
-            photo_thumb=_thumb(),
+            photo_id=second_id,
+            storage_key_prefix=f"progress/{user_key}/{second_id}",
             photo_mime="image/jpeg",
             bytes_=7,
             sha256="sha-v2",
@@ -213,13 +208,15 @@ async def test_null_idempotency_keys_dont_collide(session: AsyncSession) -> None
     user_key = f"test-{uuid.uuid4().hex}"
     tag_id = await _seed_tag(session, user_key=user_key)
     repo = ProgressPhotoRepository(session)
+    id_a = uuid.uuid4()
+    id_b = uuid.uuid4()
     async with transaction(session):
         await repo.insert(
             user_key=user_key,
             log_date=DateValue(2026, 5, 17),
             tag_id=tag_id,
-            photo=b"a",
-            photo_thumb=_thumb(),
+            photo_id=id_a,
+            storage_key_prefix=f"progress/{user_key}/{id_a}",
             photo_mime="image/jpeg",
             bytes_=1,
             sha256="sha-a",
@@ -230,8 +227,8 @@ async def test_null_idempotency_keys_dont_collide(session: AsyncSession) -> None
             user_key=user_key,
             log_date=DateValue(2026, 5, 17),
             tag_id=tag_id,
-            photo=b"b",
-            photo_thumb=_thumb(),
+            photo_id=id_b,
+            storage_key_prefix=f"progress/{user_key}/{id_b}",
             photo_mime="image/jpeg",
             bytes_=1,
             sha256="sha-b",
@@ -249,13 +246,15 @@ async def test_multiple_photos_per_date_and_tag(session: AsyncSession) -> None:
     user_key = f"test-{uuid.uuid4().hex}"
     tag_id = await _seed_tag(session, user_key=user_key)
     repo = ProgressPhotoRepository(session)
+    id1 = uuid.uuid4()
+    id2 = uuid.uuid4()
     async with transaction(session):
         await repo.insert(
             user_key=user_key,
             log_date=DateValue(2026, 5, 17),
             tag_id=tag_id,
-            photo=b"v1bytes",
-            photo_thumb=_thumb(),
+            photo_id=id1,
+            storage_key_prefix=f"progress/{user_key}/{id1}",
             photo_mime="image/jpeg",
             bytes_=7,
             sha256="sha-v1",
@@ -266,8 +265,8 @@ async def test_multiple_photos_per_date_and_tag(session: AsyncSession) -> None:
             user_key=user_key,
             log_date=DateValue(2026, 5, 17),
             tag_id=tag_id,
-            photo=b"v2bytes",
-            photo_thumb=_thumb(),
+            photo_id=id2,
+            storage_key_prefix=f"progress/{user_key}/{id2}",
             photo_mime="image/jpeg",
             bytes_=7,
             sha256="sha-v2",
@@ -288,12 +287,13 @@ async def test_list_metadata_filters_by_range(session: AsyncSession) -> None:
     repo = ProgressPhotoRepository(session)
     async with transaction(session):
         for d in [DateValue(2026, 5, 1), DateValue(2026, 5, 15), DateValue(2026, 6, 1)]:
+            photo_id = uuid.uuid4()
             await repo.insert(
                 user_key=user_key,
                 log_date=d,
                 tag_id=tag_id,
-                photo=_jpeg(),
-                photo_thumb=_thumb(),
+                photo_id=photo_id,
+                storage_key_prefix=f"progress/{user_key}/{photo_id}",
                 photo_mime="image/jpeg",
                 bytes_=len(_jpeg()),
                 sha256=f"sha-{d.isoformat()}",
@@ -311,25 +311,26 @@ async def test_delete_removes_photo(session: AsyncSession) -> None:
     user_key = f"test-{uuid.uuid4().hex}"
     tag_id = await _seed_tag(session, user_key=user_key)
     repo = ProgressPhotoRepository(session)
+    photo_id = uuid.uuid4()
+    prefix = f"progress/{user_key}/{photo_id}"
     async with transaction(session):
-        row = await repo.insert(
+        await repo.insert(
             user_key=user_key,
             log_date=DateValue(2026, 5, 17),
             tag_id=tag_id,
-            photo=_jpeg(),
-            photo_thumb=_thumb(),
+            photo_id=photo_id,
+            storage_key_prefix=prefix,
             photo_mime="image/jpeg",
             bytes_=len(_jpeg()),
             sha256="sha",
             now=_now(),
         )
-    photo_id = row["id"]
     async with transaction(session):
         deleted = await repo.delete(photo_id=photo_id, user_key=user_key)
     assert deleted is not None
     assert deleted["id"] == photo_id
-    assert deleted["storage_key_prefix"] is None  # bytea-era row, never migrated
-    assert await repo.get_photo(photo_id=photo_id, user_key=user_key, variant="full") is None
+    assert deleted["storage_key_prefix"] == prefix
+    assert await repo.get_photo(photo_id=photo_id, user_key=user_key) is None
 
 
 @pytest.mark.asyncio
@@ -439,13 +440,14 @@ async def test_tag_photo_count_reflects_references(session: AsyncSession) -> Non
     # explicit transaction() block below can open its own.
     await session.rollback()
     photo_repo = ProgressPhotoRepository(session)
+    photo_id = uuid.uuid4()
     async with transaction(session):
         await photo_repo.insert(
             user_key=user_key,
             log_date=DateValue(2026, 6, 1),
             tag_id=tag_id,
-            photo=_jpeg(),
-            photo_thumb=_thumb(),
+            photo_id=photo_id,
+            storage_key_prefix=f"progress/{user_key}/{photo_id}",
             photo_mime="image/jpeg",
             bytes_=len(_jpeg()),
             sha256=hashlib.sha256(_jpeg()).hexdigest(),
