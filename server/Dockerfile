@@ -27,11 +27,19 @@ RUN uv sync --frozen --no-dev
 # (/usr/local/bin/python is the system interpreter; plain `python` would hit the venv.)
 RUN /usr/local/bin/python -m pip uninstall -y pip setuptools wheel
 
-# Run as an unprivileged user. The app writes nothing to disk (photos live in
-# Postgres), so the runtime user only needs read access to /app.
+# Run as an unprivileged user. The app writes nothing to disk in production
+# (photo bytes live in S3-compatible object storage, metadata in Postgres;
+# the LocalStore fallback is local-dev only), so the runtime user only needs
+# read access to /app.
 RUN groupadd --system --gid 10001 app \
     && useradd --system --uid 10001 --gid app --home-dir /app --no-create-home app \
     && chown -R app:app /app
 USER app
+
+# Container-level liveness probe against the unauthenticated /health route
+# (Trivy DS-0026). urlopen raises on connection failure or non-2xx, failing
+# the probe; stdlib-only because the slim image ships no curl/wget.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD python -c 'import os,urllib.request as u; u.urlopen("http://127.0.0.1:%s/health" % os.environ.get("PORT","8787"), timeout=4)' || exit 1
 
 CMD ["sh", "-c", "uvicorn pulse_server.app:app --host 0.0.0.0 --port ${PORT:-8787} --proxy-headers --forwarded-allow-ips '*'"]
