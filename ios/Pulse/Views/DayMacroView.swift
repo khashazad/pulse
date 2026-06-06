@@ -19,6 +19,9 @@ struct DayMacroView: View {
     @State private var showDeleteConfirm = false
     /// Entries still needing deletion after a partial failure (retry input).
     @State private var deleteRemainder: [FoodEntry] = []
+    /// Size of the original delete selection — fixed denominator for the
+    /// failure message across retries (per-run `deleteState` counts reset).
+    @State private var deleteTotal = 0
     /// Whether the partial-failure alert (with Retry) is presented.
     @State private var showDeleteFailure = false
 
@@ -66,7 +69,9 @@ struct DayMacroView: View {
             titleVisibility: .visible
         ) {
             Button("Delete", role: .destructive) {
-                Task { await runDelete(selectedEntries()) }
+                let entries = selectedEntries()
+                deleteTotal = entries.count
+                Task { await runDelete(entries) }
             }
             Button("Cancel", role: .cancel) {}
         }
@@ -76,12 +81,13 @@ struct DayMacroView: View {
             }
             Button("Cancel", role: .cancel) {
                 deleteRemainder = []
+                deleteTotal = 0
                 exitSelection()
                 Task { await model?.load() }
             }
         } message: {
-            if case .failed(let deleted, let error) = model?.deleteState {
-                Text("Deleted \(deleted) of \(deleted + deleteRemainder.count). \(error.userMessage)")
+            if case .failed(_, let error) = model?.deleteState {
+                Text("Deleted \(deleteTotal - deleteRemainder.count) of \(deleteTotal). \(error.userMessage)")
             }
         }
     }
@@ -127,6 +133,7 @@ struct DayMacroView: View {
         let remainder = await model.deleteEntries(entries)
         if remainder.isEmpty {
             deleteRemainder = []
+            deleteTotal = 0
             exitSelection()
             await model.load()
         } else {
@@ -239,7 +246,7 @@ struct DayMacroView: View {
                 title: count == 0 ? "Delete" : "Delete \(count)",
                 leading: .icon("trash"),
                 tint: Theme.CTP.red,
-                disabled: count == 0
+                disabled: count == 0 || model?.deleteState == .deleting
             ) {
                 showDeleteConfirm = true
             }
