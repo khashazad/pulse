@@ -36,6 +36,10 @@ def _isolate_env(monkeypatch):
         "PUBLIC_BASE_URL",
         "MCP_ALLOW_UNAUTH",
         "MCP_SERVICE_TOKEN",
+        "S3_ENDPOINT",
+        "S3_BUCKET",
+        "S3_ACCESS_KEY_ID",
+        "S3_SECRET_ACCESS_KEY",
     ):
         monkeypatch.delenv(k, raising=False)
     monkeypatch.setenv("DATABASE_URL", "postgresql://localhost/test")
@@ -119,6 +123,10 @@ def test_mcp_unauth_allowed_outside_local_with_explicit_optin(monkeypatch):
     """Explicit `MCP_ALLOW_UNAUTH=true` permits MCP unauth outside `local` without GitHub OAuth."""
     monkeypatch.setenv("APP_ENV", "prod")
     monkeypatch.setenv("MCP_ALLOW_UNAUTH", "true")
+    monkeypatch.setenv("S3_ENDPOINT", "https://acc.r2.cloudflarestorage.com")
+    monkeypatch.setenv("S3_BUCKET", "pulse-photos")
+    monkeypatch.setenv("S3_ACCESS_KEY_ID", "ak")
+    monkeypatch.setenv("S3_SECRET_ACCESS_KEY", "sk")
     from pulse_server import config as cfg
 
     cfg.get_settings.cache_clear()
@@ -134,6 +142,10 @@ def test_mcp_unauth_allowed_outside_local_with_github_oauth(monkeypatch):
     monkeypatch.setenv("GITHUB_CLIENT_SECRET", "ghsecret")
     monkeypatch.setenv("PUBLIC_BASE_URL", "https://api.example.com")
     monkeypatch.setenv("ALLOWED_GITHUB_USERS", "khashazad")
+    monkeypatch.setenv("S3_ENDPOINT", "https://acc.r2.cloudflarestorage.com")
+    monkeypatch.setenv("S3_BUCKET", "pulse-photos")
+    monkeypatch.setenv("S3_ACCESS_KEY_ID", "ak")
+    monkeypatch.setenv("S3_SECRET_ACCESS_KEY", "sk")
     from pulse_server import config as cfg
 
     cfg.get_settings.cache_clear()
@@ -183,6 +195,10 @@ def test_mcp_service_token_satisfies_prod_auth_requirement(monkeypatch):
     """A static `MCP_SERVICE_TOKEN` satisfies the prod auth requirement without GitHub OAuth."""
     monkeypatch.setenv("APP_ENV", "prod")
     monkeypatch.setenv("MCP_SERVICE_TOKEN", "x" * 32)
+    monkeypatch.setenv("S3_ENDPOINT", "https://acc.r2.cloudflarestorage.com")
+    monkeypatch.setenv("S3_BUCKET", "pulse-photos")
+    monkeypatch.setenv("S3_ACCESS_KEY_ID", "ak")
+    monkeypatch.setenv("S3_SECRET_ACCESS_KEY", "sk")
     from pulse_server import config as cfg
 
     cfg.get_settings.cache_clear()
@@ -207,6 +223,10 @@ def test_service_token_login_auto_included_in_allowlist(monkeypatch):
     monkeypatch.setenv("APP_ENV", "prod")
     monkeypatch.setenv("MCP_SERVICE_TOKEN", "x" * 32)
     monkeypatch.setenv("ALLOWED_GITHUB_USERS", "khashazad")
+    monkeypatch.setenv("S3_ENDPOINT", "https://acc.r2.cloudflarestorage.com")
+    monkeypatch.setenv("S3_BUCKET", "pulse-photos")
+    monkeypatch.setenv("S3_ACCESS_KEY_ID", "ak")
+    monkeypatch.setenv("S3_SECRET_ACCESS_KEY", "sk")
     from pulse_server import config as cfg
 
     cfg.get_settings.cache_clear()
@@ -219,8 +239,51 @@ def test_service_token_login_not_added_when_allowlist_empty(monkeypatch):
     """An empty `ALLOWED_GITHUB_USERS` stays empty (open mode) even with the service token set."""
     monkeypatch.setenv("APP_ENV", "prod")
     monkeypatch.setenv("MCP_SERVICE_TOKEN", "x" * 32)
+    monkeypatch.setenv("S3_ENDPOINT", "https://acc.r2.cloudflarestorage.com")
+    monkeypatch.setenv("S3_BUCKET", "pulse-photos")
+    monkeypatch.setenv("S3_ACCESS_KEY_ID", "ak")
+    monkeypatch.setenv("S3_SECRET_ACCESS_KEY", "sk")
     from pulse_server import config as cfg
 
     cfg.get_settings.cache_clear()
     s = cfg.get_settings()
     assert s.allowed_github_users_set == set()
+
+
+def test_s3_configured_requires_all_four_fields() -> None:
+    """`s3_configured` is True only when endpoint, bucket, and both keys are set."""
+    from pulse_server.config import Settings
+
+    base = {"database_url": "postgresql://x/y", "usda_api_key": "k"}
+    assert not Settings(**base).s3_configured
+    assert not Settings(**base, s3_endpoint="https://acc.r2.cloudflarestorage.com").s3_configured
+    assert Settings(
+        **base,
+        s3_endpoint="https://acc.r2.cloudflarestorage.com",
+        s3_bucket="pulse-photos",
+        s3_access_key_id="ak",
+        s3_secret_access_key="sk",
+    ).s3_configured
+
+
+def test_non_local_env_requires_s3() -> None:
+    """Non-local boots refuse to start without S3 config (photos would be unstorable)."""
+    from pydantic import ValidationError
+
+    from pulse_server.config import Settings
+
+    base = {
+        "database_url": "postgresql://x/y",
+        "usda_api_key": "k",
+        "app_env": "production",
+        "mcp_service_token": "x" * 32,
+    }
+    with pytest.raises(ValidationError, match="S3"):
+        Settings(**base)
+    Settings(
+        **base,
+        s3_endpoint="https://acc.r2.cloudflarestorage.com",
+        s3_bucket="pulse-photos",
+        s3_access_key_id="ak",
+        s3_secret_access_key="sk",
+    )

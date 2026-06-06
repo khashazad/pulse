@@ -69,6 +69,15 @@ class Settings(BaseSettings):
     # configured GitHub OAuth flow. Empty disables this path.
     mcp_service_token: str = ""
 
+    # S3-compatible object storage for progress photos (Cloudflare R2 in prod).
+    # All four must be set together; local-style envs fall back to a filesystem
+    # store under `photo_store_dir` when unset.
+    s3_endpoint: str = ""
+    s3_bucket: str = ""
+    s3_access_key_id: str = ""
+    s3_secret_access_key: str = ""
+    photo_store_dir: str = "./photo-store"
+
     model_config = {
         "env_prefix": "",
         "case_sensitive": False,
@@ -131,6 +140,21 @@ class Settings(BaseSettings):
         - bool: ``True`` when ``MCP_SERVICE_TOKEN`` is set to a non-empty value.
         """
         return bool(self.mcp_service_token)
+
+    @property
+    def s3_configured(self) -> bool:
+        """Indicate whether the S3-compatible photo store is fully configured.
+
+        **Outputs:**
+        - bool: ``True`` when endpoint, bucket, access key id, and secret are
+          all non-empty.
+        """
+        return bool(
+            self.s3_endpoint
+            and self.s3_bucket
+            and self.s3_access_key_id
+            and self.s3_secret_access_key
+        )
 
     @property
     def mcp_oauth_enabled(self) -> bool:
@@ -242,6 +266,30 @@ class Settings(BaseSettings):
         if self.mcp_service_token and len(self.mcp_service_token) < SERVICE_TOKEN_MIN_LENGTH:
             raise ValueError(
                 f"MCP_SERVICE_TOKEN must be at least {SERVICE_TOKEN_MIN_LENGTH} characters"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _require_s3_outside_local(self) -> Settings:
+        """Refuse to boot non-local deployments without S3 photo storage.
+
+        Progress-photo bytes live in the object store; a non-local boot
+        without it would accept uploads it cannot persist. Local-style envs
+        fall back to a filesystem store for dev convenience.
+
+        **Outputs:**
+        - Settings: This instance, unchanged, when validation passes.
+
+        **Exceptions:**
+        - ValueError: Raised when the environment is not local/dev/test and
+          any of the four S3 settings is missing.
+        """
+        if self.is_local_env:
+            return self
+        if not self.s3_configured:
+            raise ValueError(
+                "S3 photo storage is not configured: set S3_ENDPOINT, S3_BUCKET, "
+                "S3_ACCESS_KEY_ID, and S3_SECRET_ACCESS_KEY in non-local environments"
             )
         return self
 
