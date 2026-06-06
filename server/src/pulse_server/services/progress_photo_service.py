@@ -12,6 +12,7 @@ controls the transaction boundary on the repository.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
 from datetime import UTC
@@ -141,9 +142,10 @@ async def insert_one(
     ``bytes`` recorded describe the **display** encoding, preserving ETag
     continuity with the pre-cutover full image the client cached against.
 
-    The three uploads and the DB insert run inside a single ``try`` so any
-    failure — a partial upload (2nd/3rd ``put_async`` raising after the 1st
-    succeeded) or the insert itself — triggers a best-effort cleanup of every
+    The three uploads run concurrently (keys derived from
+    :data:`VARIANT_OBJECTS`, all puts settled before any failure propagates)
+    and share a single ``try`` with the DB insert, so any failure — a partial
+    upload or the insert itself — triggers a best-effort cleanup of every
     object under the prefix before re-raising; no path can orphan earlier
     objects. On an idempotent replay the conflict path returns the original row
     (with a different ``id`` than the freshly-generated one), so the
@@ -178,10 +180,27 @@ async def insert_one(
     photo_id = uuid4()
     prefix = f"progress/{user_key}/{photo_id}"
     sha = hashlib.sha256(processed.display).hexdigest()
+    payloads = {
+        "archive": processed.archive,
+        "full": processed.display,
+        "thumb": processed.thumb,
+    }
     try:
-        await store.put_async(f"{prefix}/archive.jpg", processed.archive)
-        await store.put_async(f"{prefix}/display.jpg", processed.display)
-        await store.put_async(f"{prefix}/thumb.jpg", processed.thumb)
+        # Keys derive from VARIANT_OBJECTS so the write path cannot drift from
+        # the read (router) and delete (object_keys) paths. The puts run
+        # concurrently but all *settle* before any failure propagates
+        # (return_exceptions=True) — the except-cleanup below must never race
+        # a still-running upload re-creating an object it just deleted.
+        results = await asyncio.gather(
+            *(
+                store.put_async(f"{prefix}/{VARIANT_OBJECTS[variant]}", payload)
+                for variant, payload in payloads.items()
+            ),
+            return_exceptions=True,
+        )
+        failures = [r for r in results if isinstance(r, BaseException)]
+        if failures:
+            raise failures[0]
         row = await repo.insert(
             user_key=user_key,
             log_date=log_date,

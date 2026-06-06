@@ -111,7 +111,10 @@ def client() -> TestClient:
         from pulse_server.db import get_session_dependency
         from pulse_server.photo_store import set_photo_store
 
-        set_photo_store(store)
+        # The lifespan publishes the store: TestClient.__enter__ runs startup,
+        # which calls the patched build_photo_store above and hands `store` to
+        # set_photo_store. No direct set_photo_store(store) call here — that
+        # would mask a broken lifespan wiring.
 
         async def _fake_session_dep():
             session = MagicMock()
