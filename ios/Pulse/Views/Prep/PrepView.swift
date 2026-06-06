@@ -268,6 +268,8 @@ struct PrepView: View {
             .padding(.vertical, 8)
             divider
             resultRow("Per portion", value: model.perPortionGrams)
+            // Unlike canApply, this line ignores weigh-in completeness on purpose:
+            // per-portion macros come from frozen item macros, not net grams.
             if !batchModel.items.isEmpty {
                 HStack {
                     Spacer()
@@ -378,12 +380,14 @@ struct PrepView: View {
         return []
     }
 
-    /// Whether the apply-to-days flow can start: the batch must have items and,
-    /// when weigh-ins exist, all of them must be entered (a partially-weighed
-    /// batch would freeze misleading per-portion figures into the review).
-    /// Outputs: `true` when the sheet can be meaningfully opened.
+    /// Whether the apply-to-days flow can start: the batch must contain at least
+    /// one source-bearing item (sourceless items are skipped at payload build, so
+    /// an all-sourceless batch would submit an empty payload) and, when weigh-ins
+    /// exist, all of them must be entered (a partially-weighed batch would freeze
+    /// misleading per-portion figures into the review).
     private var canApply: Bool {
-        !batchModel.items.isEmpty && !model.hasUnenteredWeighIns
+        batchModel.items.contains { $0.usdaFdcId != nil || $0.customFoodId != nil }
+            && !model.hasUnenteredWeighIns
     }
 
     // MARK: - Actions
