@@ -66,4 +66,49 @@ final class FoodClientTests: XCTestCase {
             XCTAssertEqual(e, .server(status: 429))
         }
     }
+
+    // MARK: - deleteEntry
+
+    func test_deleteEntry_sendsDELETEAndAccepts204() async throws {
+        var captured: URLRequest?
+        let client = makeClient { req in
+            captured = req
+            return (HTTPURLResponse(url: req.url!, statusCode: 204, httpVersion: nil, headerFields: nil)!, Data())
+        }
+        let id = UUID(uuidString: "11111111-1111-1111-1111-111111111111")!
+
+        try await client.deleteEntry(id: id)
+
+        XCTAssertEqual(captured?.httpMethod, "DELETE")
+        XCTAssertEqual(captured?.url?.path, "/entries/11111111-1111-1111-1111-111111111111")
+        XCTAssertEqual(captured?.value(forHTTPHeaderField: "Authorization"), "Bearer session-k")
+    }
+
+    func test_deleteEntry_404MapsToNotFound() async {
+        let client = makeClient { req in
+            (HTTPURLResponse(url: req.url!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data())
+        }
+        do {
+            try await client.deleteEntry(id: UUID())
+            XCTFail("expected PulseError.notFound")
+        } catch let error as PulseError {
+            XCTAssertEqual(error, .notFound)
+        } catch {
+            XCTFail("unexpected error: \(error)")
+        }
+    }
+
+    func test_deleteEntry_500MapsToServer() async {
+        let client = makeClient { req in
+            (HTTPURLResponse(url: req.url!, statusCode: 500, httpVersion: nil, headerFields: nil)!, Data())
+        }
+        do {
+            try await client.deleteEntry(id: UUID())
+            XCTFail("expected PulseError.server")
+        } catch let error as PulseError {
+            XCTAssertEqual(error, .server(status: 500))
+        } catch {
+            XCTFail("unexpected error: \(error)")
+        }
+    }
 }
