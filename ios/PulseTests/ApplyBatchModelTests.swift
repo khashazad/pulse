@@ -111,4 +111,26 @@ final class ApplyBatchModelTests: XCTestCase {
         XCTAssertNil(applied)
         XCTAssertEqual(m.submitState, .failed(.notSignedIn))
     }
+
+    /// isSelected matches any instant on a selected day and stays false otherwise.
+    func test_isSelectedNormalizesToDay() {
+        let m = ApplyBatchModel(items: [item(fdc: 1, cal: 500, p: 50, c: 40, f: 10)],
+                                portions: 5, appliedDayKeys: [], auth: nil)
+        m.toggle(day(1))
+        let lateOnDay1 = cal.date(byAdding: .hour, value: 23, to: day(1))!
+        XCTAssertTrue(m.isSelected(lateOnDay1))
+        XCTAssertFalse(m.isSelected(day(2)))
+    }
+
+    /// dayTotal sums all items' macros and scales them by count/portions.
+    func test_dayTotalScalesBatchTotal() {
+        let m = ApplyBatchModel(
+            items: [item(fdc: 11, cal: 1000, p: 100, c: 50, f: 20),
+                    item(fdc: 12, cal: 500, p: 10, c: 80, f: 5)],
+            portions: 5, appliedDayKeys: [], auth: nil)
+        m.toggle(day(1))
+        m.setCount(2, forDay: m.selections[0].dayKey)
+        XCTAssertEqual(m.dayTotal(for: m.selections[0]),
+                       MacroTotals(calories: 600, proteinG: 44, carbsG: 52, fatG: 10))
+    }
 }
