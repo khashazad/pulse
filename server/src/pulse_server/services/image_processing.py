@@ -1,7 +1,7 @@
 """Shared image-processing pipeline: resize, thumbnail, and EXIF normalization.
 
-Provides :func:`process_photo`, the single entry point used by both
-container-photo and progress-photo upload paths, plus the
+Provides :func:`process_photo` for container-photo uploads and
+:func:`process_progress_photo` for progress-photo uploads, plus the
 :class:`ImageProcessingError` hierarchy mapped to 413/415 HTTP responses by
 service-layer wrappers. Caps long-edge dimensions to 1600 px for the full
 image and 1024 px for the thumbnail, applies EXIF orientation to pixels, then
