@@ -2,6 +2,8 @@
 
 Covers the JPEG full + thumb pair output (with the documented max-edge
 bounds) and the oversize-payload guard that raises `ImageProcessingError`.
+Also covers :func:`process_progress_photo` for the three-variant archival
+encoding added for the object-storage migration.
 """
 
 from __future__ import annotations
@@ -15,7 +17,9 @@ from pulse_server.services.image_processing import (
     MAX_FULL_PX,
     MAX_THUMB_PX,
     ImageProcessingError,
+    PhotoTooLargeError,
     process_photo,
+    process_progress_photo,
 )
 
 
@@ -31,6 +35,21 @@ def _png_bytes(w: int, h: int) -> bytes:
     """
     buf = io.BytesIO()
     Image.new("RGB", (w, h), (123, 200, 64)).save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def _jpeg_bytes(w: int, h: int) -> bytes:
+    """Render an in-memory JPEG of the given dimensions.
+
+    **Inputs:**
+    - w (int): Image width in pixels.
+    - h (int): Image height in pixels.
+
+    **Outputs:**
+    - bytes: JPEG-encoded image bytes.
+    """
+    buf = io.BytesIO()
+    Image.new("RGB", (w, h), (123, 200, 64)).save(buf, format="JPEG")
     return buf.getvalue()
 
 
@@ -52,3 +71,31 @@ def test_process_photo_rejects_oversize_payload() -> None:
     src = _png_bytes(100, 100)
     with pytest.raises(ImageProcessingError):
         process_photo(src, max_bytes=10)
+
+
+def test_process_progress_photo_produces_three_variants() -> None:
+    """A 4000px source yields a 3000px archive, 1600px display, 1024px thumb."""
+    raw = _jpeg_bytes(4000, 2000)
+    result = process_progress_photo(raw, max_bytes=20 * 1024 * 1024)
+    assert result.mime == "image/jpeg"
+    with Image.open(io.BytesIO(result.archive)) as im:
+        assert max(im.size) == 3000
+    with Image.open(io.BytesIO(result.display)) as im:
+        assert max(im.size) == 1600
+    with Image.open(io.BytesIO(result.thumb)) as im:
+        assert max(im.size) == 1024
+
+
+def test_process_progress_photo_small_source_not_upscaled() -> None:
+    """A source below every cap passes through at native size in all variants."""
+    raw = _jpeg_bytes(800, 600)
+    result = process_progress_photo(raw, max_bytes=20 * 1024 * 1024)
+    for payload in (result.archive, result.display, result.thumb):
+        with Image.open(io.BytesIO(payload)) as im:
+            assert im.size == (800, 600)
+
+
+def test_process_progress_photo_rejects_oversize_payload() -> None:
+    """Payloads above max_bytes raise PhotoTooLargeError before decoding."""
+    with pytest.raises(PhotoTooLargeError):
+        process_progress_photo(b"x" * 11, max_bytes=10)
