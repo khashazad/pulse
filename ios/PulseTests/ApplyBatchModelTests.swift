@@ -112,6 +112,15 @@ final class ApplyBatchModelTests: XCTestCase {
         XCTAssertEqual(m.submitState, .failed(.notSignedIn))
     }
 
+    // NOTE: A deterministic unit test for the concurrent-submit guard
+    // (`guard submitState != .submitting`) is intentionally omitted. The guard
+    // fires on `submitState == .submitting`, but `submitState` is `private(set)`
+    // and cannot be forced to `.submitting` from outside the model without
+    // widening access — which would be wrong just for test convenience. The
+    // auth-nil path terminates before `.submitting` is set, so it cannot seed
+    // the precondition. The guard is covered by code review and the existing
+    // test_submitWithoutAuthFails demonstrates the surrounding submit flow.
+
     /// isSelected matches any instant on a selected day and stays false otherwise.
     func test_isSelectedNormalizesToDay() {
         let m = ApplyBatchModel(items: [item(fdc: 1, cal: 500, p: 50, c: 40, f: 10)],

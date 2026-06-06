@@ -27,4 +27,10 @@ extension MacroTotals {
             fatG: tenth(fatG)
         )
     }
+
+    /// Formats the totals as a compact single line, e.g. "260 kcal · P 5 · C 56 · F 1".
+    /// Outputs: a human-readable macro summary string.
+    var compactLine: String {
+        "\(calories) kcal · P \(Int(proteinG)) · C \(Int(carbsG)) · F \(Int(fatG))"
+    }
 }

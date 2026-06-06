@@ -24,6 +24,9 @@ struct PrepView: View {
     @State private var foodSearchModel: FoodSearchModel?
     @State private var showFoodSearch = false
     @State private var showApplySheet = false
+    /// Holds a freshly constructed `ApplyBatchModel` set immediately before
+    /// `showApplySheet` is set to `true`; nil while the sheet is not presented.
+    @State private var applyModel: ApplyBatchModel?
 
     /// Identifies which selection the container picker is fulfilling.
     private enum PickerMode: Identifiable {
@@ -99,17 +102,11 @@ struct PrepView: View {
                 }
         }
         .sheet(isPresented: $showApplySheet) {
-            ApplyBatchSheet(
-                model: ApplyBatchModel(
-                    items: batchModel.items,
-                    portions: model.portions,
-                    appliedDayKeys: model.loadAppliedDates(),
-                    auth: auth
-                ),
-                onApplied: { keys in
+            if let am = applyModel {
+                ApplyBatchSheet(model: am) { keys in
                     model.recordAppliedDates(keys)
                 }
-            )
+            }
         }
         .task {
             if listModel == nil { listModel = ContainersListModel(auth: auth) }
@@ -274,7 +271,7 @@ struct PrepView: View {
             if !batchModel.items.isEmpty {
                 HStack {
                     Spacer()
-                    Text(macroLine(batchModel.total.scaled(count: 1, portions: model.portions)))
+                    Text(batchModel.total.scaled(count: 1, portions: model.portions).compactLine)
                         .font(.system(size: 12, design: .monospaced))
                         .foregroundStyle(Theme.FG.secondary)
                 }
@@ -285,6 +282,12 @@ struct PrepView: View {
             fillTargetRows
             divider
             Button {
+                applyModel = ApplyBatchModel(
+                    items: batchModel.items,
+                    portions: model.portions,
+                    appliedDayKeys: model.loadAppliedDates(),
+                    auth: auth
+                )
                 showApplySheet = true
             } label: {
                 HStack {
@@ -333,7 +336,7 @@ struct PrepView: View {
                                 .font(.system(size: 14, weight: .medium))
                                 .foregroundStyle(Theme.FG.primary)
                                 .lineLimit(1)
-                            Text(macroLine(item.macros))
+                            Text(item.macros.compactLine)
                                 .font(.system(size: 12, design: .monospaced))
                                 .foregroundStyle(Theme.FG.secondary)
                         }
@@ -357,7 +360,7 @@ struct PrepView: View {
                         .font(.system(size: 14, weight: .medium))
                         .foregroundStyle(Theme.FG.primary)
                     Spacer()
-                    Text(macroLine(batchModel.total))
+                    Text(batchModel.total.compactLine)
                         .font(.system(size: 12, design: .monospaced))
                         .foregroundStyle(Theme.CTP.mauve)
                 }
@@ -381,14 +384,6 @@ struct PrepView: View {
     /// Outputs: `true` when the sheet can be meaningfully opened.
     private var canApply: Bool {
         !batchModel.items.isEmpty && !model.hasUnenteredWeighIns
-    }
-
-    /// Formats a macro total as a compact single line.
-    /// Inputs:
-    ///   - m: the macros to format.
-    /// Outputs: e.g. "260 kcal · P 5 · C 56 · F 1".
-    private func macroLine(_ m: MacroTotals) -> String {
-        "\(m.calories) kcal · P \(Int(m.proteinG)) · C \(Int(m.carbsG)) · F \(Int(m.fatG))"
     }
 
     // MARK: - Actions

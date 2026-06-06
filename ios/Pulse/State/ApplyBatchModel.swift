@@ -38,7 +38,8 @@ final class ApplyBatchModel {
     let appliedDayKeys: Set<String>
 
     private weak var auth: AuthSession?
-    private let calendar: Calendar
+    /// Calendar used for day math throughout the model and bound views.
+    let calendar: Calendar
 
     /// Creates an apply model for one batch.
     /// Inputs:
@@ -152,11 +153,14 @@ final class ApplyBatchModel {
 
     /// Submits the payload as one atomic `POST /entries` batch. All-or-nothing:
     /// on failure nothing was logged and `submitState` carries the error (a 401
-    /// additionally routes through `AuthSession`). On success returns the
-    /// applied day keys so the caller can record them for duplicate warnings.
-    /// Outputs: the applied day keys on success, nil on failure.
+    /// additionally routes through `AuthSession`). Concurrent submits are
+    /// rejected: if `submitState` is already `.submitting` this returns nil
+    /// immediately. On success returns the applied day keys so the caller can
+    /// record them for duplicate warnings.
+    /// Outputs: the applied day keys on success, nil on failure or if already submitting.
     @discardableResult
     func submit() async -> Set<String>? {
+        guard submitState != .submitting else { return nil }
         guard let client = auth?.makeClient() else {
             submitState = .failed(.notSignedIn)
             return nil

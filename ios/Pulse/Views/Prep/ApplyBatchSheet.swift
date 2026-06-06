@@ -8,19 +8,32 @@ import SwiftUI
 /// Sheet for applying prep-batch portions to one or more selected days as
 /// real food entries. Consumed by `PrepView`.
 struct ApplyBatchSheet: View {
-    /// The backing model; owned by the sheet for the duration of its presentation.
-    @State var model: ApplyBatchModel
+    /// The backing model; injected fresh by `PrepView` on each presentation.
+    let model: ApplyBatchModel
     /// Called with the applied day keys after a successful submit, before dismiss.
     let onApplied: (Set<String>) -> Void
     @Environment(\.dismiss) private var dismiss
 
     /// Tomorrow → +7 inclusive: the quick-pick week.
+    /// Computed once at init from `model.calendar` so all day math is calendar-consistent.
     /// Outputs: seven `Date` values at midnight local time, starting tomorrow.
-    private var chipDays: [Date] {
-        let start = Calendar.current.startOfDay(for: Date())
-        return (1...7).compactMap { Calendar.current.date(byAdding: .day, value: $0, to: start) }
+    private let chipDays: [Date]
+
+    /// Creates the sheet and pre-computes the chip days using the model's injected calendar.
+    /// Inputs:
+    ///   - model: the fresh `ApplyBatchModel` for this presentation.
+    ///   - onApplied: callback receiving applied day keys on successful submit.
+    /// Outputs: an `ApplyBatchSheet`.
+    init(model: ApplyBatchModel, onApplied: @escaping (Set<String>) -> Void) {
+        self.model = model
+        self.onApplied = onApplied
+        let start = model.calendar.startOfDay(for: Date())
+        self.chipDays = (1...7).compactMap { model.calendar.date(byAdding: .day, value: $0, to: start) }
     }
 
+    /// Renders the full apply-to-days sheet: quick-pick chips, multi-date calendar,
+    /// per-day allocation steppers with duplicate warnings, a review list, and a
+    /// submit toolbar button.
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -113,20 +126,22 @@ struct ApplyBatchSheet: View {
     }
 
     /// Two-way bridge between `MultiDatePicker`'s `Set<DateComponents>` and the
-    /// model's selection list.
+    /// model's selection list. Only `.year`, `.month`, `.day` are extracted in the
+    /// getter — including `.calendar` or `.era` breaks `Set` membership equality
+    /// with what `MultiDatePicker` produces, causing spurious double-toggles.
     /// Outputs: a `Binding<Set<DateComponents>>` that stays in sync with `model.selections`.
     private var multiDateBinding: Binding<Set<DateComponents>> {
         Binding(
             get: {
                 Set(model.selections.map {
-                    Calendar.current.dateComponents([.calendar, .era, .year, .month, .day], from: $0.date)
+                    model.calendar.dateComponents([.year, .month, .day], from: $0.date)
                 })
             },
             set: { components in
                 let days = Set(
                     components
-                        .compactMap { Calendar.current.date(from: $0) }
-                        .map { Calendar.current.startOfDay(for: $0) }
+                        .compactMap { model.calendar.date(from: $0) }
+                        .map { model.calendar.startOfDay(for: $0) }
                 )
                 let current = Set(model.selections.map(\.date))
                 for added in days.subtracting(current) { model.toggle(added) }
@@ -199,7 +214,7 @@ struct ApplyBatchSheet: View {
                             .font(.system(size: 12, weight: .medium))
                             .foregroundStyle(Theme.FG.primary)
                         Spacer()
-                        Text(totalLine(model.dayTotal(for: sel)))
+                        Text(model.dayTotal(for: sel).compactLine)
                             .font(.system(size: 12, design: .monospaced))
                             .foregroundStyle(Theme.CTP.mauve)
                     }
@@ -253,11 +268,4 @@ struct ApplyBatchSheet: View {
         .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 
-    /// Formats a macro total as a compact single line.
-    /// Inputs:
-    ///   - m: the macros to format.
-    /// Outputs: e.g. "521 kcal · P 42 · C 38 · F 19".
-    private func totalLine(_ m: MacroTotals) -> String {
-        "\(m.calories) kcal · P \(Int(m.proteinG)) · C \(Int(m.carbsG)) · F \(Int(m.fatG))"
-    }
 }
