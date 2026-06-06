@@ -1,4 +1,5 @@
-/// DayMacroModel: view-model that loads a single day's macro summary.
+/// DayMacroModel: view-model that loads a single day's macro summary and
+/// coordinates copy and delete actions on that day's food entries.
 /// Wraps PulseClient.summary() in a LoadState and routes unauthorized
 /// errors through AuthSession.
 /// Role: backing model for any view that displays a one-day macro readout.
@@ -12,6 +13,8 @@ final class DayMacroModel {
     private(set) var state: LoadState<DailySummary> = .idle
     /// Outcome of the most recent "copy entries to another day" action.
     private(set) var copyState: CopyState = .idle
+    /// Outcome of the most recent "delete selected entries" action.
+    private(set) var deleteState: DeleteState = .idle
     private weak var auth: AuthSession?
 
     /// Discrete states of a copy-entries action, kept separate from `state` so the
@@ -27,6 +30,21 @@ final class DayMacroModel {
         case copying
         case finished(copied: Int, skipped: Int)
         case failed(copied: Int, error: PulseError)
+    }
+
+    /// Discrete states of a delete-entries action, kept separate from `state`
+    /// (like `CopyState`) so the confirmation/alert flow can show progress and
+    /// failure without disturbing the day's displayed summary.
+    ///
+    /// `failed` carries the number of entries already deleted before the failure
+    /// so the UI never presents a total failure that hides committed deletes —
+    /// and so a retry can resume from the remainder instead of re-sending
+    /// deletes for entries that are already gone.
+    enum DeleteState: Equatable {
+        case idle
+        case deleting
+        case finished(deleted: Int)
+        case failed(deleted: Int, error: PulseError)
     }
 
     /// Initializes the model for a specific calendar day.
@@ -118,6 +136,62 @@ final class DayMacroModel {
     /// - Returns: Nothing.
     func resetCopyState() {
         copyState = .idle
+    }
+
+    /// Deletes the given entries on the server, one `DELETE /entries/{id}` per
+    /// entry (mirroring how `copyEntries` loops single POSTs).
+    ///
+    /// The loop stops at the first request failure rather than aborting the
+    /// whole batch: everything already deleted stays deleted, `deleteState`
+    /// records how many succeeded, and the **returned array is the entries
+    /// still needing deletion** (the one that failed plus any not yet
+    /// attempted). Callers should retry with exactly that array so a transient
+    /// failure mid-batch never re-targets entries that are already gone.
+    ///
+    /// A `.notFound` (404) response counts as a successful delete — the entry
+    /// is already gone, which is the outcome the user wanted — and the loop
+    /// continues. Routes a 401 through `AuthSession`.
+    /// - Parameters:
+    ///   - entries: The entries to delete (a full selection, or a remainder
+    ///     from a prior partial run).
+    /// - Returns: The entries that were **not** deleted and remain safe to
+    ///   retry — empty when every entry was deleted (or already gone).
+    @discardableResult
+    func deleteEntries(_ entries: [FoodEntry]) async -> [FoodEntry] {
+        guard let client = auth?.makeClient() else {
+            deleteState = .failed(deleted: 0, error: .notSignedIn)
+            return entries
+        }
+        deleteState = .deleting
+        var deleted = 0
+        var index = 0
+        while index < entries.count {
+            do {
+                try await client.deleteEntry(id: entries[index].id)
+                deleted += 1
+                index += 1
+            } catch PulseError.notFound {
+                // Already gone on the server — count as deleted and move on.
+                deleted += 1
+                index += 1
+            } catch let error as PulseError {
+                if error == .unauthorized { auth?.handleUnauthorized() }
+                deleteState = .failed(deleted: deleted, error: error)
+                return Array(entries[index...])
+            } catch {
+                deleteState = .failed(deleted: deleted, error: .server(status: -1))
+                return Array(entries[index...])
+            }
+        }
+        deleteState = .finished(deleted: deleted)
+        return []
+    }
+
+    /// Resets the delete action back to idle so stale success/failure state
+    /// doesn't leak across confirmation flows (called before each run).
+    /// - Returns: Nothing.
+    func resetDeleteState() {
+        deleteState = .idle
     }
 
     /// Builds a `FoodEntryCreate` that reproduces an existing entry on a new day.

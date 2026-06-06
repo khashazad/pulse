@@ -3,7 +3,7 @@ import XCTest
 @testable import Pulse
 
 /// Unit tests for the food-search client endpoints: USDA proxy search,
-/// custom-foods list, and food-memory list.
+/// custom-foods list, food-memory list, and food-entry deletion.
 final class FoodClientTests: XCTestCase {
     private var activeStubs: [StubURLProtocol.Registration] = []
 

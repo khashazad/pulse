@@ -1,5 +1,6 @@
 /// `PulseClient` food-domain endpoints: the daily summary, raw log listing,
-/// food-entry batch writes, USDA search proxy, custom foods, and food memory.
+/// food-entry batch writes and single-entry deletes, USDA search proxy,
+/// custom foods, and food memory.
 /// Pure code organization — every method keeps its original signature and
 /// behaviour; only the shared transport now lives on `http`.
 import Foundation
