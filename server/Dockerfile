@@ -1,7 +1,7 @@
 # Pinned to immutable digests so the build/runtime contents can't drift when an
 # upstream tag is moved. Update these together with the trailing version comment.
 # python:3.11-slim -> 3.11.15-slim-trixie
-FROM python@sha256:a3ab0b966bc4e91546a033e22093cb840908979487a9fc0e6e38295747e49ac0
+FROM python@sha256:250e5c97be05e1eb2272fbdbd810dfd638f9012e1e6f65c99390ad3239943a08
 
 # ghcr.io/astral-sh/uv:latest -> 0.11.16
 COPY --from=ghcr.io/astral-sh/uv@sha256:440fd6477af86a2f1b38080c539f1672cd22acb1b1a47e321dba5158ab08864d /uv /uvx /bin/
