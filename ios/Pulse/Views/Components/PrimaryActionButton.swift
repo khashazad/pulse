@@ -4,7 +4,7 @@
 /// The accent tint is configurable (default mauve); destructive actions pass red.
 import SwiftUI
 
-/// Primary call-to-action button: a full-width, mauve-tinted, stroke-bordered
+/// Primary call-to-action button: a full-width, accent-tinted, stroke-bordered
 /// capsule-card with a leading glyph or spinner and a semibold title.
 ///
 /// Two shapes, selected by `leading`: an inline action bar (`.icon`, used by
