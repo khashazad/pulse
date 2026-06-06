@@ -23,6 +23,7 @@ struct PrepView: View {
     @State private var batchModel = BatchCompositionModel()
     @State private var foodSearchModel: FoodSearchModel?
     @State private var showFoodSearch = false
+    @State private var showApplySheet = false
 
     /// Identifies which selection the container picker is fulfilling.
     private enum PickerMode: Identifiable {
@@ -96,6 +97,19 @@ struct PrepView: View {
                         model.reconcileIfLoaded(loadedListOrNil)
                     }
                 }
+        }
+        .sheet(isPresented: $showApplySheet) {
+            ApplyBatchSheet(
+                model: ApplyBatchModel(
+                    items: batchModel.items,
+                    portions: model.portions,
+                    appliedDayKeys: model.loadAppliedDates(),
+                    auth: auth
+                ),
+                onApplied: { keys in
+                    model.recordAppliedDates(keys)
+                }
+            )
         }
         .task {
             if listModel == nil { listModel = ContainersListModel(auth: auth) }
@@ -269,6 +283,21 @@ struct PrepView: View {
             }
             divider
             fillTargetRows
+            divider
+            Button {
+                showApplySheet = true
+            } label: {
+                HStack {
+                    Spacer()
+                    Label("Apply to days", systemImage: "calendar.badge.plus")
+                        .font(.system(size: 14, weight: .semibold))
+                    Spacer()
+                }
+                .padding(.vertical, 12)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(canApply ? Theme.CTP.mauve : Theme.FG.tertiary)
+            .disabled(!canApply)
         }
     }
 
@@ -344,6 +373,14 @@ struct PrepView: View {
     private var loadedContainers: [Container] {
         if case .loaded(let list) = listModel?.state ?? .idle { return list }
         return []
+    }
+
+    /// Whether the apply-to-days flow can start: the batch must have items and,
+    /// when weigh-ins exist, all of them must be entered (a partially-weighed
+    /// batch would freeze misleading per-portion figures into the review).
+    /// Outputs: `true` when the sheet can be meaningfully opened.
+    private var canApply: Bool {
+        !batchModel.items.isEmpty && !model.hasUnenteredWeighIns
     }
 
     /// Formats a macro total as a compact single line.
