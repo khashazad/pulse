@@ -146,4 +146,30 @@ final class ApplyBatchModelTests: XCTestCase {
         XCTAssertEqual(m.dayTotal(for: m.selections[0]),
                        MacroTotals(calories: 600, proteinG: 44, carbsG: 52, fatG: 10))
     }
+
+    /// dayTotal sums the per-item rounded payload values, never an
+    /// aggregate-then-scale: two 1-kcal items over 2 portions submit two
+    /// 1-kcal entries (each rounds 0.5 up), so the day total must read 2,
+    /// not the 1 an aggregate scale would produce.
+    func test_dayTotalMatchesPerItemPayloadRounding() {
+        let m = ApplyBatchModel(
+            items: [item(fdc: 1, cal: 1, p: 0, c: 0, f: 0),
+                    item(fdc: 2, cal: 1, p: 0, c: 0, f: 0)],
+            portions: 2, appliedDayKeys: [], auth: nil)
+        m.toggle(day(1))
+        XCTAssertEqual(m.dayTotal(for: m.selections[0]).calories, 2)
+    }
+
+    /// Sourceless items are excluded from applicableItems and dayTotal,
+    /// matching the payload (which can never log them).
+    func test_dayTotalExcludesSourcelessItems() {
+        let m = ApplyBatchModel(
+            items: [item(fdc: 1, cal: 500, p: 50, c: 40, f: 10),
+                    item(cal: 999, p: 9, c: 9, f: 9)],
+            portions: 5, appliedDayKeys: [], auth: nil)
+        m.toggle(day(1))
+        XCTAssertEqual(m.applicableItems.count, 1)
+        XCTAssertEqual(m.dayTotal(for: m.selections[0]),
+                       MacroTotals(calories: 100, proteinG: 10, carbsG: 8, fatG: 2))
+    }
 }

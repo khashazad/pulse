@@ -199,7 +199,7 @@ struct ApplyBatchSheet: View {
                             .font(.system(size: 11))
                             .foregroundStyle(Theme.CTP.yellow)
                     }
-                    ForEach(model.items) { item in
+                    ForEach(model.applicableItems) { item in
                         let m = model.scaledMacros(for: item, in: sel)
                         HStack {
                             Text(item.displayName)

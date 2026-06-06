@@ -36,9 +36,10 @@ final class ApplyBatchModel {
     let portions: Int
     /// Day keys this batch was already applied to (drives the duplicate warning).
     let appliedDayKeys: Set<String>
-    /// The unscaled sum of all items' macros, computed once at init (items are
-    /// immutable) so per-day totals don't re-reduce on every render.
-    let batchTotal: MacroTotals
+    /// The source-bearing items — the only ones the payload can log. Computed
+    /// once at init (items are immutable); the single item list behind the
+    /// review rows, the day totals, and the payload, so they cannot diverge.
+    let applicableItems: [BatchFoodItem]
 
     private weak var auth: AuthSession?
     /// Calendar used for day math throughout the model and bound views.
@@ -57,7 +58,7 @@ final class ApplyBatchModel {
         self.items = items
         self.portions = max(1, portions)
         self.appliedDayKeys = appliedDayKeys
-        self.batchTotal = items.map(\.macros).reduce(.zero, +)
+        self.applicableItems = items.filter(\.hasSource)
         self.auth = auth
         self.calendar = calendar
     }
@@ -104,12 +105,17 @@ final class ApplyBatchModel {
     /// Warns in the UI; never blocks.
     var isOverAllocated: Bool { allocatedPortions > portions }
 
-    /// The macro total landing on one selected day (batch total x count/portions).
+    /// The macro total landing on one selected day: the sum of the SAME
+    /// per-item scaled values the payload carries (per-item rounding, source-
+    /// bearing items only) — never an aggregate-then-scale, which can round
+    /// differently from what the server sums over the submitted entries.
     /// Inputs:
     ///   - selection: the day selection to total.
-    /// Outputs: the day's scaled `MacroTotals`.
+    /// Outputs: the day's `MacroTotals`, exactly matching the submitted entries.
     func dayTotal(for selection: DaySelection) -> MacroTotals {
-        batchTotal.scaled(count: selection.count, portions: portions)
+        applicableItems
+            .map { scaledMacros(for: $0, in: selection) }
+            .reduce(.zero, +)
     }
 
     /// The macros one batch item contributes to one selected day (item macros
@@ -123,18 +129,17 @@ final class ApplyBatchModel {
         item.macros.scaled(count: selection.count, portions: portions)
     }
 
-    /// Builds one selected day's payload entries: one entry per source-bearing
-    /// batch item, scaled via `scaledMacros(for:in:)`, carrying the item's real
-    /// food source and `consumedAt` mid-day local on the day (the canonical
-    /// `DateOnly.noon` anchor). Sourceless items are skipped (they cannot
-    /// satisfy the server's source validator).
+    /// Builds one selected day's payload entries: one entry per item in
+    /// `applicableItems`, scaled via `scaledMacros(for:in:)`, carrying the
+    /// item's real food source and `consumedAt` mid-day local on the day (the
+    /// canonical `DateOnly.noon` anchor).
     /// Inputs:
     ///   - sel: the day selection to build entries for.
     /// Outputs: the day's payload entries (empty only for an all-sourceless batch).
     private func entries(for sel: DaySelection) -> [FoodEntryCreate] {
         let noon = DateOnly.noon(on: sel.date, calendar: calendar)
         let qty = "\(sel.count)/\(portions) of prep batch"
-        return items.compactMap { item in
+        return applicableItems.compactMap { item in
             let m = scaledMacros(for: item, in: sel)
             if let fdc = item.usdaFdcId {
                 return .usda(displayName: item.displayName, quantityText: qty,
