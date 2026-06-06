@@ -30,7 +30,7 @@ final class ContainerEditModel {
         self.auth = auth
         self.name = existing?.name ?? ""
         if let g = existing?.tareWeightG {
-            self.tareWeightText = String(format: "%g", g)
+            self.tareWeightText = NumericInput.formatBare(g)
         } else {
             self.tareWeightText = ""
         }
@@ -38,7 +38,7 @@ final class ContainerEditModel {
 
     var isValid: Bool {
         !name.trimmingCharacters(in: .whitespaces).isEmpty &&
-            (Double(tareWeightText) ?? 0) > 0
+            (NumericInput.parseDecimal(tareWeightText) ?? 0) > 0
     }
 
     var isExisting: Bool { existing != nil }
@@ -51,7 +51,7 @@ final class ContainerEditModel {
     /// Creates or updates the container and reconciles its photo (upload new, delete cleared, otherwise leave).
     /// Updates `saving`, `error`, and `savedContainerId` to drive UI feedback.
     func save() async {
-        guard let client = auth?.makeClient(), let weight = Double(tareWeightText) else {
+        guard let client = auth?.makeClient(), let weight = NumericInput.parseDecimal(tareWeightText) else {
             error = .notSignedIn
             return
         }

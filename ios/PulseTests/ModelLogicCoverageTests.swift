@@ -1,6 +1,6 @@
 // PulseTests/ModelLogicCoverageTests.swift
 /// Integration-style logic tests for view-model branches the success/failure
-/// suites don't reach: UserTargetsStore.saveTargetWeight, MealDetailModel log
+/// suites don't reach: UserTargetsStore.save, MealDetailModel log
 /// success + stale-data retention, WeightLogModel.todayEntry and the
 /// upsert-from-empty path, and AuthSession's exchange transport/server error
 /// branches. All use a scoped `StubURLProtocol` session and a dedicated test
@@ -46,36 +46,52 @@ final class ModelLogicCoverageTests: XCTestCase {
 
     private let targetsJSON = #"{"calories":2000,"protein_g":150,"carbs_g":200,"fat_g":60,"target_weight_lb":175}"#
 
-    // MARK: - UserTargetsStore.saveTargetWeight
+    // MARK: - UserTargetsStore.save
 
-    /// Verifies `saveTargetWeight` fetches current targets, PUTs an updated copy
-    /// swapping in the new weight, and publishes the merged value on success.
-    func test_saveTargetWeight_fetchesPutsAndUpdatesCache() async {
+    /// Verifies `save` PUTs the given targets once — with all five snake_case
+    /// fields in the body — and publishes the server-echoed value on success.
+    /// The stub echoes calories=1801 to prove the cache holds the echo.
+    func test_save_putsAllFieldsAndUpdatesCache() async throws {
         let auth = signedInAuth { req in
-            // Both GET (fetch) and PUT (upsert) hit /targets; echo back the body
-            // for PUT so the persisted value reflects the new weight.
-            if req.httpMethod == "PUT" {
-                let body = #"{"calories":2000,"protein_g":150,"carbs_g":200,"fat_g":60,"target_weight_lb":190.5}"#
-                return (self.http(req, 200), body.data(using: .utf8)!)
-            }
-            return (self.http(req, 200), self.targetsJSON.data(using: .utf8)!)
+            XCTAssertEqual(req.httpMethod, "PUT")
+            XCTAssertEqual(req.url?.path, "/targets")
+            let body = #"{"calories":1801,"protein_g":160,"carbs_g":150,"fat_g":55,"target_weight_lb":168}"#
+            return (self.http(req, 200), body.data(using: .utf8)!)
         }
         let store = UserTargetsStore()
-        let client = auth.makeClient()!
-        await store.saveTargetWeight(lb: 190.5, client: client)
-        XCTAssertEqual(store.targets?.targetWeightLb, 190.5)
-        XCTAssertEqual(store.targets?.calories, 2000, "non-weight fields are carried over from the fetched targets")
+        let targets = MacroTargets(calories: 1800, proteinG: 160, carbsG: 150,
+                                   fatG: 55, targetWeightLb: 168)
+        let echoed = try await store.save(targets, client: auth.makeClient()!)
+        XCTAssertEqual(echoed.calories, 1801, "save must return the server echo")
+        XCTAssertEqual(store.targets?.calories, 1801,
+                       "cache must hold the server-echoed value, not the input")
+        XCTAssertEqual(store.targets?.proteinG, 160)
+
+        let sent = try JSONSerialization.jsonObject(
+            with: activeStubs.last?.lastRequestBody ?? Data()) as? [String: Any]
+        XCTAssertEqual(sent?["calories"] as? Int, 1800)
+        XCTAssertEqual(sent?["protein_g"] as? Double, 160)
+        XCTAssertEqual(sent?["carbs_g"] as? Double, 150)
+        XCTAssertEqual(sent?["fat_g"] as? Double, 55)
+        XCTAssertEqual(sent?["target_weight_lb"] as? Double, 168)
     }
 
-    /// Verifies a server failure during `saveTargetWeight` is swallowed (no crash,
-    /// cache left untouched) so the caller can retry.
-    func test_saveTargetWeight_serverFailureIsSwallowed() async {
+    /// Verifies `save` rethrows on server failure and leaves the cache
+    /// untouched so the caller can show an error and retry.
+    func test_save_failureRethrowsAndKeepsCache() async {
         let auth = signedInAuth { req in (self.http(req, 500), Data()) }
         let store = UserTargetsStore()
-        store.update(MacroTargets(calories: 1, proteinG: 1, carbsG: 1, fatG: 1, targetWeightLb: 100))
-        await store.saveTargetWeight(lb: 200, client: auth.makeClient()!)
-        // Unchanged: the prior cached value survives the failed save.
-        XCTAssertEqual(store.targets?.targetWeightLb, 100)
+        store.update(MacroTargets(calories: 1, proteinG: 1, carbsG: 1,
+                                  fatG: 1, targetWeightLb: 100))
+        do {
+            _ = try await store.save(
+                MacroTargets(calories: 2, proteinG: 2, carbsG: 2, fatG: 2, targetWeightLb: 200),
+                client: auth.makeClient()!)
+            XCTFail("expected save to throw on HTTP 500")
+        } catch {
+            // expected
+        }
+        XCTAssertEqual(store.targets?.calories, 1, "cache must survive a failed save")
     }
 
     // MARK: - MealDetailModel log success + stale retention
