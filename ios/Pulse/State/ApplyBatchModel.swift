@@ -36,6 +36,9 @@ final class ApplyBatchModel {
     let portions: Int
     /// Day keys this batch was already applied to (drives the duplicate warning).
     let appliedDayKeys: Set<String>
+    /// The unscaled sum of all items' macros, computed once at init (items are
+    /// immutable) so per-day totals don't re-reduce on every render.
+    let batchTotal: MacroTotals
 
     private weak var auth: AuthSession?
     /// Calendar used for day math throughout the model and bound views.
@@ -54,6 +57,7 @@ final class ApplyBatchModel {
         self.items = items
         self.portions = max(1, portions)
         self.appliedDayKeys = appliedDayKeys
+        self.batchTotal = items.map(\.macros).reduce(.zero, +)
         self.auth = auth
         self.calendar = calendar
     }
@@ -111,13 +115,7 @@ final class ApplyBatchModel {
     ///   - selection: the day selection to total.
     /// Outputs: the day's scaled `MacroTotals`.
     func dayTotal(for selection: DaySelection) -> MacroTotals {
-        let total = items.reduce(MacroTotals(calories: 0, proteinG: 0, carbsG: 0, fatG: 0)) { acc, it in
-            MacroTotals(calories: acc.calories + it.macros.calories,
-                        proteinG: acc.proteinG + it.macros.proteinG,
-                        carbsG: acc.carbsG + it.macros.carbsG,
-                        fatG: acc.fatG + it.macros.fatG)
-        }
-        return total.scaled(count: selection.count, portions: portions)
+        batchTotal.scaled(count: selection.count, portions: portions)
     }
 
     /// Builds the full `POST /entries` payload: one entry per (selected day x
@@ -165,11 +163,11 @@ final class ApplyBatchModel {
             submitState = .failed(.notSignedIn)
             return nil
         }
+        // Defensive backstop only: PrepView's canApply gate requires at least one
+        // source-bearing item (see BatchFoodItem.hasSource), so an empty payload
+        // is unreachable from the UI. Bail without faking a server error.
         let payload = buildEntries()
-        guard !payload.isEmpty else {
-            submitState = .failed(.server(status: -1))
-            return nil
-        }
+        guard !payload.isEmpty else { return nil }
         submitState = .submitting
         do {
             let resp = try await client.createEntries(payload)

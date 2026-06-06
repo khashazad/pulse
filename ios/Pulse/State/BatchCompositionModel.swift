@@ -41,13 +41,6 @@ final class BatchCompositionModel {
 
     /// The summed macros across all items.
     var total: MacroTotals {
-        items.reduce(MacroTotals(calories: 0, proteinG: 0, carbsG: 0, fatG: 0)) { acc, it in
-            MacroTotals(
-                calories: acc.calories + it.macros.calories,
-                proteinG: acc.proteinG + it.macros.proteinG,
-                carbsG: acc.carbsG + it.macros.carbsG,
-                fatG: acc.fatG + it.macros.fatG
-            )
-        }
+        items.map(\.macros).reduce(.zero, +)
     }
 }

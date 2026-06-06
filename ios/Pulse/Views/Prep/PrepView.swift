@@ -283,7 +283,11 @@ struct PrepView: View {
             divider
             fillTargetRows
             divider
-            Button {
+            PrimaryActionButton(
+                title: "Apply to days",
+                leading: .icon("calendar.badge.plus"),
+                disabled: !canApply
+            ) {
                 applyModel = ApplyBatchModel(
                     items: batchModel.items,
                     portions: model.portions,
@@ -291,18 +295,9 @@ struct PrepView: View {
                     auth: auth
                 )
                 showApplySheet = true
-            } label: {
-                HStack {
-                    Spacer()
-                    Label("Apply to days", systemImage: "calendar.badge.plus")
-                        .font(.system(size: 14, weight: .semibold))
-                    Spacer()
-                }
-                .padding(.vertical, 12)
             }
-            .buttonStyle(.plain)
-            .foregroundStyle(canApply ? Theme.CTP.mauve : Theme.FG.tertiary)
-            .disabled(!canApply)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
         }
     }
 
@@ -381,13 +376,13 @@ struct PrepView: View {
     }
 
     /// Whether the apply-to-days flow can start: the batch must contain at least
-    /// one source-bearing item (sourceless items are skipped at payload build, so
-    /// an all-sourceless batch would submit an empty payload) and, when weigh-ins
-    /// exist, all of them must be entered (a partially-weighed batch would freeze
-    /// misleading per-portion figures into the review).
+    /// one source-bearing item (`BatchFoodItem.hasSource` — sourceless items are
+    /// skipped at payload build, so an all-sourceless batch would submit an empty
+    /// payload) and, when weigh-ins exist, all of them must be entered (a
+    /// partially-weighed batch would freeze misleading per-portion figures into
+    /// the review).
     private var canApply: Bool {
-        batchModel.items.contains { $0.usdaFdcId != nil || $0.customFoodId != nil }
-            && !model.hasUnenteredWeighIns
+        batchModel.items.contains(where: \.hasSource) && !model.hasUnenteredWeighIns
     }
 
     // MARK: - Actions

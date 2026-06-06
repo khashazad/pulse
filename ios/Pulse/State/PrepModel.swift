@@ -185,7 +185,10 @@ final class PrepModel {
 
     /// Saves the batch food items, replacing any previously stored list. Emptying
     /// the batch also clears the applied-dates memory, because a new batch is a
-    /// new identity for the duplicate-apply warning.
+    /// new identity for the duplicate-apply warning. NOTE: "empty" is the only
+    /// identity boundary — load-bearing assumption. Swapping items one-by-one
+    /// without ever hitting zero keeps the old applied-dates (a warn-only,
+    /// bounded staleness accepted in the design over explicit batch ids).
     /// Inputs:
     ///   - items: the current batch items to persist.
     /// Outputs: nothing.

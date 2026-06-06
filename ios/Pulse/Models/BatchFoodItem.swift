@@ -26,4 +26,11 @@ struct BatchFoodItem: Identifiable, Codable, Equatable {
     let containerId: UUID?
     /// Macros computed when the item was added (already scaled by quantity).
     let macros: MacroTotals
+
+    /// Whether the item carries a loggable food source. Single source of truth
+    /// for the apply-to-days gate (`PrepView.canApply`) and the payload builder's
+    /// skip rule (`ApplyBatchModel.buildEntries`): the server's entry validator
+    /// requires exactly one of USDA / custom-food per entry.
+    /// Outputs: true when the item has a USDA or custom-food reference.
+    var hasSource: Bool { usdaFdcId != nil || customFoodId != nil }
 }

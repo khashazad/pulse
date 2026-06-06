@@ -33,4 +33,22 @@ extension MacroTotals {
     var compactLine: String {
         "\(calories) kcal · P \(Int(proteinG)) · C \(Int(carbsG)) · F \(Int(fatG))"
     }
+
+    /// The additive identity, used as the seed when summing totals.
+    static let zero = MacroTotals(calories: 0, proteinG: 0, carbsG: 0, fatG: 0)
+
+    /// Adds two totals field-wise. Single source of truth for macro summation,
+    /// shared by `BatchCompositionModel.total` and `ApplyBatchModel`.
+    /// Inputs:
+    ///   - lhs: the first total.
+    ///   - rhs: the second total.
+    /// Outputs: a new `MacroTotals` with each field summed.
+    static func + (lhs: MacroTotals, rhs: MacroTotals) -> MacroTotals {
+        MacroTotals(
+            calories: lhs.calories + rhs.calories,
+            proteinG: lhs.proteinG + rhs.proteinG,
+            carbsG: lhs.carbsG + rhs.carbsG,
+            fatG: lhs.fatG + rhs.fatG
+        )
+    }
 }

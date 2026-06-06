@@ -249,23 +249,18 @@ struct ApplyBatchSheet: View {
         }
     }
 
-    /// Inline error banner for a failed submit; nothing was logged (atomic batch).
+    /// Inline error line for a failed submit; nothing was logged (atomic batch).
+    /// Follows the app-wide failed-state convention (`Label` + triangle glyph +
+    /// `userMessage`, as in `CopyEntriesSheet` and the tab views).
     /// Inputs:
     ///   - error: the failure to surface.
-    /// Outputs: a styled error banner `View`.
+    /// Outputs: a styled error `View`.
     @ViewBuilder
     private func errorBanner(_ error: PulseError) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: "xmark.octagon.fill")
-                .font(.system(size: 12))
-            Text("Nothing was logged: \(error.userMessage)")
-                .font(.system(size: 12))
-            Spacer()
-        }
-        .foregroundStyle(Theme.CTP.red)
-        .padding(12)
-        .background(Theme.BG.tertiary)
-        .clipShape(RoundedRectangle(cornerRadius: 10))
+        Label("Nothing was logged: \(error.userMessage)", systemImage: "exclamationmark.triangle")
+            .font(.system(size: 12))
+            .foregroundStyle(Theme.CTP.red)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 
 }
