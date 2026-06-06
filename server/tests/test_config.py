@@ -257,6 +257,17 @@ def test_s3_configured_requires_all_four_fields() -> None:
     base = {"database_url": "postgresql://x/y", "usda_api_key": "k"}
     assert not Settings(**base).s3_configured
     assert not Settings(**base, s3_endpoint="https://acc.r2.cloudflarestorage.com").s3_configured
+    assert not Settings(
+        **base,
+        s3_endpoint="https://acc.r2.cloudflarestorage.com",
+        s3_bucket="pulse-photos",
+        s3_access_key_id="ak",
+    ).s3_configured
+    assert not Settings(
+        **base,
+        s3_endpoint="https://acc.r2.cloudflarestorage.com",
+        s3_bucket="pulse-photos",
+    ).s3_configured
     assert Settings(
         **base,
         s3_endpoint="https://acc.r2.cloudflarestorage.com",

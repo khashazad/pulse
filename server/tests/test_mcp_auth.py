@@ -29,6 +29,10 @@ def _isolate_env(monkeypatch):
         "ALLOWED_GITHUB_USERS",
         "MCP_ALLOW_UNAUTH",
         "MCP_SERVICE_TOKEN",
+        "S3_ENDPOINT",
+        "S3_BUCKET",
+        "S3_ACCESS_KEY_ID",
+        "S3_SECRET_ACCESS_KEY",
     ):
         monkeypatch.delenv(k, raising=False)
     monkeypatch.setenv("DATABASE_URL", "postgresql://localhost/test")
