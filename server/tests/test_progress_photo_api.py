@@ -20,10 +20,15 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
+from obstore.store import MemoryStore
 from PIL import Image
 
 os.environ.setdefault("DATABASE_URL", "postgresql://localhost/test")
 os.environ.setdefault("USDA_API_KEY", "test")
+
+# Holds the MemoryStore wired into the app for the active `client` fixture so
+# tests can seed/inspect objects directly.
+_current_store: dict = {}
 
 
 def _png_bytes(w: int, h: int) -> bytes:
@@ -57,6 +62,7 @@ def _photo_row(tag_id: uuid.UUID, sha: str = "deadbeef") -> dict:
         "photo_mime": "image/jpeg",
         "bytes": 100,
         "sha256": sha,
+        "storage_key_prefix": f"progress/khash/{uuid.uuid4()}",
         "created_at": _now(),
         "updated_at": _now(),
     }
@@ -88,17 +94,24 @@ def client() -> TestClient:
     db_ctx.__aenter__.return_value = fake_db_session
     db_ctx.__aexit__.return_value = None
 
+    store = MemoryStore()
+    _current_store["store"] = store
+
     with (
         patch("pulse_server.db.init_pool", new_callable=AsyncMock),
         patch("pulse_server.db.bootstrap_schema", new_callable=AsyncMock),
         patch("pulse_server.db.close_pool", new_callable=AsyncMock),
         patch("pulse_server.usda.USDAClient") as mock_usda_client,
+        patch("pulse_server.app.build_photo_store", return_value=store),
         patch("pulse_server.auth.middleware.get_session", return_value=db_ctx),
         patch("pulse_server.auth.middleware.SessionsRepository", return_value=session_repo),
     ):
         mock_usda_client.return_value.close = AsyncMock()
         from pulse_server.app import app
         from pulse_server.db import get_session_dependency
+        from pulse_server.photo_store import set_photo_store
+
+        set_photo_store(store)
 
         async def _fake_session_dep():
             session = MagicMock()
@@ -113,6 +126,8 @@ def client() -> TestClient:
                 yield test_client
         finally:
             app.dependency_overrides.pop(get_session_dependency, None)
+            set_photo_store(None)
+            _current_store.pop("store", None)
 
 
 HEADERS = {"Authorization": "Bearer tok"}
@@ -218,8 +233,15 @@ def test_post_photo_returns_metadata(client: TestClient) -> None:
     """`POST /measures/photos` inserts a tagged photo and returns metadata."""
     src = _png_bytes(800, 600)
     tag_id = uuid.uuid4()
+
+    async def _insert(**kwargs):
+        row = _photo_row(tag_id, "deadbeef")
+        row["id"] = kwargs["photo_id"]
+        row["storage_key_prefix"] = kwargs["storage_key_prefix"]
+        return row
+
     photo_repo = MagicMock()
-    photo_repo.insert = AsyncMock(return_value=_photo_row(tag_id, "deadbeef"))
+    photo_repo.insert = AsyncMock(side_effect=_insert)
     tag_repo = MagicMock()
     tag_repo.get_by_id = AsyncMock(return_value=_tag_row("front", 0))
     with (
@@ -250,8 +272,15 @@ def test_post_photo_forwards_idempotency_key(client: TestClient) -> None:
     src = _png_bytes(400, 400)
     tag_id = uuid.uuid4()
     idem = uuid.uuid4()
+
+    async def _insert(**kwargs):
+        row = _photo_row(tag_id, "sha")
+        row["id"] = kwargs["photo_id"]
+        row["storage_key_prefix"] = kwargs["storage_key_prefix"]
+        return row
+
     photo_repo = MagicMock()
-    photo_repo.insert = AsyncMock(return_value=_photo_row(tag_id, "sha"))
+    photo_repo.insert = AsyncMock(side_effect=_insert)
     tag_repo = MagicMock()
     tag_repo.get_by_id = AsyncMock(return_value=_tag_row("front", 0))
     with (
@@ -345,6 +374,7 @@ def test_get_photo_returns_bytes_with_etag(client: TestClient) -> None:
                 "photo_mime": "image/jpeg",
                 "sha256": "abc123",
                 "updated_at": _now(),
+                "storage_key_prefix": None,
             }
         )
         resp = client.get(
@@ -384,15 +414,213 @@ def test_list_returns_metadata_for_range(client: TestClient) -> None:
 
 def test_delete_returns_204(client: TestClient) -> None:
     """`DELETE /measures/photos/{id}` returns 204 on success."""
+    photo_id = uuid.uuid4()
     with patch("pulse_server.routers.measures_photos.ProgressPhotoRepository") as MockRepo:
-        MockRepo.return_value.delete = AsyncMock(return_value=True)
-        resp = client.delete(f"/measures/photos/{uuid.uuid4()}", headers=HEADERS)
+        MockRepo.return_value.delete = AsyncMock(
+            return_value={"id": photo_id, "storage_key_prefix": None}
+        )
+        resp = client.delete(f"/measures/photos/{photo_id}", headers=HEADERS)
     assert resp.status_code == 204
 
 
 def test_delete_returns_404_when_missing(client: TestClient) -> None:
     """`DELETE /measures/photos/{id}` returns 404 when nothing was removed."""
     with patch("pulse_server.routers.measures_photos.ProgressPhotoRepository") as MockRepo:
-        MockRepo.return_value.delete = AsyncMock(return_value=False)
+        MockRepo.return_value.delete = AsyncMock(return_value=None)
         resp = client.delete(f"/measures/photos/{uuid.uuid4()}", headers=HEADERS)
     assert resp.status_code == 404
+
+
+# ---------------- object-store read/write/delete ----------------
+
+
+def _object_missing(store: MemoryStore, key: str) -> bool:
+    """Report whether ``key`` is absent from ``store``.
+
+    **Inputs:**
+    - store (MemoryStore): The object store to probe.
+    - key (str): Object key to look up.
+
+    **Outputs:**
+    - bool: ``True`` when the key raises on fetch (absent), ``False`` otherwise.
+    """
+    try:
+        store.get(key).bytes()
+        return False
+    except Exception:
+        return True
+
+
+def test_get_photo_streams_from_object_store(client: TestClient) -> None:
+    """`GET /measures/photos/{id}` streams display bytes from the object store."""
+    store = _current_store["store"]
+    prefix = f"progress/khash/{uuid.uuid4()}"
+    store.put(f"{prefix}/display.jpg", b"jpeg-bytes")
+    with patch("pulse_server.routers.measures_photos.ProgressPhotoRepository") as MockRepo:
+        MockRepo.return_value.get_photo = AsyncMock(
+            return_value={
+                "photo": None,
+                "photo_mime": "image/jpeg",
+                "sha256": "cafe",
+                "updated_at": _now(),
+                "storage_key_prefix": prefix,
+            }
+        )
+        resp = client.get(f"/measures/photos/{uuid.uuid4()}", headers=HEADERS)
+    assert resp.status_code == 200, resp.text
+    assert resp.content == b"jpeg-bytes"
+    assert resp.headers.get("etag") == '"cafe"'
+
+
+def test_get_photo_thumb_and_archive_variants(client: TestClient) -> None:
+    """`GET /measures/photos/{id}?size=` returns the right object per variant."""
+    store = _current_store["store"]
+    prefix = f"progress/khash/{uuid.uuid4()}"
+    store.put(f"{prefix}/thumb.jpg", b"thumb-bytes")
+    store.put(f"{prefix}/archive.jpg", b"archive-bytes")
+
+    def _row():
+        return {
+            "photo": None,
+            "photo_mime": "image/jpeg",
+            "sha256": "cafe",
+            "updated_at": _now(),
+            "storage_key_prefix": prefix,
+        }
+
+    with patch("pulse_server.routers.measures_photos.ProgressPhotoRepository") as MockRepo:
+        MockRepo.return_value.get_photo = AsyncMock(side_effect=lambda **_: _row())
+        thumb = client.get(f"/measures/photos/{uuid.uuid4()}?size=thumb", headers=HEADERS)
+        archive = client.get(f"/measures/photos/{uuid.uuid4()}?size=archive", headers=HEADERS)
+    assert thumb.status_code == 200
+    assert thumb.content == b"thumb-bytes"
+    assert archive.status_code == 200
+    assert archive.content == b"archive-bytes"
+
+
+def test_get_photo_bytea_fallback_for_unmigrated_row(client: TestClient) -> None:
+    """`GET /measures/photos/{id}` falls back to legacy bytea when no prefix is set."""
+    with patch("pulse_server.routers.measures_photos.ProgressPhotoRepository") as MockRepo:
+        MockRepo.return_value.get_photo = AsyncMock(
+            return_value={
+                "photo": b"legacy-bytes",
+                "photo_mime": "image/jpeg",
+                "sha256": "cafe",
+                "updated_at": _now(),
+                "storage_key_prefix": None,
+            }
+        )
+        resp = client.get(f"/measures/photos/{uuid.uuid4()}", headers=HEADERS)
+    assert resp.status_code == 200, resp.text
+    assert resp.content == b"legacy-bytes"
+
+
+def test_get_photo_404_when_object_missing(client: TestClient) -> None:
+    """`GET /measures/photos/{id}` returns 404 when a migrated row's object is gone."""
+    prefix = f"progress/khash/{uuid.uuid4()}"
+    with patch("pulse_server.routers.measures_photos.ProgressPhotoRepository") as MockRepo:
+        MockRepo.return_value.get_photo = AsyncMock(
+            return_value={
+                "photo": None,
+                "photo_mime": "image/jpeg",
+                "sha256": "cafe",
+                "updated_at": _now(),
+                "storage_key_prefix": prefix,
+            }
+        )
+        resp = client.get(f"/measures/photos/{uuid.uuid4()}", headers=HEADERS)
+    assert resp.status_code == 404
+
+
+def test_create_photo_uploads_three_objects(client: TestClient) -> None:
+    """`POST /measures/photos` writes archive/display/thumb objects under the prefix."""
+    store = _current_store["store"]
+    src = _png_bytes(800, 600)
+    tag_id = uuid.uuid4()
+    captured: dict = {}
+
+    async def _insert(**kwargs):
+        captured.update(kwargs)
+        row = _photo_row(tag_id, "deadbeef")
+        row["id"] = kwargs["photo_id"]
+        row["storage_key_prefix"] = kwargs["storage_key_prefix"]
+        return row
+
+    photo_repo = MagicMock()
+    photo_repo.insert = AsyncMock(side_effect=_insert)
+    tag_repo = MagicMock()
+    tag_repo.get_by_id = AsyncMock(return_value=_tag_row("front", 0))
+    with (
+        patch(
+            "pulse_server.routers.measures_photos.ProgressPhotoRepository",
+            return_value=photo_repo,
+        ),
+        patch(
+            "pulse_server.routers.measures_photos.ProgressPhotoTagRepository",
+            return_value=tag_repo,
+        ),
+    ):
+        resp = client.post(
+            "/measures/photos",
+            headers=HEADERS,
+            data={"log_date": "2026-05-17", "tag_id": str(tag_id)},
+            files={"file": ("front.png", src, "image/png")},
+        )
+    assert resp.status_code == 201, resp.text
+    prefix = captured["storage_key_prefix"]
+    for name in ("archive.jpg", "display.jpg", "thumb.jpg"):
+        assert not _object_missing(store, f"{prefix}/{name}")
+
+
+def test_create_photo_cleans_up_objects_when_insert_fails(client: TestClient) -> None:
+    """`POST /measures/photos` removes uploaded objects if the DB insert fails."""
+    store = _current_store["store"]
+    src = _png_bytes(800, 600)
+    tag_id = uuid.uuid4()
+    captured: dict = {}
+
+    async def _insert(**kwargs):
+        captured.update(kwargs)
+        raise RuntimeError("insert blew up")
+
+    photo_repo = MagicMock()
+    photo_repo.insert = AsyncMock(side_effect=_insert)
+    tag_repo = MagicMock()
+    tag_repo.get_by_id = AsyncMock(return_value=_tag_row("front", 0))
+    with (
+        patch(
+            "pulse_server.routers.measures_photos.ProgressPhotoRepository",
+            return_value=photo_repo,
+        ),
+        patch(
+            "pulse_server.routers.measures_photos.ProgressPhotoTagRepository",
+            return_value=tag_repo,
+        ),
+        pytest.raises(RuntimeError),
+    ):
+        client.post(
+            "/measures/photos",
+            headers=HEADERS,
+            data={"log_date": "2026-05-17", "tag_id": str(tag_id)},
+            files={"file": ("front.png", src, "image/png")},
+        )
+    prefix = captured["storage_key_prefix"]
+    for name in ("archive.jpg", "display.jpg", "thumb.jpg"):
+        assert _object_missing(store, f"{prefix}/{name}")
+
+
+def test_delete_photo_removes_objects(client: TestClient) -> None:
+    """`DELETE /measures/photos/{id}` deletes the row's object-store copies."""
+    store = _current_store["store"]
+    photo_id = uuid.uuid4()
+    prefix = f"progress/khash/{photo_id}"
+    for name in ("archive.jpg", "display.jpg", "thumb.jpg"):
+        store.put(f"{prefix}/{name}", b"x")
+    with patch("pulse_server.routers.measures_photos.ProgressPhotoRepository") as MockRepo:
+        MockRepo.return_value.delete = AsyncMock(
+            return_value={"id": photo_id, "storage_key_prefix": prefix}
+        )
+        resp = client.delete(f"/measures/photos/{photo_id}", headers=HEADERS)
+    assert resp.status_code == 204
+    for name in ("archive.jpg", "display.jpg", "thumb.jpg"):
+        assert _object_missing(store, f"{prefix}/{name}")
