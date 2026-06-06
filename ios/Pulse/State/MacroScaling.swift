@@ -14,7 +14,11 @@ extension MacroTotals {
     /// Outputs: a new `MacroTotals` scaled by `count / portions`.
     func scaled(count: Int, portions: Int) -> MacroTotals {
         let factor = Double(max(0, count)) / Double(max(1, portions))
-        /// Rounds a gram value to one decimal place.
+        /// Rounds a gram value to one decimal place after scaling by the
+        /// pre-computed `factor`.
+        /// Inputs:
+        ///   - v: the raw gram value to scale and round.
+        /// Outputs: `v * factor`, rounded to the nearest 0.1 g.
         func tenth(_ v: Double) -> Double { (v * factor * 10).rounded() / 10 }
         return MacroTotals(
             calories: Int((Double(calories) * factor).rounded()),
