@@ -91,4 +91,12 @@ final class PrepStatePersistenceTests: XCTestCase {
         let defaults = UserDefaults(suiteName: "prep.batch.empty.\(UUID().uuidString)")!
         XCTAssertEqual(PrepStatePersistence(defaults: defaults).loadBatchItems(), [])
     }
+
+    /// Applied day keys round-trip through save/load.
+    func testAppliedDatesRoundTrip() {
+        let store = PrepStatePersistence(defaults: makeDefaults())
+        XCTAssertEqual(store.loadAppliedDates(), [])
+        store.saveAppliedDates(["2026-06-07", "2026-06-08"])
+        XCTAssertEqual(store.loadAppliedDates(), ["2026-06-07", "2026-06-08"])
+    }
 }

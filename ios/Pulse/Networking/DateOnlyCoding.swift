@@ -40,6 +40,21 @@ enum DateOnly {
         formatter.string(from: date)
     }
 
+    /// Anchors the calendar day containing `day` at local mid-day. This is the
+    /// single canonical day-anchoring rule for `consumed_at` writes: the server
+    /// derives the owning calendar day from the naive wall-clock value, and a
+    /// mid-day anchor keeps it clear of midnight day-boundary drift (on
+    /// DST-shifted days the result may read 11:00/13:00 wall-clock but stays
+    /// unambiguously inside the day). Total — never fails.
+    /// Inputs:
+    ///   - day: any instant on the target day.
+    ///   - calendar: calendar for day math (defaults to `.current`).
+    /// Outputs: a `Date` roughly 12 hours into the target day.
+    static func noon(on day: Date, calendar: Calendar = .current) -> Date {
+        let start = calendar.startOfDay(for: day)
+        return calendar.date(byAdding: .hour, value: 12, to: start) ?? start
+    }
+
     /// Formatter for naive wall-clock datetimes (`yyyy-MM-dd'T'HH:mm:ss`, no
     /// timezone designator) in the device's current time zone. Used when
     /// encoding `consumed_at` for write requests: the server reads the literal
