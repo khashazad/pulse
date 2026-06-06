@@ -4,13 +4,16 @@ Builds the S3-compatible store (Cloudflare R2 in production) used for
 progress-photo bytes, falling back to a local filesystem store in
 local-style environments so dev needs zero setup. Mirrors
 :mod:`pulse_server.usda_provider`: the lifespan publishes the store here and
-routers resolve it via :func:`get_photo_store`.
+routers resolve it via :func:`get_photo_store`. Also owns
+:func:`get_photo_object`, the read primitive that normalizes the backends'
+missing-key exceptions so callers never import obstore internals.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
+from obstore.exceptions import NotFoundError
 from obstore.store import LocalStore, MemoryStore, S3Store
 
 from pulse_server.config import Settings
@@ -75,3 +78,26 @@ def get_photo_store() -> PhotoStore:
     if _store is None:
         raise RuntimeError("photo store is not initialized")
     return _store
+
+
+async def get_photo_object(store: PhotoStore, key: str) -> memoryview | None:
+    """Fetch one object's bytes, returning ``None`` when the key is absent.
+
+    Centralizes the backends' missing-key exceptions — obstore's S3 backend
+    raises :class:`obstore.exceptions.NotFoundError` while the local/memory
+    backends raise the stdlib ``FileNotFoundError`` — so callers map "absent"
+    to their own error handling without importing obstore internals.
+
+    **Inputs:**
+    - store (PhotoStore): The photo object store.
+    - key (str): Full object key (e.g. ``progress/{user}/{id}/display.jpg``).
+
+    **Outputs:**
+    - memoryview | None: Zero-copy view over the object's bytes (valid as
+      Starlette ``Response`` content), or ``None`` when no such key exists.
+    """
+    try:
+        obj = await store.get_async(key)
+    except (NotFoundError, FileNotFoundError):
+        return None
+    return memoryview(await obj.bytes_async())

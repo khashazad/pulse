@@ -119,6 +119,29 @@ def _decode_oriented(data: bytes) -> Image.Image:
         raise UnsupportedImageError(str(exc)) from exc
 
 
+def _decode_capped(raw: bytes | bytearray | memoryview, max_bytes: int) -> Image.Image:
+    """Enforce the byte cap, then decode into an orientation-normalized image.
+
+    Shared prologue of both processing entry points so the cap semantics and
+    error message cannot diverge between them.
+
+    **Inputs:**
+    - raw (bytes | bytearray | memoryview): Raw upload bytes.
+    - max_bytes (int): Hard byte cap; payloads larger than this are rejected.
+
+    **Outputs:**
+    - Image.Image: Fully-loaded image with EXIF orientation applied.
+
+    **Exceptions:**
+    - PhotoTooLargeError: Raised when ``len(raw) > max_bytes``.
+    - UnsupportedImageError: Raised when the input cannot be decoded or its
+      decoded dimensions exceed ``MAX_PIXELS``.
+    """
+    if len(raw) > max_bytes:
+        raise PhotoTooLargeError(f"photo exceeds {max_bytes} bytes (got {len(raw)})")
+    return _decode_oriented(bytes(raw))
+
+
 def process_photo(
     raw: bytes | bytearray | memoryview, *, max_bytes: int
 ) -> tuple[bytes, bytes, str]:
@@ -143,9 +166,7 @@ def process_photo(
       dimensions exceed ``MAX_PIXELS``, or when Pillow's decompression-bomb
       protection trips.
     """
-    if len(raw) > max_bytes:
-        raise PhotoTooLargeError(f"photo exceeds {max_bytes} bytes (got {len(raw)})")
-    oriented = _decode_oriented(bytes(raw))
+    oriented = _decode_capped(raw, max_bytes)
     full = _resize(oriented, MAX_FULL_PX)
     thumb = _resize(full, MAX_THUMB_PX)
     return _encode_jpeg(full), _encode_jpeg(thumb), "image/jpeg"
@@ -187,9 +208,7 @@ def process_progress_photo(
     - UnsupportedImageError: Raised when the input cannot be decoded or
       exceeds the pixel budget.
     """
-    if len(raw) > max_bytes:
-        raise PhotoTooLargeError(f"photo exceeds {max_bytes} bytes (got {len(raw)})")
-    oriented = _decode_oriented(bytes(raw))
+    oriented = _decode_capped(raw, max_bytes)
     archive = _resize(oriented, MAX_ARCHIVE_PX)
     display = _resize(oriented, MAX_FULL_PX)
     thumb = _resize(display, MAX_THUMB_PX)

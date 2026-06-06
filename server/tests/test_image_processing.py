@@ -23,39 +23,25 @@ from pulse_server.services.image_processing import (
 )
 
 
-def _png_bytes(w: int, h: int) -> bytes:
-    """Render an in-memory PNG of the given dimensions.
+def _image_bytes(w: int, h: int, fmt: str = "PNG") -> bytes:
+    """Render an in-memory image of the given dimensions and format.
 
     **Inputs:**
     - w (int): Image width in pixels.
     - h (int): Image height in pixels.
+    - fmt (str): Pillow format name (``"PNG"`` or ``"JPEG"``).
 
     **Outputs:**
-    - bytes: PNG-encoded image bytes.
+    - bytes: Encoded image bytes.
     """
     buf = io.BytesIO()
-    Image.new("RGB", (w, h), (123, 200, 64)).save(buf, format="PNG")
-    return buf.getvalue()
-
-
-def _jpeg_bytes(w: int, h: int) -> bytes:
-    """Render an in-memory JPEG of the given dimensions.
-
-    **Inputs:**
-    - w (int): Image width in pixels.
-    - h (int): Image height in pixels.
-
-    **Outputs:**
-    - bytes: JPEG-encoded image bytes.
-    """
-    buf = io.BytesIO()
-    Image.new("RGB", (w, h), (123, 200, 64)).save(buf, format="JPEG")
+    Image.new("RGB", (w, h), (123, 200, 64)).save(buf, format=fmt)
     return buf.getvalue()
 
 
 def test_process_photo_returns_full_and_thumb_jpegs() -> None:
     """`process_photo` returns JPEG full + thumb pair within the configured pixel caps."""
-    src = _png_bytes(2000, 1000)
+    src = _image_bytes(2000, 1000)
     full, thumb, mime = process_photo(src, max_bytes=10_000_000)
     assert mime == "image/jpeg"
     full_img = Image.open(io.BytesIO(full))
@@ -68,14 +54,14 @@ def test_process_photo_returns_full_and_thumb_jpegs() -> None:
 
 def test_process_photo_rejects_oversize_payload() -> None:
     """Inputs exceeding ``max_bytes`` raise `ImageProcessingError`."""
-    src = _png_bytes(100, 100)
+    src = _image_bytes(100, 100)
     with pytest.raises(ImageProcessingError):
         process_photo(src, max_bytes=10)
 
 
 def test_process_progress_photo_produces_three_variants() -> None:
     """A 4000px source yields a 3000px archive, 1600px display, 1024px thumb."""
-    raw = _jpeg_bytes(4000, 2000)
+    raw = _image_bytes(4000, 2000, "JPEG")
     result = process_progress_photo(raw, max_bytes=20 * 1024 * 1024)
     assert result.mime == "image/jpeg"
     with Image.open(io.BytesIO(result.archive)) as im:
@@ -88,7 +74,7 @@ def test_process_progress_photo_produces_three_variants() -> None:
 
 def test_process_progress_photo_small_source_not_upscaled() -> None:
     """A source below every cap passes through at native size in all variants."""
-    raw = _jpeg_bytes(800, 600)
+    raw = _image_bytes(800, 600, "JPEG")
     result = process_progress_photo(raw, max_bytes=20 * 1024 * 1024)
     for payload in (result.archive, result.display, result.thumb):
         with Image.open(io.BytesIO(payload)) as im:

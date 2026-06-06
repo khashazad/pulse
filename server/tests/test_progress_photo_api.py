@@ -26,9 +26,15 @@ from PIL import Image
 os.environ.setdefault("DATABASE_URL", "postgresql://localhost/test")
 os.environ.setdefault("USDA_API_KEY", "test")
 
+from pulse_server.services.progress_photo_service import VARIANT_OBJECTS
+
 # Holds the MemoryStore wired into the app for the active `client` fixture so
 # tests can seed/inspect objects directly.
 _current_store: dict = {}
+
+# The per-photo object filenames, derived from the service's mapping so these
+# tests track a variant rename instead of silently asserting stale literals.
+_VARIANT_FILES = tuple(VARIANT_OBJECTS.values())
 
 
 def _png_bytes(w: int, h: int) -> bytes:
@@ -66,6 +72,34 @@ def _photo_row(tag_id: uuid.UUID, sha: str = "deadbeef") -> dict:
         "created_at": _now(),
         "updated_at": _now(),
     }
+
+
+def _echo_insert(tag_id: uuid.UUID, sha: str = "deadbeef", captured: dict | None = None):
+    """Build a ``repo.insert`` side_effect that echoes the service's kwargs.
+
+    The returned coroutine fakes a row keyed to the service-generated
+    ``photo_id`` and ``storage_key_prefix`` so the idempotent-replay cleanup
+    branch never fires; ``captured``, when given, records the insert kwargs
+    for assertions.
+
+    **Inputs:**
+    - tag_id (uuid.UUID): Tag id baked into the fake row.
+    - sha (str): sha256 value for the fake row.
+    - captured (dict | None): Optional sink updated with the insert kwargs.
+
+    **Outputs:**
+    - Callable: Async side_effect for ``AsyncMock``.
+    """
+
+    async def _insert(**kwargs):
+        if captured is not None:
+            captured.update(kwargs)
+        row = _photo_row(tag_id, sha)
+        row["id"] = kwargs["photo_id"]
+        row["storage_key_prefix"] = kwargs["storage_key_prefix"]
+        return row
+
+    return _insert
 
 
 def _tag_row(name: str = "front", sort_order: int = 0) -> dict:
@@ -109,7 +143,6 @@ def client() -> TestClient:
         mock_usda_client.return_value.close = AsyncMock()
         from pulse_server.app import app
         from pulse_server.db import get_session_dependency
-        from pulse_server.photo_store import set_photo_store
 
         # The lifespan publishes the store: TestClient.__enter__ runs startup,
         # which calls the patched build_photo_store above and hands `store` to
@@ -129,7 +162,8 @@ def client() -> TestClient:
                 yield test_client
         finally:
             app.dependency_overrides.pop(get_session_dependency, None)
-            set_photo_store(None)
+            # No set_photo_store(None) here: lifespan shutdown (TestClient
+            # __exit__) clears it, and without startup nothing was published.
             _current_store.pop("store", None)
 
 
@@ -237,14 +271,8 @@ def test_post_photo_returns_metadata(client: TestClient) -> None:
     src = _png_bytes(800, 600)
     tag_id = uuid.uuid4()
 
-    async def _insert(**kwargs):
-        row = _photo_row(tag_id, "deadbeef")
-        row["id"] = kwargs["photo_id"]
-        row["storage_key_prefix"] = kwargs["storage_key_prefix"]
-        return row
-
     photo_repo = MagicMock()
-    photo_repo.insert = AsyncMock(side_effect=_insert)
+    photo_repo.insert = AsyncMock(side_effect=_echo_insert(tag_id))
     tag_repo = MagicMock()
     tag_repo.get_by_id = AsyncMock(return_value=_tag_row("front", 0))
     with (
@@ -276,14 +304,8 @@ def test_post_photo_forwards_idempotency_key(client: TestClient) -> None:
     tag_id = uuid.uuid4()
     idem = uuid.uuid4()
 
-    async def _insert(**kwargs):
-        row = _photo_row(tag_id, "sha")
-        row["id"] = kwargs["photo_id"]
-        row["storage_key_prefix"] = kwargs["storage_key_prefix"]
-        return row
-
     photo_repo = MagicMock()
-    photo_repo.insert = AsyncMock(side_effect=_insert)
+    photo_repo.insert = AsyncMock(side_effect=_echo_insert(tag_id, "sha"))
     tag_repo = MagicMock()
     tag_repo.get_by_id = AsyncMock(return_value=_tag_row("front", 0))
     with (
@@ -542,15 +564,8 @@ def test_create_photo_uploads_three_objects(client: TestClient) -> None:
     tag_id = uuid.uuid4()
     captured: dict = {}
 
-    async def _insert(**kwargs):
-        captured.update(kwargs)
-        row = _photo_row(tag_id, "deadbeef")
-        row["id"] = kwargs["photo_id"]
-        row["storage_key_prefix"] = kwargs["storage_key_prefix"]
-        return row
-
     photo_repo = MagicMock()
-    photo_repo.insert = AsyncMock(side_effect=_insert)
+    photo_repo.insert = AsyncMock(side_effect=_echo_insert(tag_id, captured=captured))
     tag_repo = MagicMock()
     tag_repo.get_by_id = AsyncMock(return_value=_tag_row("front", 0))
     with (
@@ -571,7 +586,7 @@ def test_create_photo_uploads_three_objects(client: TestClient) -> None:
         )
     assert resp.status_code == 201, resp.text
     prefix = captured["storage_key_prefix"]
-    for name in ("archive.jpg", "display.jpg", "thumb.jpg"):
+    for name in _VARIANT_FILES:
         assert not _object_missing(store, f"{prefix}/{name}")
 
 
@@ -608,7 +623,7 @@ def test_create_photo_cleans_up_objects_when_insert_fails(client: TestClient) ->
             files={"file": ("front.png", src, "image/png")},
         )
     prefix = captured["storage_key_prefix"]
-    for name in ("archive.jpg", "display.jpg", "thumb.jpg"):
+    for name in _VARIANT_FILES:
         assert _object_missing(store, f"{prefix}/{name}")
 
 
@@ -659,7 +674,7 @@ def test_delete_photo_removes_objects(client: TestClient) -> None:
     store = _current_store["store"]
     photo_id = uuid.uuid4()
     prefix = f"progress/khash/{photo_id}"
-    for name in ("archive.jpg", "display.jpg", "thumb.jpg"):
+    for name in _VARIANT_FILES:
         store.put(f"{prefix}/{name}", b"x")
     with patch("pulse_server.routers.measures_photos.ProgressPhotoRepository") as MockRepo:
         MockRepo.return_value.delete = AsyncMock(
@@ -667,5 +682,5 @@ def test_delete_photo_removes_objects(client: TestClient) -> None:
         )
         resp = client.delete(f"/measures/photos/{photo_id}", headers=HEADERS)
     assert resp.status_code == 204
-    for name in ("archive.jpg", "display.jpg", "thumb.jpg"):
+    for name in _VARIANT_FILES:
         assert _object_missing(store, f"{prefix}/{name}")

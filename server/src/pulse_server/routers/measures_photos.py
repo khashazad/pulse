@@ -29,13 +29,12 @@ from fastapi import (
     UploadFile,
     status,
 )
-from obstore.exceptions import NotFoundError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pulse_server.auth import require_session
 from pulse_server.db import get_session_dependency, transaction
 from pulse_server.models.progress_photo import ProgressPhotoMetadata
-from pulse_server.photo_store import PhotoStore, get_photo_store
+from pulse_server.photo_store import PhotoStore, get_photo_object, get_photo_store
 from pulse_server.repositories.progress_photo import ProgressPhotoRepository
 from pulse_server.repositories.progress_photo_tag import (
     ProgressPhotoTagRepository,
@@ -164,21 +163,18 @@ async def get_photo(
     row = await repo.get_photo(photo_id=photo_id, user_key=user_key, variant=size)
     if not row:
         raise HTTPException(status_code=404, detail="not found")
+    content: memoryview | bytes
     if row["storage_key_prefix"]:
         key = f"{row['storage_key_prefix']}/{VARIANT_OBJECTS[size]}"
-        try:
-            obj = await store.get_async(key)
-            content = bytes(await obj.bytes_async())
-        except (NotFoundError, FileNotFoundError) as exc:
-            # S3/R2 backends raise obstore NotFoundError on a missing key, while
-            # the local/memory backends raise the stdlib FileNotFoundError — a
-            # vanished object is a 404 either way.
+        fetched = await get_photo_object(store, key)
+        if fetched is None:
             logger.warning(
                 "data inconsistency: photo row %s exists but object %s is missing from store",
                 photo_id,
                 key,
             )
-            raise HTTPException(status_code=404, detail="not found") from exc
+            raise HTTPException(status_code=404, detail="not found")
+        content = fetched
     else:
         content = bytes(row["photo"])
     headers = {
