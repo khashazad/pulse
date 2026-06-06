@@ -1,6 +1,7 @@
-/// Full-width mauve action button shared across the day-copy and meal-log flows.
-/// Renders the common mauve-fill + stroke-border + semibold-label shape used by
+/// Full-width action button shared across the day-copy and meal-log flows.
+/// Renders the common fill + stroke-border + semibold-label shape used by
 /// `DayMacroView`, `CopyEntriesSheet`, `MealDetailView`, and `MealLogSheet`.
+/// The accent tint is configurable (default mauve); destructive actions pass red.
 import SwiftUI
 
 /// Primary call-to-action button: a full-width, mauve-tinted, stroke-bordered
@@ -24,6 +25,9 @@ struct PrimaryActionButton: View {
     let title: String
     /// The leading element (glyph or conditional spinner), which selects the shape.
     let leading: Leading
+    /// Accent color for the label, fill, and border. Defaults to the standard
+    /// mauve primary treatment; pass `Theme.CTP.red` for destructive actions.
+    var tint: Color = Theme.CTP.mauve
     /// Whether the button is disabled (non-interactive).
     let disabled: Bool
     /// The tap handler.
@@ -58,16 +62,16 @@ struct PrimaryActionButton: View {
                 Text(title)
                     .font(.system(size: 15, weight: .semibold))
             }
-            .foregroundStyle(Theme.CTP.mauve)
+            .foregroundStyle(tint)
             .frame(maxWidth: .infinity)
             .padding(.vertical, verticalPadding)
             .background(
                 RoundedRectangle(cornerRadius: Theme.Layout.cardRadius, style: .continuous)
-                    .fill(Theme.CTP.mauve.opacity(0.16))
+                    .fill(tint.opacity(0.16))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: Theme.Layout.cardRadius, style: .continuous)
-                    .strokeBorder(Theme.CTP.mauve.opacity(0.30), lineWidth: 0.5)
+                    .strokeBorder(tint.opacity(0.30), lineWidth: 0.5)
             )
         }
         .buttonStyle(.plain)
@@ -86,7 +90,7 @@ struct PrimaryActionButton: View {
                 .font(.system(size: 16, weight: .semibold))
         case .busy(let isBusy):
             if isBusy {
-                ProgressView().tint(Theme.CTP.mauve)
+                ProgressView().tint(tint)
             }
         }
     }
