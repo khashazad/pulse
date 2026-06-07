@@ -84,6 +84,17 @@ struct FoodSearchResult: Identifiable, Equatable {
 
 /// Pure helpers to assemble and rank search results client-side.
 enum FoodSearchMerge {
+    /// Shared name ordering for search rows (locale-aware, case-insensitive).
+    /// Used by both query ranking and the browse list so the visible order
+    /// doesn't shuffle when the user starts typing.
+    /// Inputs:
+    ///   - a: the first result.
+    ///   - b: the second result.
+    /// Outputs: true when `a` orders before `b` by display name.
+    static func nameAscending(_ a: FoodSearchResult, _ b: FoodSearchResult) -> Bool {
+        a.displayName.localizedCaseInsensitiveCompare(b.displayName) == .orderedAscending
+    }
+
     /// Builds the "my foods" set: every custom food, plus USDA-pointer memory
     /// rows. Memory rows that point at a custom food are dropped (the custom
     /// food already represents them).
@@ -115,7 +126,7 @@ enum FoodSearchMerge {
             let ap = a.matchTerms.contains { $0.hasPrefix(q) }
             let bp = b.matchTerms.contains { $0.hasPrefix(q) }
             if ap != bp { return ap }
-            return a.displayName.lowercased() < b.displayName.lowercased()
+            return nameAscending(a, b)
         }
 
         let myFdcIds = Set(myFoods.compactMap { $0.usdaFdcId })

@@ -63,6 +63,11 @@ final class FoodSearchDisplayTests: XCTestCase {
         XCTAssertEqual(usdaResult(dataType: "Branded", brandOwner: "").badge, "Branded")
     }
 
+    func test_badge_emptyDataTypeRendersNoBadge() {
+        XCTAssertNil(usdaResult(dataType: "", brandOwner: nil).badge)
+        XCTAssertNil(usdaResult(dataType: "", brandOwner: "").badge)
+    }
+
     func test_basisContextLine() {
         XCTAssertEqual(customResult(servingSize: 250, unit: "g").nutrition.basisContextLine,
                        "1 serving = 250 g")

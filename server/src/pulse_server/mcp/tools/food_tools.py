@@ -49,8 +49,8 @@ def register(mcp: FastMCP, ctx: ToolContext) -> None:
     ) -> SearchFoodResponse:
         """Search USDA FoodData Central. Use ONLY after `resolve_food` returns `type=none`.
 
-        Each candidate's macros are at the basis given by `basis` (`per_100g` or `per_serving`).
-        Scale them yourself, then call `log_food`.
+        Candidate macros are per 100 g (`basis="per_100g"`); `serving_size` is
+        descriptive metadata only. Scale them yourself, then call `log_food`.
         """
         usda = usda_getter()
         results = await usda.search(description, page_size=limit)

@@ -71,7 +71,9 @@ extension FoodSearchResult {
         if let brand = usdaBrandOwner, !brand.isEmpty { return brand }
         switch usdaDataType {
         case "Survey (FNDDS)": return "Survey"
-        case .some(let other): return other
+        // Unknown dataset names pass through for forward compatibility, but a
+        // blank value must not render an empty capsule.
+        case .some(let other): return other.isEmpty ? nil : other
         case nil: return nil
         }
     }

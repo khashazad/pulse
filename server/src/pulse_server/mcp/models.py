@@ -24,13 +24,14 @@ from pulse_server.models import (
 class FoodCandidate(BaseModel):
     """One USDA search hit returned to the MCP client.
 
-    Carries the macros at the basis (``per_100g`` or ``per_serving``) indicated
-    by ``basis``; the client must scale to the user's quantity before logging.
+    Macros are per 100 g (``basis`` is always ``"per_100g"`` — FDC normalizes
+    nutrients per 100 g for every data type; ``serving_size`` is descriptive
+    metadata). The client must scale to the user's quantity before logging.
     """
 
     fdc_id: int
     description: str
-    basis: str  # "per_100g" or "per_serving"
+    basis: str  # always "per_100g" for USDA search hits
     serving_size: float | None
     serving_size_unit: str | None
     calories: int

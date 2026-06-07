@@ -255,6 +255,42 @@ final class ViewModelLoadTests: XCTestCase {
         XCTAssertTrue(restored.allSatisfy { $0.source == .myFood })
     }
 
+    /// A failed my-foods load in browse mode must surface `.failed` (with a
+    /// working Retry path) rather than stranding the sheet on a spinner or a
+    /// misleading "No foods yet" empty state.
+    @MainActor
+    func test_foodSearchModel_failedLoadSurfacesFailedState() async {
+        let m = FoodSearchModel(auth: makeFailingAuth(), debounce: .milliseconds(1))
+        await m.loadMyFoods()
+        guard case .failed = m.state else { return XCTFail("got \(m.state)") }
+    }
+
+    /// A successful my-foods load is cached: re-presenting the sheet (which
+    /// re-fires `loadMyFoods`) must not repeat the network requests.
+    @MainActor
+    func test_foodSearchModel_successfulLoadIsCachedAcrossCalls() async {
+        _ = KeychainStore.write(#"{"token":"tok","email":"k@e.com"}"#, service: testService, account: testAccount)
+        var hits = 0
+        let stub = StubURLProtocol.makeSession { req in
+            hits += 1
+            let resp = HTTPURLResponse(url: req.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            let path = req.url?.path ?? ""
+            if path.hasPrefix("/custom-foods") { return (resp, self.fixture("custom_foods")) }
+            return (resp, self.fixture("food_memory"))
+        }
+        activeStubs.append(stub)
+        let auth = AuthSession(baseURL: URL(string: "https://example.test")!,
+                               keychainService: testService, keychainAccount: testAccount, urlSession: stub.session)
+        retainedAuths.append(auth)
+
+        let m = FoodSearchModel(auth: auth, debounce: .milliseconds(1))
+        await m.loadMyFoods()
+        guard case .loaded = m.state else { return XCTFail("got \(m.state)") }
+        let firstLoadHits = hits
+        await m.loadMyFoods()
+        XCTAssertEqual(hits, firstLoadHits, "second load must reuse the cached my-foods set")
+    }
+
     @MainActor
     func test_foodSearchModel_loadMyFoodsAndSearch() async {
         let m = FoodSearchModel(auth: makeAuth(), debounce: .milliseconds(1))

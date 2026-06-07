@@ -49,6 +49,16 @@ struct QuantityEntryView: View {
         }
     }
 
+    /// True when the entered quantity is greater than zero (weigh: net grams;
+    /// type: typed value). A zero-quantity item carries no nutrition, so Add
+    /// stays disabled even though the zero-macro preview is computable.
+    private var hasPositiveQuantity: Bool {
+        switch mode {
+        case .weigh: return (netGrams ?? 0) > 0
+        case .type: return (Double(typedText) ?? 0) > 0
+        }
+    }
+
     /// Label for the typed-quantity field based on the food's basis.
     private var typeUnitLabel: String {
         switch result.nutrition.typeUnit {
@@ -82,7 +92,7 @@ struct QuantityEntryView: View {
                                 .keyboardType(.decimalPad)
                                 .foregroundStyle(Theme.FG.primary)
                             if let net = netGrams {
-                                Text("Net: \(Int(net)) g")
+                                Text("Net: \(Int(net.rounded())) g")
                                     .foregroundStyle(Theme.FG.secondary)
                             }
                         }
@@ -120,7 +130,7 @@ struct QuantityEntryView: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Add") { addItem() }
                         .foregroundStyle(Theme.CTP.mauve)
-                        .disabled(previewMacros == nil)
+                        .disabled(previewMacros == nil || !hasPositiveQuantity)
                 }
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
@@ -180,7 +190,7 @@ struct QuantityEntryView: View {
 
     /// Builds and emits the `BatchFoodItem`, then dismisses.
     private func addItem() {
-        guard let macros = previewMacros else { return }
+        guard let macros = previewMacros, hasPositiveQuantity else { return }
         let quantity: BatchQuantity = mode == .weigh
             ? .weighed(grossG: Double(grossText) ?? 0)
             : .typed(value: Double(typedText) ?? 0, unit: result.nutrition.typeUnit)

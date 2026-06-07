@@ -72,6 +72,7 @@ struct FoodSearchSheet: View {
             .foregroundStyle(Theme.FG.primary)
             .tint(Theme.CTP.mauve)
             .autocorrectionDisabled()
+            .textInputAutocapitalization(.never)
             .focused($searchFocused)
             .accessibilityLabel("Search foods")
             if !model.query.isEmpty {
@@ -101,11 +102,11 @@ struct FoodSearchSheet: View {
             ProgressView()
                 .tint(Theme.CTP.mauve)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-        case .failed:
+        case .failed(let e):
             EmptyStateView(
                 icon: "exclamationmark.triangle",
-                title: "Couldn't search",
-                description: "Check your connection and try again.",
+                title: "Couldn't load foods",
+                description: e.userMessage,
                 action: { model.retry() },
                 actionLabel: "Retry"
             )
@@ -123,10 +124,12 @@ struct FoodSearchSheet: View {
         let myFoods = results.filter { $0.source == .myFood }
         let usda = results.filter { $0.source == .usda }
         if results.isEmpty {
+            // `isBrowsing` (not raw `query.isEmpty`) so whitespace-only input
+            // gets browse-mode copy, matching the model's own predicate.
             EmptyStateView(
                 icon: "magnifyingglass",
-                title: model.query.isEmpty ? "No foods yet" : "No matches",
-                description: model.query.isEmpty
+                title: model.isBrowsing ? "No foods yet" : "No matches",
+                description: model.isBrowsing
                     ? "Foods you save or remember will show up here."
                     : "Try a different name."
             )
