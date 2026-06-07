@@ -73,7 +73,10 @@ final class FoodSearchModel {
             return
         }
         if loadTask == nil {
-            loadTask = Task { await self.performMyFoodsLoad() }
+            // Weak capture: a load scheduled but not yet started must not pin
+            // the model alive after its owner releases it (zombie work would
+            // otherwise fire network requests after teardown).
+            loadTask = Task { [weak self] in await self?.performMyFoodsLoad() }
         }
         await loadTask?.value
         loadTask = nil

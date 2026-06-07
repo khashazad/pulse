@@ -44,14 +44,20 @@ final class StubURLProtocol: URLProtocol {
             StubURLProtocol.lastRequestBody(for: id)
         }
 
-        /// Removes this registration's responder and invalidates its session.
+        /// Removes this registration's responder. Deliberately does NOT
+        /// invalidate the `URLSession`: app async work (debounced searches,
+        /// cached loads) can outlive its test, and creating a task on an
+        /// invalidated session throws an uncatchable NSGenericException that
+        /// crashes whichever test is running at that moment. Late requests
+        /// instead hit the missing-responder path in `startLoading` and fail
+        /// with a normal `URLError`. The ephemeral session is leaked until
+        /// process exit, which is negligible for a test bundle.
         /// - Parameters: None.
         /// - Returns: Nothing.
         /// - Throws: None.
         func invalidate() {
             guard !didInvalidate else { return }
             didInvalidate = true
-            session.invalidateAndCancel()
             StubURLProtocol.removeRegistration(id)
         }
 
