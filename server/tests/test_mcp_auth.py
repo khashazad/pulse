@@ -262,5 +262,6 @@ def test_jwt_signing_key_is_deterministic_and_env_driven(monkeypatch):
     first = _build_auth_provider(_reload_settings())._jwt_signing_key
     second = _build_auth_provider(_reload_settings())._jwt_signing_key
 
+    assert first is not None  # guard: vacuous pass if fastmcp stops storing the key
     assert first == second  # deterministic across "restarts"
     assert first != default_key  # actually driven by the env var
