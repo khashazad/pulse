@@ -41,6 +41,32 @@ def test_build_client_storage_wraps_encrypted_postgres_store():
     assert storage.key_value._table_name == MCP_OAUTH_KV_TABLE
 
 
+@pytest.mark.asyncio
+async def test_aclose_client_storage_closes_tracked_store():
+    """The shutdown hook closes the store built last and resets the tracker."""
+    from pulse_server.mcp import storage as storage_mod
+
+    storage = storage_mod.build_client_storage(
+        _settings(mcp_storage_encryption_key="e" * 40)
+    )
+    assert storage_mod._active_store is storage.key_value
+
+    closed: list[bool] = []
+
+    class _FakeStore:
+        async def close(self) -> None:
+            closed.append(True)
+
+    storage_mod._active_store = _FakeStore()
+    await storage_mod.aclose_client_storage()
+    assert closed == [True]
+    assert storage_mod._active_store is None
+
+    # Idempotent: a second call with nothing tracked is a no-op.
+    await storage_mod.aclose_client_storage()
+    assert closed == [True]
+
+
 def test_normalize_asyncpg_url_strips_sqlalchemy_driver():
     """SQLAlchemy-style driver suffixes are stripped for asyncpg consumption."""
     from pulse_server.mcp.storage import normalize_asyncpg_url
@@ -120,6 +146,8 @@ async def test_create_pool_pins_ipv4_and_disables_statement_cache(monkeypatch):
     assert captured == {
         "dsn": "postgresql://u:p@db.example.com:6543/postgres",
         "statement_cache_size": 0,
+        "min_size": 1,
+        "max_size": 3,
         "host": "1.2.3.4",
         "port": 6543,
     }
@@ -133,4 +161,6 @@ async def test_create_pool_omits_host_when_ipv4_unresolvable(monkeypatch):
     assert captured == {
         "dsn": "postgresql://u:p@db.example.com:6543/postgres",
         "statement_cache_size": 0,
+        "min_size": 1,
+        "max_size": 3,
     }

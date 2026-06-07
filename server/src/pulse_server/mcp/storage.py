@@ -45,6 +45,12 @@ MCP_OAUTH_KV_TABLE = "mcp_oauth_kv"
 # re-register on the next connect, so rotation is safe but costs one re-auth.
 STORAGE_ENCRYPTION_SALT = "pulse-mcp-oauth-storage"
 
+# The store handed to the OAuth proxy by the last `build_client_storage` call,
+# kept so `aclose_client_storage` can drain its asyncpg pool at shutdown.
+# Single-assignment in production (one build at import time); tests overwrite
+# it freely — stores they abandon never opened a pool, so nothing leaks.
+_active_store: PinnedPostgreSQLStore | None = None
+
 
 def normalize_asyncpg_url(database_url: str) -> str:
     """Strip a SQLAlchemy driver suffix so the URL is consumable by asyncpg.
@@ -97,10 +103,15 @@ class PinnedPostgreSQLStore(PostgreSQLStore):
     """``PostgreSQLStore`` whose pool is pinned for Railway → Supabase.
 
     Overrides pool creation to (a) connect via resolved IPv4 (Railway has no
-    IPv6 route to the pooler's AAAA records) and (b) disable asyncpg's named
+    IPv6 route to the pooler's AAAA records), (b) disable asyncpg's named
     prepared-statement cache (incompatible with Supabase's transaction-mode
-    pooler). Must be constructed with ``url=`` — the host/port/user kwargs of
-    the base class are not supported here.
+    pooler), and (c) keep the pool small — Supabase session mode maps each
+    client connection to a dedicated backend, and the single-user MCP layer
+    never needs asyncpg's default of 10. Also sweeps expired rows once per
+    process: the library filters them on read but never deletes them, so
+    without the sweep abandoned auth-flow rows would accumulate forever.
+    Must be constructed with ``url=`` — the host/port/user kwargs of the base
+    class are not supported here.
     """
 
     async def _create_pool(self) -> asyncpg.Pool:
@@ -118,7 +129,15 @@ class PinnedPostgreSQLStore(PostgreSQLStore):
         """
         if self._url is None:
             raise RuntimeError("PinnedPostgreSQLStore requires url=")
-        kwargs: dict = {"dsn": self._url, "statement_cache_size": 0}
+        # Small pool: asyncpg defaults to min/max 10, which would hold 10 idle
+        # backends on Supabase's session pooler alongside the app's psycopg
+        # pool — far beyond what single-user OAuth traffic needs.
+        kwargs: dict = {
+            "dsn": self._url,
+            "statement_cache_size": 0,
+            "min_size": 1,
+            "max_size": 3,
+        }
         # DNS via a worker thread: socket.getaddrinfo is blocking, and this
         # async method runs on the event loop (a slow resolver would stall it).
         ipv4 = await asyncio.to_thread(resolve_ipv4, self._url)
@@ -133,6 +152,32 @@ class PinnedPostgreSQLStore(PostgreSQLStore):
         if pool is None:  # pragma: no cover - asyncpg returns a pool or raises
             raise RuntimeError("asyncpg.create_pool returned None")
         return pool
+
+    async def _setup(self) -> None:
+        """Run the base setup (pool + table), then sweep expired rows once.
+
+        The py-key-value library checks ``expires_at`` on read but never
+        deletes expired rows, and fastmcp has no sweeper — so abandoned
+        OAuth-flow rows (timed-out transactions, unused JTI mappings) would
+        otherwise accumulate indefinitely. Running the sweep here piggybacks
+        on the base class's once-per-process setup lock and guarantees the
+        table already exists.
+
+        **Outputs:**
+        - None: Side effect only (pool/table setup + expired-row deletion).
+
+        **Exceptions:**
+        - asyncpg.PostgresError: Propagated when setup or the sweep fails.
+        """
+        await super()._setup()
+        pool = self._pool
+        if pool is None:  # pragma: no cover - base _setup always sets the pool
+            raise RuntimeError("PostgreSQLStore._setup did not create a pool")
+        # _table_name is validated against SQL injection by the base __init__.
+        await pool.execute(
+            f"DELETE FROM {self._table_name} "
+            "WHERE expires_at IS NOT NULL AND expires_at < now()"
+        )
 
 
 def build_client_storage(settings: Settings) -> AsyncKeyValue | None:
@@ -151,12 +196,17 @@ def build_client_storage(settings: Settings) -> AsyncKeyValue | None:
     - AsyncKeyValue | None: Encrypted persistent store, or None when the
       feature is not configured.
     """
+    global _active_store
     if not settings.mcp_storage_encryption_key:
         return None
     store = PinnedPostgreSQLStore(
         url=normalize_asyncpg_url(settings.database_url),
         table_name=MCP_OAUTH_KV_TABLE,
     )
+    # Track the inner store so the app lifespan can close its asyncpg pool on
+    # shutdown — fastmcp never closes client_storage, and the Fernet wrapper
+    # doesn't delegate context management to the wrapped store.
+    _active_store = store
     return FernetEncryptionWrapper(
         key_value=store,
         source_material=settings.mcp_storage_encryption_key,
@@ -165,3 +215,21 @@ def build_client_storage(settings: Settings) -> AsyncKeyValue | None:
         # one re-auth) instead of a hard failure — matches fastmcp's default.
         raise_on_decryption_error=False,
     )
+
+
+async def aclose_client_storage() -> None:
+    """Close the most recently built store's asyncpg pool, if it ever opened.
+
+    Called from the app lifespan on shutdown so the pool sends Postgres a
+    clean Terminate instead of relying on the container's death to RST the
+    sockets. ``BaseContextManagerStore.close`` no-ops when the store was
+    never used (no pool was created), so calling this unconditionally is safe.
+
+    **Outputs:**
+    - None: Side effect only; resets the tracked store.
+    """
+    global _active_store
+    store = _active_store
+    _active_store = None
+    if store is not None:
+        await store.close()
