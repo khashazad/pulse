@@ -12,6 +12,7 @@ dependencies = [
     "pydantic-settings>=2.14.1",
     "httpx>=0.28",
     "fastmcp>=3.4.2",
+    "py-key-value-aio[postgresql]>=0.4",
     "google-auth>=2.53.0",
     "requests>=2.34.2",
     "Pillow>=10.4",

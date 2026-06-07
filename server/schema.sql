@@ -14,6 +14,10 @@
 -- so when folding a column in, keep it at the end of the column list — that
 -- keeps fresh bootstraps byte-identical to migrated databases.
 --
+-- Exception: the `mcp_oauth_kv` table is library-managed — auto-created by the
+-- MCP OAuth-state store (src/pulse_server/mcp/storage.py) — and is
+-- intentionally absent from this file. Do not add it here.
+--
 -- Supported database states: a fresh/empty database, or one already at (or
 -- ahead of) the shape this file produces. Pre-squash states are NOT upgraded —
 -- the old in-place migration guards were folded away once every deployment

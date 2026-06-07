@@ -22,6 +22,7 @@ from pulse_server import db
 from pulse_server.auth import SessionAuthMiddleware
 from pulse_server.config import get_settings
 from pulse_server.mcp import build_mcp
+from pulse_server.mcp.storage import aclose_client_storage
 from pulse_server.photo_store import build_photo_store, set_photo_store
 from pulse_server.routers import auth as auth_router
 from pulse_server.routers import (
@@ -64,7 +65,7 @@ async def lifespan(app: FastAPI):
     shared USDA client and publishes it to :mod:`pulse_server.usda_provider`,
     builds the progress-photo object store and publishes it to
     :mod:`pulse_server.photo_store`, yields while the app is running, then tears
-    down the photo store, USDA client, and pool.
+    down the photo store, USDA client, MCP OAuth-state store pool, and pool.
 
     **Inputs:**
     - app (FastAPI): Active FastAPI application instance bound to this lifespan.
@@ -88,6 +89,9 @@ async def lifespan(app: FastAPI):
     set_photo_store(None)
     await usda_client.close()
     set_usda_client(None)
+    # Drain the MCP OAuth-state store's asyncpg pool (no-op when persistence
+    # is unconfigured or the pool was never opened) before the app DB pool.
+    await aclose_client_storage()
     await db.close_pool()
 
 

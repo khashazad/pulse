@@ -5,9 +5,10 @@ loads configuration from environment variables and ``.env``, plus
 :func:`get_settings`, the cached accessor every other module uses.
 
 Covers DB connection, USDA API key, Google OAuth (iOS-facing), MCP GitHub
-OAuth (claude.ai connector-facing), session TTL, legacy single-user key, and
-environment-mode guardrails that refuse to boot non-local deployments with
-insecure OAuth or unauthenticated MCP configurations.
+OAuth (claude.ai connector-facing), MCP OAuth-state persistence keys, session
+TTL, legacy single-user key, and environment-mode guardrails that refuse to
+boot non-local deployments with insecure OAuth or unauthenticated MCP
+configurations.
 """
 
 from __future__ import annotations
@@ -26,6 +27,11 @@ SERVICE_TOKEN_LOGIN = "service-account"
 # Lower bound on `MCP_SERVICE_TOKEN` entropy. 32 chars ≈ 256 bits when the value
 # is random hex/base64; rejects obviously-weak shared secrets.
 SERVICE_TOKEN_MIN_LENGTH = 32
+
+# Lower bound on the MCP OAuth-state persistence secrets. Both values feed key
+# derivation (HKDF / PBKDF2-style) inside fastmcp / the encryption wrapper, so
+# they can be any random string — but a short one would be trivially brute-forced.
+PERSISTENCE_KEY_MIN_LENGTH = 32
 
 
 class Settings(BaseSettings):
@@ -68,6 +74,16 @@ class Settings(BaseSettings):
     # carrying `Authorization: Bearer <token>` are accepted alongside any
     # configured GitHub OAuth flow. Empty disables this path.
     mcp_service_token: str = ""
+
+    # MCP OAuth-state persistence (claude.ai connector survives redeploys).
+    # When MCP_STORAGE_ENCRYPTION_KEY is set, OAuth client registrations and
+    # upstream GitHub tokens are stored Fernet-encrypted in Postgres
+    # (`mcp_oauth_kv` table) instead of the container-local disk store that
+    # Railway wipes on every deploy. MCP_JWT_SIGNING_KEY pins the key used to
+    # sign the JWTs fastmcp issues to MCP clients; unset falls back to a key
+    # derived from the GitHub client secret. Both must be ≥32 chars when set.
+    mcp_jwt_signing_key: str = ""
+    mcp_storage_encryption_key: str = ""
 
     # S3-compatible object storage for progress photos (Backblaze B2 in prod;
     # any S3-compatible endpoint).
@@ -268,6 +284,26 @@ class Settings(BaseSettings):
             raise ValueError(
                 f"MCP_SERVICE_TOKEN must be at least {SERVICE_TOKEN_MIN_LENGTH} characters"
             )
+        return self
+
+    @model_validator(mode="after")
+    def _require_strong_persistence_keys(self) -> Settings:
+        """Reject short MCP persistence secrets that would be trivially guessable.
+
+        **Outputs:**
+        - Settings: This instance, unchanged, when validation passes.
+
+        **Exceptions:**
+        - ValueError: Raised when ``MCP_JWT_SIGNING_KEY`` or
+          ``MCP_STORAGE_ENCRYPTION_KEY`` is set but shorter than
+          :data:`PERSISTENCE_KEY_MIN_LENGTH`.
+        """
+        for name, value in (
+            ("MCP_JWT_SIGNING_KEY", self.mcp_jwt_signing_key),
+            ("MCP_STORAGE_ENCRYPTION_KEY", self.mcp_storage_encryption_key),
+        ):
+            if value and len(value) < PERSISTENCE_KEY_MIN_LENGTH:
+                raise ValueError(f"{name} must be at least {PERSISTENCE_KEY_MIN_LENGTH} characters")
         return self
 
     @model_validator(mode="after")
