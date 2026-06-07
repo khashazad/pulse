@@ -239,6 +239,7 @@ final class ViewRenderExtraTests: XCTestCase {
             PrimaryActionButton(title: "Busy", leading: .busy(true), disabled: true) {}
             PrimaryActionButton(title: "Idle spinner slot", leading: .busy(false), disabled: false) {}
             PrimaryActionButton(title: "Dimmed", leading: .icon("calendar"), disabled: true) {}
+            PrimaryActionButton(title: "Destructive", leading: .icon("trash"), tint: Theme.CTP.red, disabled: false) {}
         })
     }
 

@@ -1,5 +1,6 @@
 /// `PulseClient` food-domain endpoints: the daily summary, raw log listing,
-/// food-entry batch writes, USDA search proxy, custom foods, and food memory.
+/// food-entry batch writes and single-entry deletes, USDA search proxy,
+/// custom foods, and food memory.
 /// Pure code organization — every method keeps its original signature and
 /// behaviour; only the shared transport now lives on `http`.
 import Foundation
@@ -49,6 +50,20 @@ extension PulseClient {
         let url = try http.makeURL(path: "/entries", query: [])
         let body = try JSONEncoder.pulseDefault().encode(EntriesCreateRequest(items: items))
         return try await sendJSON(url: url, method: "POST", body: body)
+    }
+
+    /// Deletes a single food entry (`DELETE /entries/{id}`).
+    /// Inputs:
+    ///   - id: the `FoodEntry` UUID to delete.
+    /// Outputs: nothing; the server responds 204 on success.
+    /// Exceptions: `PulseError` on transport or auth failure; `.notFound` when
+    /// the entry does not exist (callers may treat this as already-deleted).
+    func deleteEntry(id: UUID) async throws {
+        let url = try http.makeURL(path: "/entries/\(id.uuidString.lowercased())", query: [])
+        var req = URLRequest(url: url)
+        req.httpMethod = "DELETE"
+        http.applyAuth(&req)
+        try await sendNoBody(request: req)
     }
 
     // MARK: - food search

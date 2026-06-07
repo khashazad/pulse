@@ -15,6 +15,15 @@ struct DayMacroView: View {
     @State private var selectedIds: Set<UUID> = []
     /// Whether the "copy to day" sheet is presented.
     @State private var showCopySheet = false
+    /// Whether the destructive delete confirmation dialog is presented.
+    @State private var showDeleteConfirm = false
+    /// Entries still needing deletion after a partial failure (retry input).
+    @State private var deleteRemainder: [FoodEntry] = []
+    /// Size of the original delete selection — fixed denominator for the
+    /// failure message across retries (per-run `deleteState` counts reset).
+    @State private var deleteTotal = 0
+    /// Whether the partial-failure alert (with Retry) is presented.
+    @State private var showDeleteFailure = false
 
     var body: some View {
         ZStack {
@@ -54,6 +63,33 @@ struct DayMacroView: View {
                 )
             }
         }
+        .confirmationDialog(
+            "Delete \(selectedIds.count) \(selectedIds.count == 1 ? "entry" : "entries")? This can't be undone.",
+            isPresented: $showDeleteConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) {
+                let entries = selectedEntries()
+                deleteTotal = entries.count
+                Task { await runDelete(entries) }
+            }
+            Button("Cancel", role: .cancel) {}
+        }
+        .alert("Couldn't delete all entries", isPresented: $showDeleteFailure) {
+            Button("Retry") {
+                Task { await runDelete(deleteRemainder) }
+            }
+            Button("Cancel", role: .cancel) {
+                deleteRemainder = []
+                deleteTotal = 0
+                exitSelection()
+                Task { await model?.load() }
+            }
+        } message: {
+            if case .failed(_, let error) = model?.deleteState {
+                Text("Deleted \(deleteTotal - deleteRemainder.count) of \(deleteTotal). \(error.userMessage)")
+            }
+        }
     }
 
     /// Toolbar toggle that enters/exits multi-select. Only meaningful once the
@@ -83,6 +119,27 @@ struct DayMacroView: View {
     private func selectedEntries() -> [FoodEntry] {
         guard case .loaded(let summary) = model?.state else { return [] }
         return summary.entries.filter { selectedIds.contains($0.id) }
+    }
+
+    /// Runs the delete loop over the given entries and routes the outcome:
+    /// full success exits selection and reloads the day; a partial failure
+    /// stores the remainder and raises the retry alert.
+    /// Inputs:
+    ///   - entries: the entries to delete (initial selection or a retry remainder).
+    /// Outputs: nothing; mutates view state.
+    private func runDelete(_ entries: [FoodEntry]) async {
+        guard let model else { return }
+        model.resetDeleteState()
+        let remainder = await model.deleteEntries(entries)
+        if remainder.isEmpty {
+            deleteRemainder = []
+            deleteTotal = 0
+            exitSelection()
+            await model.load()
+        } else {
+            deleteRemainder = remainder
+            showDeleteFailure = true
+        }
     }
 
     /// Navigation-bar title: "Today" / "Yesterday" / medium-formatted date.
@@ -125,7 +182,7 @@ struct DayMacroView: View {
                 } else if isSelecting {
                     selectableEntriesCard(summary.entries)
                         .padding(.horizontal, 16)
-                    copyActionBar
+                    selectionActionBar
                         .padding(.horizontal, 16)
                         .padding(.top, 4)
                 } else {
@@ -170,18 +227,29 @@ struct DayMacroView: View {
         .ctpCard()
     }
 
-    /// Action bar shown under the selectable list: a count + a "Copy to day…"
-    /// button that opens the backdating copy sheet. Disabled until at least one
-    /// entry is selected.
-    private var copyActionBar: some View {
+    /// Action bar shown under the selectable list: count-aware Copy and Delete
+    /// buttons. Copy opens the backdating copy sheet; Delete asks for
+    /// confirmation before destructively removing the selected entries. Both
+    /// are disabled until at least one entry is selected.
+    private var selectionActionBar: some View {
         let count = selectedIds.count
-        return PrimaryActionButton(
-            title: count == 0 ? "Select items to copy" : "Copy \(count) to day…",
-            leading: .icon("calendar.badge.plus"),
-            disabled: count == 0
-        ) {
-            model?.resetCopyState()
-            showCopySheet = true
+        return HStack(spacing: 10) {
+            PrimaryActionButton(
+                title: count == 0 ? "Copy" : "Copy \(count)…",
+                leading: .icon("calendar.badge.plus"),
+                disabled: count == 0
+            ) {
+                model?.resetCopyState()
+                showCopySheet = true
+            }
+            PrimaryActionButton(
+                title: count == 0 ? "Delete" : "Delete \(count)",
+                leading: .icon("trash"),
+                tint: Theme.CTP.red,
+                disabled: count == 0 || model?.deleteState == .deleting
+            ) {
+                showDeleteConfirm = true
+            }
         }
     }
 
