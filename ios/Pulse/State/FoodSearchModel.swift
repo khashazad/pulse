@@ -3,6 +3,9 @@
 /// user's custom foods + food memory once, then on each (debounced) query runs
 /// a live USDA search and merges it with the locally-filtered my-foods set via
 /// `FoodSearchMerge`. USDA failures degrade gracefully: my-foods still show.
+/// When the query is empty the model shows the full my-foods set sorted
+/// alphabetically (browse mode) rather than a blank sheet; `.idle` only occurs
+/// before `loadMyFoods()` has completed.
 import Foundation
 import Observation
 
@@ -12,7 +15,9 @@ import Observation
 @MainActor
 @Observable
 final class FoodSearchModel {
-    /// Current results for the active query (idle until the user types).
+    /// Current results: alphabetically-sorted my-foods when the query is blank
+    /// (browse mode), filtered+merged results when the user is typing, or
+    /// `.idle` before `loadMyFoods()` has been called.
     private(set) var state: LoadState<[FoodSearchResult]> = .idle
     /// True when the last USDA call failed; the sheet shows a non-fatal note.
     private(set) var usdaUnavailable = false
@@ -40,6 +45,10 @@ final class FoodSearchModel {
 
     /// Loads and caches the user's custom foods + food memory, building the
     /// my-foods set. Call once when the sheet appears. USDA is not touched here.
+    /// After loading, if no query is active the state transitions to `.loaded`
+    /// with the alphabetically-sorted my-foods so the sheet opens in browse mode.
+    /// Inputs: none.
+    /// Outputs: none (updates `state` and `myFoods` as side-effects).
     func loadMyFoods() async {
         guard let client = auth?.makeClient() else { return }
         defer { didLoadMyFoods = true }
@@ -53,6 +62,11 @@ final class FoodSearchModel {
             myFoods = []
         } catch {
             myFoods = []
+        }
+        // Surface the browseable my-foods set immediately when no query is
+        // active, so the sheet opens onto the user's foods instead of a blank.
+        if query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            state = .loaded(Self.alphabetical(myFoods))
         }
     }
 
@@ -68,16 +82,17 @@ final class FoodSearchModel {
         }
     }
 
-    /// Runs one search: blank query clears results; otherwise live USDA search
-    /// merged with filtered my-foods. USDA failure sets `usdaUnavailable` but
-    /// still renders my-foods.
+    /// Runs one search: blank query returns to the alphabetical my-foods browse
+    /// list; otherwise runs a live USDA search merged with filtered my-foods.
+    /// USDA failure sets `usdaUnavailable` but still renders my-foods.
     /// Inputs:
     ///   - text: the query to search for.
+    /// Outputs: none (updates `state` and `usdaUnavailable` as side-effects).
     private func runSearch(_ text: String) async {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             usdaUnavailable = false
-            state = .idle
+            state = .loaded(Self.alphabetical(myFoods))
             return
         }
         // Ensure my-foods are loaded before merging, so an early keystroke
@@ -99,5 +114,13 @@ final class FoodSearchModel {
         }
         if Task.isCancelled { return }
         state = .loaded(FoodSearchMerge.results(query: trimmed, myFoods: myFoods, usda: usda))
+    }
+
+    /// Alphabetical ordering for the browse (empty-query) list.
+    /// Inputs:
+    ///   - foods: the unranked my-foods set.
+    /// Outputs: foods sorted case-insensitively by display name.
+    private static func alphabetical(_ foods: [FoodSearchResult]) -> [FoodSearchResult] {
+        foods.sorted { $0.displayName.lowercased() < $1.displayName.lowercased() }
     }
 }

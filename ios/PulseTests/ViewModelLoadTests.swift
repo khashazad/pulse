@@ -239,6 +239,23 @@ final class ViewModelLoadTests: XCTestCase {
     // MARK: - food search
 
     @MainActor
+    func test_foodSearchModel_emptyQueryBrowsesMyFoods() async {
+        let m = FoodSearchModel(auth: makeAuth(), debounce: .milliseconds(1))
+        await m.loadMyFoods()
+        guard case .loaded(let results) = m.state else { return XCTFail("got \(m.state)") }
+        XCTAssertFalse(results.isEmpty)
+        XCTAssertTrue(results.allSatisfy { $0.source == .myFood })
+
+        // Typing then clearing the query returns to the browse list.
+        m.query = "chicken"
+        try? await Task.sleep(for: .milliseconds(120))
+        m.query = ""
+        try? await Task.sleep(for: .milliseconds(120))
+        guard case .loaded(let restored) = m.state else { return XCTFail("got \(m.state)") }
+        XCTAssertTrue(restored.allSatisfy { $0.source == .myFood })
+    }
+
+    @MainActor
     func test_foodSearchModel_loadMyFoodsAndSearch() async {
         let m = FoodSearchModel(auth: makeAuth(), debounce: .milliseconds(1))
         await m.loadMyFoods()
