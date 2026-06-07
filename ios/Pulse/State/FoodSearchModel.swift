@@ -47,8 +47,6 @@ final class FoodSearchModel {
     /// my-foods set. Call once when the sheet appears. USDA is not touched here.
     /// After loading, if no query is active the state transitions to `.loaded`
     /// with the alphabetically-sorted my-foods so the sheet opens in browse mode.
-    /// Inputs: none.
-    /// Outputs: none (updates `state` and `myFoods` as side-effects).
     func loadMyFoods() async {
         guard let client = auth?.makeClient() else { return }
         defer { didLoadMyFoods = true }
@@ -121,6 +119,8 @@ final class FoodSearchModel {
     ///   - foods: the unranked my-foods set.
     /// Outputs: foods sorted case-insensitively by display name.
     private static func alphabetical(_ foods: [FoodSearchResult]) -> [FoodSearchResult] {
-        foods.sorted { $0.displayName.lowercased() < $1.displayName.lowercased() }
+        foods.sorted {
+            $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending
+        }
     }
 }
