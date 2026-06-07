@@ -23,6 +23,10 @@ class USDAFoodResult(BaseModel):
     fat_g: float
     serving_size: float | None
     serving_size_unit: str | None
+    # USDA FDC disambiguation context: dataset ("Foundation", "SR Legacy",
+    # "Branded", "Survey (FNDDS)") and brand owner (Branded foods only).
+    data_type: str | None = None
+    brand_owner: str | None = None
 
 
 class USDASearchResponse(BaseModel):

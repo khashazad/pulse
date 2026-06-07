@@ -31,6 +31,8 @@ def _candidate() -> dict:
         "fat_g": 9.51,
         "serving_size": 50.0,
         "serving_size_unit": "g",
+        "data_type": "Foundation",
+        "brand_owner": None,
     }
 
 
@@ -98,3 +100,13 @@ def test_search_usda_rejects_overlong_query(rest_client: TestClient) -> None:
     """A query longer than the cap is rejected with 422 by request validation."""
     resp = rest_client.get(f"/usda/search?q={'x' * 200}", headers=AUTH_HEADERS)
     assert resp.status_code == 422
+
+
+def test_search_usda_includes_disambiguation_fields(rest_client: TestClient) -> None:
+    """`GET /usda/search` round-trips data_type/brand_owner from the client rows."""
+    with _override_usda_client([_candidate()]):
+        resp = rest_client.get("/usda/search?q=egg", headers=AUTH_HEADERS)
+    assert resp.status_code == 200
+    row = resp.json()["results"][0]
+    assert row["data_type"] == "Foundation"
+    assert row["brand_owner"] is None
