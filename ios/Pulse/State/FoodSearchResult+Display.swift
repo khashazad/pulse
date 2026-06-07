@@ -5,14 +5,11 @@
 import Foundation
 
 extension FoodNutrition {
-    /// Formats a serving-size double without a trailing ".0" (1.0 → "1", 0.5 → "0.5").
-    /// Inputs:
-    ///   - value: the numeric serving size.
-    /// Outputs: a compact decimal string.
-    static func compactNumber(_ value: Double) -> String {
-        value.truncatingRemainder(dividingBy: 1) == 0
-            ? String(Int(value))
-            : String(format: "%.1f", locale: Locale(identifier: "en_US_POSIX"), value)
+    /// Human serving-size descriptor, e.g. "250 g" or "1 scoop".
+    /// Outputs: the formatted size + unit, or nil when either is unrecorded.
+    var servingDescriptor: String? {
+        guard let size = servingSize, let unit = servingSizeUnit else { return nil }
+        return "\(NumericInput.formatBare(size)) \(unit)"
     }
 
     /// One-line human description of this food's basis for the quantity sheet,
@@ -23,8 +20,8 @@ extension FoodNutrition {
         case .per100g:
             return "Macros are per 100 g"
         case .perServing:
-            if let size = servingSize, let unit = servingSizeUnit {
-                return "1 serving = \(Self.compactNumber(size)) \(unit)"
+            if let descriptor = servingDescriptor {
+                return "1 serving = \(descriptor)"
             }
             return "1 serving — size not set"
         case .perUnit:
@@ -39,11 +36,13 @@ extension FoodSearchResult {
     /// Outputs: the formatted caption string.
     var caption: String {
         let n = nutrition
-        let macros = "\(n.caloriesPerBasis) kcal"
-            + " · P \(Int(n.proteinGPerBasis.rounded()))"
-            + " · C \(Int(n.carbsGPerBasis.rounded()))"
-            + " · F \(Int(n.fatGPerBasis.rounded()))"
-        return "\(macros) / \(basisSuffix)"
+        let perBasis = MacroTotals(
+            calories: n.caloriesPerBasis,
+            proteinG: n.proteinGPerBasis,
+            carbsG: n.carbsGPerBasis,
+            fatG: n.fatGPerBasis
+        )
+        return "\(perBasis.compactLine) / \(basisSuffix)"
     }
 
     /// The basis suffix for `caption`: "100g", "serving (250 g)",
@@ -54,8 +53,8 @@ extension FoodSearchResult {
         case .per100g:
             return "100g"
         case .perServing:
-            if let size = nutrition.servingSize, let unit = nutrition.servingSizeUnit {
-                return "serving (\(FoodNutrition.compactNumber(size)) \(unit))"
+            if let descriptor = nutrition.servingDescriptor {
+                return "serving (\(descriptor))"
             }
             return "serving — size not set"
         case .perUnit:

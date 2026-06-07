@@ -76,7 +76,7 @@ struct QuantityEntryView: View {
                     }
 
                     if mode == .weigh && canWeigh {
-                        Section {
+                        quantitySection(header: "Weigh") {
                             containerMenu(required: true)
                             TextField("Gross reading (g)", text: $grossText)
                                 .keyboardType(.decimalPad)
@@ -85,28 +85,14 @@ struct QuantityEntryView: View {
                                 Text("Net: \(Int(net)) g")
                                     .foregroundStyle(Theme.FG.secondary)
                             }
-                        } header: {
-                            Text("Weigh")
-                        } footer: {
-                            Text(result.nutrition.basisContextLine)
-                                .foregroundStyle(Theme.FG.tertiary)
                         }
-                        .listRowBackground(Theme.BG.tertiary)
-                        .listSectionSeparatorTint(Theme.separator)
                     } else {
-                        Section {
+                        quantitySection(header: "Quantity") {
                             TextField(typeUnitLabel, text: $typedText)
                                 .keyboardType(.decimalPad)
                                 .foregroundStyle(Theme.FG.primary)
                             containerMenu(required: false)
-                        } header: {
-                            Text("Quantity")
-                        } footer: {
-                            Text(result.nutrition.basisContextLine)
-                                .foregroundStyle(Theme.FG.tertiary)
                         }
-                        .listRowBackground(Theme.BG.tertiary)
-                        .listSectionSeparatorTint(Theme.separator)
                     }
 
                     Section("Preview") {
@@ -144,6 +130,28 @@ struct QuantityEntryView: View {
             .onAppear { if canWeigh { mode = .weigh } }
         }
         .preferredColorScheme(.dark)
+    }
+
+    /// Shared shell for the weigh/type input sections: themed rows, a header,
+    /// and the basis-context footer (e.g. "1 serving = 250 g").
+    /// Inputs:
+    ///   - header: the section title ("Weigh" or "Quantity").
+    ///   - content: the section's input rows.
+    /// Outputs: a styled `Section` with the basis-context footer.
+    private func quantitySection<Content: View>(
+        header: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        Section {
+            content()
+        } header: {
+            Text(header)
+        } footer: {
+            Text(result.nutrition.basisContextLine)
+                .foregroundStyle(Theme.FG.tertiary)
+        }
+        .listRowBackground(Theme.BG.tertiary)
+        .listSectionSeparatorTint(Theme.separator)
     }
 
     /// A menu for choosing the container (tare source, or optional label).
