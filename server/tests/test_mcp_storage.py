@@ -46,9 +46,7 @@ async def test_aclose_client_storage_closes_tracked_store():
     """The shutdown hook closes the store built last and resets the tracker."""
     from pulse_server.mcp import storage as storage_mod
 
-    storage = storage_mod.build_client_storage(
-        _settings(mcp_storage_encryption_key="e" * 40)
-    )
+    storage = storage_mod.build_client_storage(_settings(mcp_storage_encryption_key="e" * 40))
     assert storage_mod._active_store is storage.key_value
 
     closed: list[bool] = []
@@ -72,8 +70,7 @@ def test_normalize_asyncpg_url_strips_sqlalchemy_driver():
     from pulse_server.mcp.storage import normalize_asyncpg_url
 
     assert (
-        normalize_asyncpg_url("postgresql+psycopg://u:p@h:5432/db")
-        == "postgresql://u:p@h:5432/db"
+        normalize_asyncpg_url("postgresql+psycopg://u:p@h:5432/db") == "postgresql://u:p@h:5432/db"
     )
     assert normalize_asyncpg_url("postgresql://u:p@h/db") == "postgresql://u:p@h/db"
     assert normalize_asyncpg_url("postgres://u:p@h/db") == "postgres://u:p@h/db"

@@ -303,9 +303,7 @@ class Settings(BaseSettings):
             ("MCP_STORAGE_ENCRYPTION_KEY", self.mcp_storage_encryption_key),
         ):
             if value and len(value) < PERSISTENCE_KEY_MIN_LENGTH:
-                raise ValueError(
-                    f"{name} must be at least {PERSISTENCE_KEY_MIN_LENGTH} characters"
-                )
+                raise ValueError(f"{name} must be at least {PERSISTENCE_KEY_MIN_LENGTH} characters")
         return self
 
     @model_validator(mode="after")

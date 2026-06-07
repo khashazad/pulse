@@ -30,6 +30,7 @@ async def test_encrypted_roundtrip_and_no_plaintext_at_rest():
     from pulse_server.config import Settings
     from pulse_server.mcp.storage import (
         MCP_OAUTH_KV_TABLE,
+        aclose_client_storage,
         build_client_storage,
         normalize_asyncpg_url,
     )
@@ -64,6 +65,11 @@ async def test_encrypted_roundtrip_and_no_plaintext_at_rest():
         assert all(SECRET_VALUE not in row["raw"] for row in rows)
     finally:
         await storage.delete(key="client-abc", collection="mcp-upstream-tokens")
+        # Close the pool on THIS event loop and reset the module-global
+        # tracker. Without this, a later test's app-lifespan shutdown (on a
+        # fresh loop) would try to close a pool bound to this already-closed
+        # loop → "RuntimeError: Event loop is closed".
+        await aclose_client_storage()
 
 
 @pytest.mark.asyncio
@@ -79,6 +85,7 @@ async def test_setup_sweeps_expired_rows():
     from pulse_server.config import Settings
     from pulse_server.mcp.storage import (
         MCP_OAUTH_KV_TABLE,
+        aclose_client_storage,
         build_client_storage,
         normalize_asyncpg_url,
     )
@@ -119,7 +126,11 @@ async def test_setup_sweeps_expired_rows():
         assert "expired" not in keys  # swept by second store's setup
         assert "live" in keys  # unexpired rows survive
     finally:
-        await conn.execute(
-            f"DELETE FROM {MCP_OAUTH_KV_TABLE} WHERE collection = 'sweep-test'"
-        )
+        await conn.execute(f"DELETE FROM {MCP_OAUTH_KV_TABLE} WHERE collection = 'sweep-test'")
         await conn.close()
+        # Close both stores' pools on THIS loop. `first` is no longer the
+        # tracked store (building `second` replaced it), so close its inner
+        # store directly; `aclose_client_storage` handles `second` and resets
+        # the module-global so later tests' lifespans see nothing stale.
+        await first.key_value.close()
+        await aclose_client_storage()

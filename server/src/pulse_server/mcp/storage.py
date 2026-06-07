@@ -47,8 +47,11 @@ STORAGE_ENCRYPTION_SALT = "pulse-mcp-oauth-storage"
 
 # The store handed to the OAuth proxy by the last `build_client_storage` call,
 # kept so `aclose_client_storage` can drain its asyncpg pool at shutdown.
-# Single-assignment in production (one build at import time); tests overwrite
-# it freely — stores they abandon never opened a pool, so nothing leaks.
+# Single-assignment in production (one build at import time). Tests that build
+# stores must close any pool they open on their own event loop (and unit-test
+# builds that never touch the DB are safely abandoned) — a store left here
+# with a pool bound to a finished test's loop would make a later lifespan
+# shutdown fail with "Event loop is closed".
 _active_store: PinnedPostgreSQLStore | None = None
 
 
@@ -95,8 +98,9 @@ def resolve_ipv4(database_url: str) -> str | None:
     except socket.gaierror:
         return None
     # getaddrinfo raises gaierror rather than returning an empty list, so the
-    # first result always exists here.
-    return info[0][4][0]
+    # first result always exists here. AF_INET sockaddrs are (host, port) —
+    # str() narrows the `str | int` union for the type checker.
+    return str(info[0][4][0])
 
 
 class PinnedPostgreSQLStore(PostgreSQLStore):
@@ -175,8 +179,7 @@ class PinnedPostgreSQLStore(PostgreSQLStore):
             raise RuntimeError("PostgreSQLStore._setup did not create a pool")
         # _table_name is validated against SQL injection by the base __init__.
         await pool.execute(
-            f"DELETE FROM {self._table_name} "
-            "WHERE expires_at IS NOT NULL AND expires_at < now()"
+            f"DELETE FROM {self._table_name} WHERE expires_at IS NOT NULL AND expires_at < now()"
         )
 
 
