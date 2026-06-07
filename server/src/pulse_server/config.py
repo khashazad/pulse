@@ -69,7 +69,8 @@ class Settings(BaseSettings):
     # configured GitHub OAuth flow. Empty disables this path.
     mcp_service_token: str = ""
 
-    # S3-compatible object storage for progress photos (Cloudflare R2 in prod).
+    # S3-compatible object storage for progress photos (Backblaze B2 in prod;
+    # any S3-compatible endpoint).
     # All four must be set together; local-style envs fall back to a filesystem
     # store under `photo_store_dir` when unset.
     s3_endpoint: str = ""

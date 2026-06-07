@@ -4,8 +4,8 @@ Exposes the ``/measures`` router covering ``/photos`` list, single-photo
 fetch (``thumb``/``full``/``archive``), tagged single-photo upload, and
 photo-id-based delete. Each photo is identified by its ``photo_id`` UUID; many
 photos may share a ``(log_date, tag_id)`` since the legacy four-slot uniqueness
-has been removed. Photo bytes live in the object store (streamed via the row's
-``storage_key_prefix``), with a legacy bytea fallback for pre-cutover rows.
+has been removed. Photo bytes live in the object store, streamed via the row's
+``storage_key_prefix`` (NOT NULL since the object-store cutover completed).
 Uploads are streamed with a hard byte cap; transcoding and object writes live
 in :mod:`services.progress_photo_service`.
 """
@@ -136,12 +136,12 @@ async def get_photo(
 ) -> Response:
     """Return raw progress-photo bytes for one ``photo_id``.
 
-    For migrated rows the bytes are streamed from the object store using the
-    row's ``storage_key_prefix`` and the ``size``→object mapping; pre-cutover
-    rows (no prefix) fall back to the legacy bytea column. The ``archive``
-    variant is the high-resolution preservation copy and, for pre-cutover rows
-    that never had one, falls back to the full bytea image. Sends a strong
-    ``ETag`` derived from the stored sha256 and a 1-year immutable cache header.
+    The bytes are streamed from the object store using the row's
+    ``storage_key_prefix`` and the ``size``→object mapping. The ``archive``
+    variant is the high-resolution preservation copy (pre-cutover rows received
+    an archive object during migration, so every row has all three variants).
+    Sends a strong ``ETag`` derived from the stored sha256 and a 1-year
+    immutable cache header.
 
     **Inputs:**
     - request (Request): Active request providing ``user_key``.
@@ -154,36 +154,31 @@ async def get_photo(
     - Response: Image bytes with the stored MIME type plus caching headers.
 
     **Exceptions:**
-    - HTTPException(404): Raised when no photo exists with that id, or when a
-      migrated row's object is missing from the store (data inconsistency: row
-      present, object absent — logged at WARNING before raising).
+    - HTTPException(404): Raised when no photo exists with that id, or when the
+      row's object is missing from the store (data inconsistency: row present,
+      object absent — logged at WARNING before raising).
     """
     user_key = request.state.user_key
     repo = ProgressPhotoRepository(session)
-    row = await repo.get_photo(photo_id=photo_id, user_key=user_key, variant=size)
+    row = await repo.get_photo(photo_id=photo_id, user_key=user_key)
     if not row:
         raise HTTPException(status_code=404, detail="not found")
-    content: memoryview | bytes
-    if row["storage_key_prefix"]:
-        key = f"{row['storage_key_prefix']}/{VARIANT_OBJECTS[size]}"
-        fetched = await get_photo_object(store, key)
-        if fetched is None:
-            # The key embeds request-derived parts (photo id in the prefix);
-            # strip newlines so a crafted value can't forge extra log lines
-            # (CodeQL py/log-injection).
-            logger.warning(
-                "data inconsistency: photo row exists but object %s is missing from store",
-                key.replace("\r\n", "").replace("\n", ""),
-            )
-            raise HTTPException(status_code=404, detail="not found")
-        content = fetched
-    else:
-        content = bytes(row["photo"])
+    key = f"{row['storage_key_prefix']}/{VARIANT_OBJECTS[size]}"
+    fetched = await get_photo_object(store, key)
+    if fetched is None:
+        # The key embeds request-derived parts (photo id in the prefix);
+        # strip newlines so a crafted value can't forge extra log lines
+        # (CodeQL py/log-injection).
+        logger.warning(
+            "data inconsistency: photo row exists but object %s is missing from store",
+            key.replace("\r\n", "").replace("\n", ""),
+        )
+        raise HTTPException(status_code=404, detail="not found")
     headers = {
         "Cache-Control": "private, max-age=31536000, immutable",
         "ETag": f'"{row["sha256"]}"',
     }
-    return Response(content=content, media_type=row["photo_mime"], headers=headers)
+    return Response(content=fetched, media_type=row["photo_mime"], headers=headers)
 
 
 @router.post("/photos", status_code=201, response_model=ProgressPhotoMetadata)
@@ -250,10 +245,11 @@ async def delete_photo(
 ) -> Response:
     """Delete a progress photo by id and return HTTP 204.
 
-    The row is removed inside the transaction; its object-store copies are
-    deleted **after** commit. A failed object delete only logs and orphans the
-    objects (best-effort cleanup) rather than rolling back the committed row —
-    the row delete is the source of truth.
+    The row is removed inside the transaction; its object-store copies (located
+    via the deleted row's NOT NULL ``storage_key_prefix``) are deleted **after**
+    commit. A failed object delete only logs and orphans the objects
+    (best-effort cleanup) rather than rolling back the committed row — the row
+    delete is the source of truth.
 
     **Inputs:**
     - request (Request): Active request providing ``user_key``.
@@ -273,6 +269,5 @@ async def delete_photo(
         deleted = await repo.delete(photo_id=photo_id, user_key=user_key)
     if deleted is None:
         raise HTTPException(status_code=404, detail="not found")
-    if deleted["storage_key_prefix"]:
-        await delete_photo_objects(store, deleted["storage_key_prefix"])
+    await delete_photo_objects(store, deleted["storage_key_prefix"])
     return Response(status_code=204)

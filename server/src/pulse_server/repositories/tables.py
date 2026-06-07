@@ -19,7 +19,8 @@ Tables defined here:
 - ``containers`` — reusable container tares with optional photo blobs.
 - ``weight_entries`` — one weight reading per ``(user_key, log_date)``.
 - ``progress_photo_tags`` — per-user catalog of progress-photo tag labels.
-- ``progress_photos`` — per-day progress-photo blobs, each tagged via FK.
+- ``progress_photos`` — per-day progress-photo metadata (bytes live in the
+  object store under ``storage_key_prefix``), each tagged via FK.
 
 Every table is scoped by ``user_key`` so the same schema supports the
 multi-user model while the legacy single-user deployment uses one fixed key.
@@ -323,12 +324,10 @@ progress_photos = Table(
         ForeignKey("progress_photo_tags.id", ondelete="RESTRICT", name="fk_progress_photos_tag_id"),
         nullable=False,
     ),
-    Column("photo", LargeBinary, nullable=True),
-    Column("photo_thumb", LargeBinary, nullable=True),
     Column("photo_mime", Text, nullable=False, server_default=text("'image/jpeg'")),
     Column("bytes", Integer, nullable=False),
     Column("sha256", Text, nullable=False),
-    Column("storage_key_prefix", Text, nullable=True),
+    Column("storage_key_prefix", Text, nullable=False),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("idempotency_key", UUID(as_uuid=True), nullable=True),

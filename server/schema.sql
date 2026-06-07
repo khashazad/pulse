@@ -219,15 +219,13 @@ create table if not exists progress_photos (
   user_key text not null,
   log_date date not null,
   tag_id uuid not null,
-  photo bytea,
-  photo_thumb bytea,
   photo_mime text not null default 'image/jpeg',
   bytes integer not null,
   sha256 text not null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   idempotency_key uuid,
-  storage_key_prefix text,
+  storage_key_prefix text not null,
   constraint fk_progress_photos_tag_id
     foreign key (tag_id) references progress_photo_tags(id) on delete restrict
 );
@@ -237,12 +235,12 @@ create unique index if not exists uq_progress_photos_user_idem
   on progress_photos (user_key, idempotency_key)
   where idempotency_key is not null;
 
--- Object-storage cutover (2026-06): photo bytes move to the S3 store; the
--- bytea columns go nullable during migration and are dropped once all rows
--- carry a storage_key_prefix.
+-- Object-storage cutover (2026-06) complete: photo bytes live in the S3 store
+-- (display/archive/thumb objects under each row's storage_key_prefix).
+alter table progress_photos drop column if exists photo;
+alter table progress_photos drop column if exists photo_thumb;
 alter table progress_photos add column if not exists storage_key_prefix text;
-alter table progress_photos alter column photo drop not null;
-alter table progress_photos alter column photo_thumb drop not null;
+alter table progress_photos alter column storage_key_prefix set not null;
 
 create table if not exists weight_entries (
   id uuid primary key default gen_random_uuid(),
