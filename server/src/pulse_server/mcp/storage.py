@@ -21,6 +21,7 @@ Two deployment quirks are handled by :class:`PinnedPostgreSQLStore`:
 
 from __future__ import annotations
 
+import asyncio
 import socket
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
@@ -58,6 +59,7 @@ def normalize_asyncpg_url(database_url: str) -> str:
     - str: URL safe to hand to ``asyncpg.create_pool``.
     """
     if database_url.startswith("postgresql+"):
+        # Discard the "postgresql+<driver>" prefix; keep the DSN body after "://".
         _, rest = database_url.split("://", 1)
         return f"postgresql://{rest}"
     return database_url
@@ -104,6 +106,9 @@ class PinnedPostgreSQLStore(PostgreSQLStore):
     async def _create_pool(self) -> asyncpg.Pool:
         """Create the asyncpg pool with IPv4 pinning and statement cache off.
 
+        Resolves the host to an IPv4 address off the event loop (via
+        ``asyncio.to_thread``) so a slow DNS lookup does not stall the caller.
+
         **Outputs:**
         - asyncpg.Pool: Connected pool for the configured URL.
 
@@ -114,7 +119,9 @@ class PinnedPostgreSQLStore(PostgreSQLStore):
         if self._url is None:
             raise RuntimeError("PinnedPostgreSQLStore requires url=")
         kwargs: dict = {"dsn": self._url, "statement_cache_size": 0}
-        ipv4 = resolve_ipv4(self._url)
+        # DNS via a worker thread: socket.getaddrinfo is blocking, and this
+        # async method runs on the event loop (a slow resolver would stall it).
+        ipv4 = await asyncio.to_thread(resolve_ipv4, self._url)
         if ipv4 is not None:
             # Explicit kwargs override the DSN host; auth/db/port still come
             # from the DSN. TLS stays usable because asyncpg's default
