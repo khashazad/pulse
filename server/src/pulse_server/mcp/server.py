@@ -134,6 +134,11 @@ def _build_auth_provider(settings):
       static verifier as a fallback verifier.
     - Neither → ``None``; the caller decides whether unauth is permitted.
 
+    The GitHub provider receives a persistent encrypted ``client_storage`` and
+    explicit ``jwt_signing_key`` when ``MCP_STORAGE_ENCRYPTION_KEY`` /
+    ``MCP_JWT_SIGNING_KEY`` are configured, so OAuth state and JWT signing survive
+    redeploys without re-auth; both are no-ops when unset (local dev).
+
     **Inputs:**
     - settings (Settings): Application settings carrying both auth configurations.
 
@@ -149,10 +154,18 @@ def _build_auth_provider(settings):
     if settings.mcp_oauth_enabled:
         from fastmcp.server.auth.providers.github import GitHubProvider
 
+        from pulse_server.mcp.storage import build_client_storage
+
         github_provider = GitHubProvider(
             client_id=settings.github_client_id,
             client_secret=settings.github_client_secret,
             base_url=settings.public_base_url.rstrip("/"),
+            # Pin the JWT signing key and persist OAuth state (client
+            # registrations + upstream tokens) in Postgres so the claude.ai
+            # connector survives redeploys without re-auth / re-consent.
+            # Both are no-ops when the env vars are unset (local dev).
+            jwt_signing_key=settings.mcp_jwt_signing_key or None,
+            client_storage=build_client_storage(settings),
         )
         if static_verifier is None:
             return github_provider

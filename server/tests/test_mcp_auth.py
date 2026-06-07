@@ -33,6 +33,8 @@ def _isolate_env(monkeypatch):
         "S3_BUCKET",
         "S3_ACCESS_KEY_ID",
         "S3_SECRET_ACCESS_KEY",
+        "MCP_JWT_SIGNING_KEY",
+        "MCP_STORAGE_ENCRYPTION_KEY",
     ):
         monkeypatch.delenv(k, raising=False)
     monkeypatch.setenv("DATABASE_URL", "postgresql://localhost/test")
@@ -211,3 +213,54 @@ async def test_allowlist_middleware_rejects_when_no_token(monkeypatch):
 
     with pytest.raises(ToolError):
         await mw.on_call_tool(MagicMock(), call_next)
+
+
+def test_github_provider_uses_postgres_client_storage_when_configured(monkeypatch):
+    """MCP_STORAGE_ENCRYPTION_KEY routes OAuth state into the encrypted PG store."""
+    from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
+
+    from pulse_server.mcp.storage import PinnedPostgreSQLStore
+
+    monkeypatch.setenv("GITHUB_CLIENT_ID", "ghcid")
+    monkeypatch.setenv("GITHUB_CLIENT_SECRET", "ghsecret")
+    monkeypatch.setenv("PUBLIC_BASE_URL", "https://api.example.com")
+    monkeypatch.setenv("MCP_STORAGE_ENCRYPTION_KEY", "e" * 40)
+
+    from pulse_server.mcp.server import _build_auth_provider
+
+    provider = _build_auth_provider(_reload_settings())
+    assert isinstance(provider._client_storage, FernetEncryptionWrapper)
+    assert isinstance(provider._client_storage.key_value, PinnedPostgreSQLStore)
+
+
+def test_github_provider_keeps_default_storage_without_key(monkeypatch):
+    """Without the encryption key, fastmcp's default (disk) storage is untouched."""
+    from pulse_server.mcp.storage import PinnedPostgreSQLStore
+
+    monkeypatch.setenv("GITHUB_CLIENT_ID", "ghcid")
+    monkeypatch.setenv("GITHUB_CLIENT_SECRET", "ghsecret")
+    monkeypatch.setenv("PUBLIC_BASE_URL", "https://api.example.com")
+
+    from pulse_server.mcp.server import _build_auth_provider
+
+    provider = _build_auth_provider(_reload_settings())
+    inner = getattr(provider._client_storage, "key_value", None)
+    assert not isinstance(inner, PinnedPostgreSQLStore)
+
+
+def test_jwt_signing_key_is_deterministic_and_env_driven(monkeypatch):
+    """An explicit MCP_JWT_SIGNING_KEY yields a stable, distinct signing key."""
+    monkeypatch.setenv("GITHUB_CLIENT_ID", "ghcid")
+    monkeypatch.setenv("GITHUB_CLIENT_SECRET", "ghsecret")
+    monkeypatch.setenv("PUBLIC_BASE_URL", "https://api.example.com")
+
+    from pulse_server.mcp.server import _build_auth_provider
+
+    default_key = _build_auth_provider(_reload_settings())._jwt_signing_key
+
+    monkeypatch.setenv("MCP_JWT_SIGNING_KEY", "j" * 40)
+    first = _build_auth_provider(_reload_settings())._jwt_signing_key
+    second = _build_auth_provider(_reload_settings())._jwt_signing_key
+
+    assert first == second  # deterministic across "restarts"
+    assert first != default_key  # actually driven by the env var
