@@ -298,3 +298,49 @@ def test_non_local_env_requires_s3() -> None:
         s3_access_key_id="ak",
         s3_secret_access_key="sk",
     )
+
+
+_BASE_KWARGS = {"database_url": "postgresql://localhost/test", "usda_api_key": "x"}
+
+
+def test_mcp_persistence_keys_default_empty():
+    """Both persistence keys default to empty strings (feature off)."""
+    from pulse_server.config import Settings
+
+    settings = Settings(_env_file=None, **_BASE_KWARGS)
+    assert settings.mcp_jwt_signing_key == ""
+    assert settings.mcp_storage_encryption_key == ""
+
+
+def test_mcp_storage_encryption_key_too_short_rejected():
+    """A short MCP_STORAGE_ENCRYPTION_KEY is rejected at boot."""
+    from pydantic import ValidationError
+
+    from pulse_server.config import Settings
+
+    with pytest.raises(ValidationError, match="MCP_STORAGE_ENCRYPTION_KEY"):
+        Settings(_env_file=None, mcp_storage_encryption_key="short", **_BASE_KWARGS)
+
+
+def test_mcp_jwt_signing_key_too_short_rejected():
+    """A short MCP_JWT_SIGNING_KEY is rejected at boot."""
+    from pydantic import ValidationError
+
+    from pulse_server.config import Settings
+
+    with pytest.raises(ValidationError, match="MCP_JWT_SIGNING_KEY"):
+        Settings(_env_file=None, mcp_jwt_signing_key="short", **_BASE_KWARGS)
+
+
+def test_mcp_persistence_keys_accept_strong_values():
+    """32+ char values for both keys validate cleanly."""
+    from pulse_server.config import Settings
+
+    settings = Settings(
+        _env_file=None,
+        mcp_jwt_signing_key="j" * 40,
+        mcp_storage_encryption_key="e" * 40,
+        **_BASE_KWARGS,
+    )
+    assert settings.mcp_jwt_signing_key == "j" * 40
+    assert settings.mcp_storage_encryption_key == "e" * 40
