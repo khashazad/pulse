@@ -124,15 +124,27 @@ struct FoodSearchSheet: View {
         let myFoods = results.filter { $0.source == .myFood }
         let usda = results.filter { $0.source == .usda }
         if results.isEmpty {
-            // `isBrowsing` (not raw `query.isEmpty`) so whitespace-only input
-            // gets browse-mode copy, matching the model's own predicate.
-            EmptyStateView(
-                icon: "magnifyingglass",
-                title: model.isBrowsing ? "No foods yet" : "No matches",
-                description: model.isBrowsing
-                    ? "Foods you save or remember will show up here."
-                    : "Try a different name."
-            )
+            if model.usdaUnavailable, !model.isBrowsing {
+                // USDA was unreachable and no my-foods matched: say so instead
+                // of a "No matches" that implies the food doesn't exist.
+                EmptyStateView(
+                    icon: "wifi.exclamationmark",
+                    title: "USDA search unavailable",
+                    description: "None of your foods matched, and USDA couldn't be reached.",
+                    action: { model.retry() },
+                    actionLabel: "Retry"
+                )
+            } else {
+                // `isBrowsing` (not raw `query.isEmpty`) so whitespace-only input
+                // gets browse-mode copy, matching the model's own predicate.
+                EmptyStateView(
+                    icon: "magnifyingglass",
+                    title: model.isBrowsing ? "No foods yet" : "No matches",
+                    description: model.isBrowsing
+                        ? "Foods you save or remember will show up here."
+                        : "Try a different name."
+                )
+            }
         } else {
             List {
                 if model.usdaUnavailable {

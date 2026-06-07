@@ -39,9 +39,11 @@ final class FoodSearchModel {
     /// Whether `loadMyFoods()` has completed (success or failure) at least
     /// once, so a search never merges against an un-loaded my-foods set.
     private var didLoadMyFoods = false
-    /// Whether the last completed my-foods load failed; gates the cached-load
-    /// short-circuit in `loadMyFoods()` so `retry()` actually re-fetches.
-    private var loadFailed = false
+    /// Error from the last completed my-foods load (nil after a success).
+    /// Gates the cached-load short-circuit in `loadMyFoods()` so `retry()`
+    /// re-fetches, and lets a blank query resurface `.failed` instead of an
+    /// empty browse list when the load never succeeded.
+    private var lastLoadError: PulseError?
     /// In-flight my-foods load; concurrent callers await it instead of firing
     /// duplicate network requests.
     private var loadTask: Task<Void, Never>?
@@ -65,7 +67,7 @@ final class FoodSearchModel {
     /// transitions to `.loaded` with the alphabetical my-foods, or `.failed`
     /// when the load failed, so the sheet never strands on a spinner.
     func loadMyFoods() async {
-        if didLoadMyFoods && !loadFailed {
+        if didLoadMyFoods && lastLoadError == nil {
             // Cached: re-surface the browse list on sheet re-presentation.
             if isBrowsing { state = .loaded(Self.alphabetical(myFoods)) }
             return
@@ -83,7 +85,7 @@ final class FoodSearchModel {
             // No client (signed out mid-session): surface the failure instead
             // of leaving the sheet on an endless `.idle` spinner.
             didLoadMyFoods = true
-            loadFailed = true
+            lastLoadError = .notSignedIn
             if isBrowsing { state = .failed(.notSignedIn) }
             return
         }
@@ -102,7 +104,7 @@ final class FoodSearchModel {
             loadError = .network(URLError(.unknown))
         }
         didLoadMyFoods = true
-        loadFailed = loadError != nil
+        lastLoadError = loadError
         // Browse mode: open onto the user's foods, or surface the load failure
         // (with Retry) instead of a misleading "No foods yet" empty state.
         // `isBrowsing` is re-read here so a query typed mid-load is respected.
@@ -149,7 +151,13 @@ final class FoodSearchModel {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             usdaUnavailable = false
-            state = .loaded(Self.alphabetical(myFoods))
+            // Resurface a failed my-foods load (with Retry) rather than a
+            // misleading "No foods yet" empty browse list.
+            if let error = lastLoadError {
+                state = .failed(error)
+            } else {
+                state = .loaded(Self.alphabetical(myFoods))
+            }
             return
         }
         // Ensure my-foods are loaded before merging, so an early keystroke

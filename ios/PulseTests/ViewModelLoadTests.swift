@@ -265,6 +265,18 @@ final class ViewModelLoadTests: XCTestCase {
         guard case .failed = m.state else { return XCTFail("got \(m.state)") }
     }
 
+    /// Clearing an active search after a failed my-foods load must resurface
+    /// `.failed` (Retry available), not a misleading empty browse list.
+    @MainActor
+    func test_foodSearchModel_clearedQueryResurfacesFailedLoad() async {
+        let m = FoodSearchModel(auth: makeFailingAuth(), debounce: .milliseconds(1))
+        m.query = "chicken"
+        try? await Task.sleep(for: .milliseconds(120))
+        m.query = ""
+        try? await Task.sleep(for: .milliseconds(120))
+        guard case .failed = m.state else { return XCTFail("got \(m.state)") }
+    }
+
     /// A successful my-foods load is cached: re-presenting the sheet (which
     /// re-fires `loadMyFoods`) must not repeat the network requests.
     @MainActor
