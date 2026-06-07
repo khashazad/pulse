@@ -117,11 +117,15 @@ struct ApplyBatchSheet: View {
         .buttonStyle(.plain)
     }
 
-    /// Calendar for arbitrary dates (today included), synced with the model.
+    /// Calendar for arbitrary dates, synced with the model. Constrained to
+    /// today-forward so past days can't be selected — logging prep portions
+    /// into history would risk silently double-logging already-recorded days.
+    /// Today stays selectable; the quick-pick chips cover tomorrow..+7.
     @ViewBuilder
     private var calendarSection: some View {
         SectionCard(header: "Other days") {
-            MultiDatePicker("Days", selection: multiDateBinding)
+            MultiDatePicker("Days", selection: multiDateBinding,
+                            in: Calendar.current.startOfDay(for: Date())...)
                 .tint(Theme.CTP.mauve)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 8)

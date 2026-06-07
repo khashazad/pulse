@@ -30,9 +30,12 @@ extension MacroTotals {
     }
 
     /// Formats the totals as a compact single line, e.g. "260 kcal · P 5 · C 56 · F 1".
+    /// Gram macros are rounded to the nearest whole gram (not truncated) so a
+    /// submitted 19.6 g reads "P 20", matching the 0.1 g-rounded values that are
+    /// actually logged.
     /// Outputs: a human-readable macro summary string.
     var compactLine: String {
-        "\(calories) kcal · P \(Int(proteinG)) · C \(Int(carbsG)) · F \(Int(fatG))"
+        "\(calories) kcal · P \(Int(proteinG.rounded())) · C \(Int(carbsG.rounded())) · F \(Int(fatG.rounded()))"
     }
 
     /// The additive identity, used as the seed when summing totals.

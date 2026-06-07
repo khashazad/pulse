@@ -157,24 +157,33 @@ final class ApplyBatchModel {
         }
     }
 
+    /// The per-day payload contributions: each selected day paired with the
+    /// entries it would log, in selection order. Single source of truth for both
+    /// the flat payload (`buildEntries`) and `submit()`, so the value tested in
+    /// unit tests is exactly the value production submits.
+    /// Outputs: ordered `(dayKey, entries)` pairs, one per selected day.
+    func contributions() -> [(dayKey: String, entries: [FoodEntryCreate])] {
+        selections.map { (dayKey: $0.dayKey, entries: entries(for: $0)) }
+    }
+
     /// Builds the full `POST /entries` payload: one entry per (selected day x
     /// source-bearing batch item).
     /// Outputs: the ordered payload (days outer, items inner).
     func buildEntries() -> [FoodEntryCreate] {
-        selections.flatMap { entries(for: $0) }
+        contributions().flatMap(\.entries)
     }
 
     /// Submits the payload as one atomic `POST /entries` batch. All-or-nothing:
     /// on failure nothing was logged and `submitState` carries the error (a 401
     /// additionally routes through `AuthSession`). Concurrent submits are
     /// rejected: if `submitState` is already `.submitting` this returns nil
-    /// immediately. On success returns the day keys derived from the payload
-    /// that was actually sent — never from raw selections — so the caller's
-    /// duplicate-warning memory can only record days that truly received
-    /// entries.
-    /// Outputs: the applied day keys on success (empty when the batch produced
-    /// no entries — unreachable from the UI via the `canApply` gate), nil on
-    /// failure or if already submitting.
+    /// immediately. The payload comes from `contributions()` — the same builder
+    /// the unit tests exercise — so what is tested is exactly what is sent. On
+    /// success returns the day keys derived from the contributions that actually
+    /// carried entries (never raw selections), so the caller's duplicate-warning
+    /// memory can only record days that truly received entries.
+    /// Outputs: the applied day keys on success, nil on failure, cancellation,
+    /// or if already submitting.
     @discardableResult
     func submit() async -> Set<String>? {
         guard submitState != .submitting else { return nil }
@@ -182,27 +191,41 @@ final class ApplyBatchModel {
             submitState = .failed(.notSignedIn)
             return nil
         }
-        let contributions = selections.map { (dayKey: $0.dayKey, entries: entries(for: $0)) }
+        let contributions = self.contributions()
         let payload = contributions.flatMap(\.entries)
-        // Defensive backstop only: PrepView's canApply gate requires at least one
-        // source-bearing item (see BatchFoodItem.hasSource), so an empty payload
-        // is unreachable from the UI. Finish as a zero-entry success rather than
-        // faking an error state.
+        // canApply (PrepView) requires a source-bearing item and selection
+        // counts clamp to ≥ 1, so a non-empty selection always yields a
+        // non-empty payload — an empty payload is unreachable from the UI.
         guard !payload.isEmpty else {
-            submitState = .finished(entryCount: 0)
-            return []
+            assertionFailure("unreachable: canApply gates empty payloads")
+            return nil
         }
         submitState = .submitting
         do {
             let resp = try await client.createEntries(payload)
             submitState = .finished(entryCount: resp.entries.count)
             return Set(contributions.filter { !$0.entries.isEmpty }.map(\.dayKey))
+        } catch is CancellationError {
+            // The task was cancelled (e.g. the sheet was dismissed mid-flight):
+            // not a failure to surface. Reset to idle and report nothing applied.
+            submitState = .idle
+            return nil
         } catch let error as PulseError {
             if error == .unauthorized { auth?.handleUnauthorized() }
             submitState = .failed(error)
             return nil
+        } catch let urlError as URLError {
+            // A transport error that escaped the client without being wrapped:
+            // classify it truthfully as a network failure, never a server fault.
+            submitState = .failed(.network(urlError))
+            return nil
         } catch {
-            submitState = .failed(.server(status: -1))
+            // The only remaining escapees are local, non-transport errors (e.g.
+            // request-body encoding) that never reached the server. PulseError
+            // has no encoding case; .decoding carries a description and is the
+            // least-misleading existing case for "couldn't build/handle the
+            // payload locally" — emphatically not a server fault.
+            submitState = .failed(.decoding(error.localizedDescription))
             return nil
         }
     }

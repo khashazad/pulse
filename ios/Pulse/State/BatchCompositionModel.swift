@@ -43,4 +43,20 @@ final class BatchCompositionModel {
     var total: MacroTotals {
         items.map(\.macros).reduce(.zero, +)
     }
+
+    /// One portion's macros computed the same way the apply payload is built —
+    /// each source-bearing item scaled individually (rounded like the submitted
+    /// entries), then summed — so the Prep preview and the Apply sheet can never
+    /// show different numbers for the same portion. Aggregate-then-scale (sum
+    /// first, scale once) can round differently from the server's sum over the
+    /// individually-scaled entries; this avoids that drift.
+    /// Inputs:
+    ///   - portions: the batch's portion divisor (clamped to ≥ 1 by `scaled`).
+    /// Outputs: the per-portion `MacroTotals`, identical to one day's
+    /// `ApplyBatchModel.dayTotal(for:)` at count 1.
+    func perPortionTotal(portions: Int) -> MacroTotals {
+        items.filter(\.hasSource)
+            .map { $0.macros.scaled(count: 1, portions: portions) }
+            .reduce(.zero, +)
+    }
 }

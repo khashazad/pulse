@@ -82,7 +82,7 @@ struct QuantityEntryView: View {
 
                 Section("Preview") {
                     if let m = previewMacros {
-                        Text("\(m.calories) kcal · P \(Int(m.proteinG)) · C \(Int(m.carbsG)) · F \(Int(m.fatG))")
+                        Text(m.compactLine)
                     } else {
                         Text("Enter a quantity").foregroundStyle(.secondary)
                     }
