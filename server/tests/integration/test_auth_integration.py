@@ -9,7 +9,6 @@ Integration test: hits a real Postgres via ``TEST_DATABASE_URL`` for the
 
 from __future__ import annotations
 
-import asyncio
 import os
 from unittest.mock import AsyncMock, patch
 
@@ -64,7 +63,10 @@ def client():
                     await s.execute(sa.text("truncate auth_exchange_codes"))
                     await s.commit()
 
-            asyncio.get_event_loop().run_until_complete(_truncate())
+            # Run on the TestClient portal so the coroutine executes on the
+            # app's own event loop (where the engine pool lives) —
+            # pytest-asyncio 1.x no longer provides a current loop here.
+            c.portal.call(_truncate)
             yield c
 
 
