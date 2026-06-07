@@ -68,6 +68,12 @@ final class FoodSearchModel {
         }
     }
 
+    /// Re-runs the search for the current query (used by the failure state's
+    /// Retry button). Equivalent to re-typing the query.
+    func retry() {
+        scheduleSearch()
+    }
+
     /// Cancels any pending search and schedules a new one after the debounce.
     private func scheduleSearch() {
         searchTask?.cancel()

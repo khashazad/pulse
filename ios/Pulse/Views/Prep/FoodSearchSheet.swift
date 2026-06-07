@@ -38,10 +38,12 @@ struct FoodSearchSheet: View {
                         .foregroundStyle(Theme.CTP.mauve)
                 }
             }
-            .task {
-                await model.loadMyFoods()
-                searchFocused = true
+            .onAppear {
+                // Give the sheet's presentation one runloop turn to settle,
+                // then focus — decoupled from network latency in loadMyFoods.
+                Task { @MainActor in searchFocused = true }
             }
+            .task { await model.loadMyFoods() }
             .sheet(item: $picked) { result in
                 QuantityEntryView(result: result, containers: containers) { item in
                     onAdd(item)
@@ -71,12 +73,14 @@ struct FoodSearchSheet: View {
             .tint(Theme.CTP.mauve)
             .autocorrectionDisabled()
             .focused($searchFocused)
+            .accessibilityLabel("Search foods")
             if !model.query.isEmpty {
                 Button { model.query = "" } label: {
                     Image(systemName: "xmark.circle.fill")
                         .font(.system(size: 14))
                         .foregroundStyle(Theme.FG.tertiary)
                 }
+                .accessibilityLabel("Clear search")
                 .buttonStyle(.plain)
             }
         }
@@ -101,7 +105,9 @@ struct FoodSearchSheet: View {
             EmptyStateView(
                 icon: "exclamationmark.triangle",
                 title: "Couldn't search",
-                description: "Check your connection and try again."
+                description: "Check your connection and try again.",
+                action: { model.retry() },
+                actionLabel: "Retry"
             )
         case .loaded(let results):
             resultList(results)
