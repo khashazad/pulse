@@ -36,6 +36,8 @@ def _isolate_env(monkeypatch):
         "PUBLIC_BASE_URL",
         "MCP_ALLOW_UNAUTH",
         "MCP_SERVICE_TOKEN",
+        "MCP_JWT_SIGNING_KEY",
+        "MCP_STORAGE_ENCRYPTION_KEY",
         "S3_ENDPOINT",
         "S3_BUCKET",
         "S3_ACCESS_KEY_ID",
@@ -344,3 +346,17 @@ def test_mcp_persistence_keys_accept_strong_values():
     )
     assert settings.mcp_jwt_signing_key == "j" * 40
     assert settings.mcp_storage_encryption_key == "e" * 40
+
+
+def test_mcp_persistence_keys_accept_exactly_min_length():
+    """Exactly 32-char values are the shortest accepted (boundary)."""
+    from pulse_server.config import Settings
+
+    settings = Settings(
+        _env_file=None,
+        mcp_jwt_signing_key="j" * 32,
+        mcp_storage_encryption_key="e" * 32,
+        **_BASE_KWARGS,
+    )
+    assert settings.mcp_jwt_signing_key == "j" * 32
+    assert settings.mcp_storage_encryption_key == "e" * 32
