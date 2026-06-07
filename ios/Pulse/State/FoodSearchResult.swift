@@ -15,6 +15,10 @@ struct FoodSearchResult: Identifiable, Equatable {
     let displayName: String
     let usdaFdcId: Int?
     let usdaDescription: String?
+    /// USDA dataset name ("Foundation", "SR Legacy", …); nil for non-USDA rows.
+    let usdaDataType: String?
+    /// Brand owner for Branded USDA foods; nil otherwise.
+    let usdaBrandOwner: String?
     let customFoodId: UUID?
     let nutrition: FoodNutrition
     let matchTerms: [String]
@@ -28,6 +32,8 @@ struct FoodSearchResult: Identifiable, Equatable {
         self.displayName = food.name
         self.usdaFdcId = nil
         self.usdaDescription = nil
+        self.usdaDataType = nil
+        self.usdaBrandOwner = nil
         self.customFoodId = food.id
         self.nutrition = FoodNutrition(basis: food.basis, servingSize: food.servingSize,
                                        servingSizeUnit: food.servingSizeUnit, caloriesPerBasis: food.calories,
@@ -48,6 +54,8 @@ struct FoodSearchResult: Identifiable, Equatable {
         self.displayName = entry.name
         self.usdaFdcId = fdc
         self.usdaDescription = entry.usdaDescription
+        self.usdaDataType = nil
+        self.usdaBrandOwner = nil
         self.customFoodId = nil
         self.nutrition = FoodNutrition(basis: basis, servingSize: entry.servingSize,
                                        servingSizeUnit: entry.servingSizeUnit, caloriesPerBasis: cal,
@@ -64,6 +72,8 @@ struct FoodSearchResult: Identifiable, Equatable {
         self.displayName = hit.description
         self.usdaFdcId = hit.fdcId
         self.usdaDescription = hit.description
+        self.usdaDataType = hit.dataType
+        self.usdaBrandOwner = hit.brandOwner
         self.customFoodId = nil
         self.nutrition = FoodNutrition(basis: .per100g, servingSize: hit.servingSize,
                                        servingSizeUnit: hit.servingSizeUnit, caloriesPerBasis: hit.calories,
@@ -74,6 +84,17 @@ struct FoodSearchResult: Identifiable, Equatable {
 
 /// Pure helpers to assemble and rank search results client-side.
 enum FoodSearchMerge {
+    /// Shared name ordering for search rows (locale-aware, case-insensitive).
+    /// Used by both query ranking and the browse list so the visible order
+    /// doesn't shuffle when the user starts typing.
+    /// Inputs:
+    ///   - a: the first result.
+    ///   - b: the second result.
+    /// Outputs: true when `a` orders before `b` by display name.
+    static func nameAscending(_ a: FoodSearchResult, _ b: FoodSearchResult) -> Bool {
+        a.displayName.localizedCaseInsensitiveCompare(b.displayName) == .orderedAscending
+    }
+
     /// Builds the "my foods" set: every custom food, plus USDA-pointer memory
     /// rows. Memory rows that point at a custom food are dropped (the custom
     /// food already represents them).
@@ -105,7 +126,7 @@ enum FoodSearchMerge {
             let ap = a.matchTerms.contains { $0.hasPrefix(q) }
             let bp = b.matchTerms.contains { $0.hasPrefix(q) }
             if ap != bp { return ap }
-            return a.displayName.lowercased() < b.displayName.lowercased()
+            return nameAscending(a, b)
         }
 
         let myFdcIds = Set(myFoods.compactMap { $0.usdaFdcId })

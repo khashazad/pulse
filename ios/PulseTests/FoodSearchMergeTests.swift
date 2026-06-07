@@ -21,7 +21,7 @@ final class FoodSearchMergeTests: XCTestCase {
     }
     private func usda(_ fdc: Int, _ desc: String) -> USDAFoodResult {
         USDAFoodResult(fdcId: fdc, description: desc, calories: 165, proteinG: 31, carbsG: 0, fatG: 3.6,
-                       servingSize: nil, servingSizeUnit: nil)
+                       servingSize: nil, servingSizeUnit: nil, dataType: nil, brandOwner: nil)
     }
 
     func test_myFoods_dropsCustomPointerMemory() {

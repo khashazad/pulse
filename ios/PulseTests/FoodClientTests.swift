@@ -25,7 +25,7 @@ final class FoodClientTests: XCTestCase {
             return (HTTPURLResponse(url: req.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, json)
         }
         let results = try await client.searchUSDA(query: "chicken breast", limit: 5)
-        XCTAssertEqual(results.count, 2)
+        XCTAssertEqual(results.count, 3)
         XCTAssertEqual(captured?.url?.path, "/usda/search")
         let q = captured?.url?.query ?? ""
         XCTAssertTrue(q.contains("q=chicken%20breast") || q.contains("q=chicken+breast"), "got \(q)")

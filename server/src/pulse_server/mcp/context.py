@@ -43,16 +43,21 @@ class ToolContext:
 
 
 def basis_for(food: dict[str, Any]) -> str:
-    """Infer the macro basis label for a USDA search row.
+    """Return the macro basis label for a USDA search row.
+
+    FDC ``foodNutrients`` are normalized per 100 g for every data type
+    (Branded label data included) — ``serving_size`` is descriptive metadata,
+    not the quote basis. Always ``per_100g`` so callers scale correctly; the
+    old serving-size inference mislabeled per-100g macros as per-serving and
+    diverged from the iOS client's (correct) per-100g assumption.
 
     **Inputs:**
     - food (dict[str, Any]): Normalized USDA food row.
 
     **Outputs:**
-    - str: ``"per_serving"`` when the row carries a ``serving_size``,
-      otherwise ``"per_100g"``.
+    - str: ``"per_100g"`` for every USDA row.
     """
-    return "per_serving" if food.get("serving_size") else "per_100g"
+    return "per_100g"
 
 
 def parse_consumed_at(value: str | None, tz: ZoneInfo) -> DateTimeValue | None:

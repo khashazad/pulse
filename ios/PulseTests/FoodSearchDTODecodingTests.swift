@@ -12,10 +12,15 @@ final class FoodSearchDTODecodingTests: XCTestCase {
 
     func test_decodeUSDASearch() throws {
         let resp = try JSONDecoder.pulseDefault().decode(USDASearchResponse.self, from: fixture("usda_search"))
-        XCTAssertEqual(resp.results.count, 2)
+        XCTAssertEqual(resp.results.count, 3)
         XCTAssertEqual(resp.results[0].fdcId, 171077)
         XCTAssertEqual(resp.results[0].proteinG, 22.5)
+        XCTAssertEqual(resp.results[0].dataType, "Foundation")
+        XCTAssertNil(resp.results[0].brandOwner)
         XCTAssertNil(resp.results[1].servingSize)
+        XCTAssertNil(resp.results[1].dataType)
+        XCTAssertEqual(resp.results[2].dataType, "Branded")
+        XCTAssertEqual(resp.results[2].brandOwner, "Tyson Foods Inc.")
     }
 
     func test_decodeCustomFoods() throws {

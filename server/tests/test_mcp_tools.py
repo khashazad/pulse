@@ -73,3 +73,17 @@ async def test_workflow_instructions_mention_aliases() -> None:
 
     assert "add_meal_alias" in WORKFLOW_INSTRUCTIONS
     assert "add_food_alias" in WORKFLOW_INSTRUCTIONS
+
+
+def test_basis_for_is_always_per_100g() -> None:
+    """FDC nutrients are per-100g for every data type; serving_size is metadata.
+
+    **Inputs:** none (constructs rows inline).
+
+    **Outputs:** none (asserts the basis label).
+    """
+    from pulse_server.mcp.context import basis_for
+
+    assert basis_for({"serving_size": 112.0}) == "per_100g"
+    assert basis_for({"serving_size": None}) == "per_100g"
+    assert basis_for({}) == "per_100g"

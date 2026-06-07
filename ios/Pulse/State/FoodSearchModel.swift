@@ -1,8 +1,12 @@
 // Pulse/State/FoodSearchModel.swift
 /// Observable search model for the Prep food picker. Loads and caches the
-/// user's custom foods + food memory once, then on each (debounced) query runs
-/// a live USDA search and merges it with the locally-filtered my-foods set via
-/// `FoodSearchMerge`. USDA failures degrade gracefully: my-foods still show.
+/// user's custom foods + food memory once (concurrent callers coalesce onto
+/// the in-flight load; later calls reuse the cache), then on each (debounced)
+/// query runs a live USDA search and merges it with the locally-filtered
+/// my-foods set via `FoodSearchMerge`. USDA failures degrade gracefully:
+/// my-foods still show. When the query is empty the model shows the full
+/// my-foods set sorted alphabetically (browse mode); a failed my-foods load
+/// in browse mode surfaces as `.failed` so the sheet can offer Retry.
 import Foundation
 import Observation
 
@@ -12,7 +16,10 @@ import Observation
 @MainActor
 @Observable
 final class FoodSearchModel {
-    /// Current results for the active query (idle until the user types).
+    /// Current results: alphabetically-sorted my-foods when the query is blank
+    /// (browse mode), filtered+merged results when the user is typing, `.failed`
+    /// when the my-foods load failed in browse mode, or `.idle` before
+    /// `loadMyFoods()` has been called.
     private(set) var state: LoadState<[FoodSearchResult]> = .idle
     /// True when the last USDA call failed; the sheet shows a non-fatal note.
     private(set) var usdaUnavailable = false
@@ -21,10 +28,25 @@ final class FoodSearchModel {
         didSet { scheduleSearch() }
     }
 
+    /// True when the active query is blank (whitespace-only included) — the
+    /// sheet is browsing my-foods rather than searching. Single source of
+    /// truth for browse-vs-search decisions in both the model and the view.
+    var isBrowsing: Bool {
+        query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
     private var myFoods: [FoodSearchResult] = []
-    /// Whether `loadMyFoods()` has run (success or failure) at least once, so a
-    /// search never merges against an un-loaded my-foods set.
+    /// Whether `loadMyFoods()` has completed (success or failure) at least
+    /// once, so a search never merges against an un-loaded my-foods set.
     private var didLoadMyFoods = false
+    /// Error from the last completed my-foods load (nil after a success).
+    /// Gates the cached-load short-circuit in `loadMyFoods()` so `retry()`
+    /// re-fetches, and lets a blank query resurface `.failed` instead of an
+    /// empty browse list when the load never succeeded.
+    private var lastLoadError: PulseError?
+    /// In-flight my-foods load; concurrent callers await it instead of firing
+    /// duplicate network requests.
+    private var loadTask: Task<Void, Never>?
     private weak var auth: AuthSession?
     private var searchTask: Task<Void, Never>?
     private let debounce: Duration
@@ -39,20 +61,75 @@ final class FoodSearchModel {
     }
 
     /// Loads and caches the user's custom foods + food memory, building the
-    /// my-foods set. Call once when the sheet appears. USDA is not touched here.
+    /// my-foods set. Concurrent calls coalesce onto one in-flight load, and a
+    /// previously successful load is reused across sheet presentations
+    /// (`retry()` re-fetches after a failure). In browse mode the state
+    /// transitions to `.loaded` with the alphabetical my-foods, or `.failed`
+    /// when the load failed, so the sheet never strands on a spinner.
     func loadMyFoods() async {
-        guard let client = auth?.makeClient() else { return }
-        defer { didLoadMyFoods = true }
+        if didLoadMyFoods && lastLoadError == nil {
+            // Cached: re-surface the browse list on sheet re-presentation.
+            if isBrowsing { state = .loaded(Self.alphabetical(myFoods)) }
+            return
+        }
+        if loadTask == nil {
+            // Weak capture: a load scheduled but not yet started must not pin
+            // the model alive after its owner releases it (zombie work would
+            // otherwise fire network requests after teardown).
+            loadTask = Task { [weak self] in await self?.performMyFoodsLoad() }
+        }
+        await loadTask?.value
+        loadTask = nil
+    }
+
+    /// Performs the actual my-foods fetch and the resulting state transition.
+    private func performMyFoodsLoad() async {
+        guard let client = auth?.makeClient() else {
+            // No client (signed out mid-session): surface the failure instead
+            // of leaving the sheet on an endless `.idle` spinner.
+            didLoadMyFoods = true
+            lastLoadError = .notSignedIn
+            if isBrowsing { state = .failed(.notSignedIn) }
+            return
+        }
         async let custom = client.listCustomFoods()
         async let memory = client.listFoodMemory()
+        var loadError: PulseError?
         do {
             let (c, m) = try await (custom, memory)
             myFoods = FoodSearchMerge.myFoods(customFoods: c, memory: m)
         } catch let error as PulseError {
             if error == .unauthorized { auth?.handleUnauthorized() }
             myFoods = []
+            loadError = error
         } catch {
             myFoods = []
+            loadError = .network(URLError(.unknown))
+        }
+        didLoadMyFoods = true
+        lastLoadError = loadError
+        // Browse mode: open onto the user's foods, or surface the load failure
+        // (with Retry) instead of a misleading "No foods yet" empty state.
+        // `isBrowsing` is re-read here so a query typed mid-load is respected.
+        if isBrowsing {
+            if let loadError {
+                state = .failed(loadError)
+            } else {
+                state = .loaded(Self.alphabetical(myFoods))
+            }
+        }
+    }
+
+    /// Recovers from a failed state: re-fetches my-foods immediately (no
+    /// debounce — this is a deliberate tap, not a keystroke) and, when a
+    /// query is active, re-runs the search against the fresh set.
+    func retry() {
+        searchTask?.cancel()
+        searchTask = Task { [weak self] in
+            guard let self else { return }
+            await self.loadMyFoods()
+            if Task.isCancelled { return }
+            if !self.isBrowsing { await self.runSearch(self.query) }
         }
     }
 
@@ -68,16 +145,22 @@ final class FoodSearchModel {
         }
     }
 
-    /// Runs one search: blank query clears results; otherwise live USDA search
-    /// merged with filtered my-foods. USDA failure sets `usdaUnavailable` but
-    /// still renders my-foods.
+    /// Runs one search: blank query returns to the alphabetical my-foods browse
+    /// list; otherwise runs a live USDA search merged with filtered my-foods.
+    /// USDA failure sets `usdaUnavailable` but still renders my-foods.
     /// Inputs:
     ///   - text: the query to search for.
     private func runSearch(_ text: String) async {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             usdaUnavailable = false
-            state = .idle
+            // Resurface a failed my-foods load (with Retry) rather than a
+            // misleading "No foods yet" empty browse list.
+            if let error = lastLoadError {
+                state = .failed(error)
+            } else {
+                state = .loaded(Self.alphabetical(myFoods))
+            }
             return
         }
         // Ensure my-foods are loaded before merging, so an early keystroke
@@ -99,5 +182,15 @@ final class FoodSearchModel {
         }
         if Task.isCancelled { return }
         state = .loaded(FoodSearchMerge.results(query: trimmed, myFoods: myFoods, usda: usda))
+    }
+
+    /// Alphabetical ordering for the browse (empty-query) list — shares
+    /// `FoodSearchMerge.nameAscending` with query ranking so the list doesn't
+    /// reorder when the user starts typing.
+    /// Inputs:
+    ///   - foods: the unranked my-foods set.
+    /// Outputs: foods sorted case-insensitively by display name.
+    private static func alphabetical(_ foods: [FoodSearchResult]) -> [FoodSearchResult] {
+        foods.sorted(by: FoodSearchMerge.nameAscending)
     }
 }
