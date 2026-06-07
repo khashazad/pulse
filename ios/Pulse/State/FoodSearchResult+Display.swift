@@ -10,7 +10,9 @@ extension FoodNutrition {
     ///   - value: the numeric serving size.
     /// Outputs: a compact decimal string.
     static func compactNumber(_ value: Double) -> String {
-        value == value.rounded() ? String(Int(value)) : String(format: "%.1f", value)
+        value.truncatingRemainder(dividingBy: 1) == 0
+            ? String(Int(value))
+            : String(format: "%.1f", locale: Locale(identifier: "en_US_POSIX"), value)
     }
 
     /// One-line human description of this food's basis for the quantity sheet,

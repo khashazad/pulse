@@ -54,6 +54,15 @@ final class FoodSearchDisplayTests: XCTestCase {
         XCTAssertNil(usdaResult(dataType: nil, brandOwner: nil).badge)
     }
 
+    func test_customCaption_fractionalServingSize() {
+        XCTAssertEqual(customResult(servingSize: 0.5, unit: "scoop").caption,
+                       "130 kcal · P 25 · C 3 · F 2 / serving (0.5 scoop)")
+    }
+
+    func test_badge_emptyBrandOwnerFallsBackToDataType() {
+        XCTAssertEqual(usdaResult(dataType: "Branded", brandOwner: "").badge, "Branded")
+    }
+
     func test_basisContextLine() {
         XCTAssertEqual(customResult(servingSize: 250, unit: "g").nutrition.basisContextLine,
                        "1 serving = 250 g")
