@@ -22,14 +22,16 @@ def normalize_food_nutrients(raw: dict[str, Any]) -> dict[str, Any]:
 
     Matches nutrients by FDC id first (1008/1003/1005/1004) and falls back to
     name heuristics. Calories are rounded to int; macros are kept as float
-    grams.
+    grams. Passes through USDA disambiguation context fields (data type and
+    brand owner for Branded foods).
 
     **Inputs:**
     - raw (dict[str, Any]): Raw USDA food item payload from search or detail
       endpoints.
 
     **Outputs:**
-    - dict[str, Any]: Normalized nutrient record with macros and serving fields.
+    - dict[str, Any]: Normalized nutrient record with macros, serving fields,
+      and optional USDA context (data_type, brand_owner).
 
     **Exceptions:**
     - ValueError: Raised when nutrient numeric values cannot be coerced to floats.
@@ -44,6 +46,8 @@ def normalize_food_nutrients(raw: dict[str, Any]) -> dict[str, Any]:
         "fat_g": 0.0,
         "serving_size": raw.get("servingSize"),
         "serving_size_unit": raw.get("servingSizeUnit") or raw.get("householdServingFullText"),
+        "data_type": raw.get("dataType"),
+        "brand_owner": raw.get("brandOwner"),
     }
 
     for nutrient in nutrients:

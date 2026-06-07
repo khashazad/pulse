@@ -169,3 +169,25 @@ async def test_client_search_raises_on_http_error() -> None:
             await client.search("egg")
     finally:
         await client.close()
+
+
+def test_normalize_passes_through_data_type_and_brand_owner() -> None:
+    """`normalize_food_nutrients` surfaces USDA's dataType/brandOwner fields."""
+    raw = {
+        "fdcId": 2646170,
+        "description": "CHICKEN BREAST",
+        "dataType": "Branded",
+        "brandOwner": "Tyson Foods Inc.",
+        "foodNutrients": [],
+    }
+    result = normalize_food_nutrients(raw)
+    assert result["data_type"] == "Branded"
+    assert result["brand_owner"] == "Tyson Foods Inc."
+
+
+def test_normalize_defaults_data_type_and_brand_owner_to_none() -> None:
+    """Foods without dataType/brandOwner normalize to explicit None fields."""
+    raw = {"fdcId": 171077, "description": "Chicken breast, raw", "foodNutrients": []}
+    result = normalize_food_nutrients(raw)
+    assert result["data_type"] is None
+    assert result["brand_owner"] is None
