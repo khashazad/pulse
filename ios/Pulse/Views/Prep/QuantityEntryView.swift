@@ -92,6 +92,7 @@ struct QuantityEntryView: View {
                                 .foregroundStyle(Theme.FG.tertiary)
                         }
                         .listRowBackground(Theme.BG.tertiary)
+                        .listSectionSeparatorTint(Theme.separator)
                     } else {
                         Section {
                             TextField(typeUnitLabel, text: $typedText)
@@ -105,6 +106,7 @@ struct QuantityEntryView: View {
                                 .foregroundStyle(Theme.FG.tertiary)
                         }
                         .listRowBackground(Theme.BG.tertiary)
+                        .listSectionSeparatorTint(Theme.separator)
                     }
 
                     Section("Preview") {
@@ -118,7 +120,9 @@ struct QuantityEntryView: View {
                         }
                     }
                     .listRowBackground(Theme.BG.tertiary)
+                    .listSectionSeparatorTint(Theme.separator)
                 }
+                .listStyle(.insetGrouped)
                 .scrollContentBackground(.hidden)
                 .tint(Theme.CTP.mauve)
             }
