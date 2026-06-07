@@ -1,6 +1,6 @@
 {
   "results": [
-    { "fdc_id": 171077, "description": "Chicken breast, raw", "calories": 120, "protein_g": 22.5, "carbs_g": 0.0, "fat_g": 2.6, "serving_size": 100.0, "serving_size_unit": "g" },
+    { "fdc_id": 171077, "description": "Chicken breast, raw", "calories": 120, "protein_g": 22.5, "carbs_g": 0.0, "fat_g": 2.6, "serving_size": 100.0, "serving_size_unit": "g", "data_type": "Foundation", "brand_owner": null },
     { "fdc_id": 173686, "description": "Chicken breast, cooked", "calories": 165, "protein_g": 31.0, "carbs_g": 0.0, "fat_g": 3.6, "serving_size": null, "serving_size_unit": null }
   ]
 }

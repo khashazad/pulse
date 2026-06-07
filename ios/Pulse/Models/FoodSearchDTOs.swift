@@ -14,6 +14,11 @@ struct USDAFoodResult: Codable, Equatable {
     let fatG: Double
     let servingSize: Double?
     let servingSizeUnit: String?
+    /// USDA dataset ("Foundation", "SR Legacy", "Branded", "Survey (FNDDS)");
+    /// nil from older servers that don't send it.
+    let dataType: String?
+    /// Brand owner for Branded foods; nil otherwise / from older servers.
+    let brandOwner: String?
 
     enum CodingKeys: String, CodingKey {
         case fdcId = "fdc_id"
@@ -24,6 +29,8 @@ struct USDAFoodResult: Codable, Equatable {
         case fatG = "fat_g"
         case servingSize = "serving_size"
         case servingSizeUnit = "serving_size_unit"
+        case dataType = "data_type"
+        case brandOwner = "brand_owner"
     }
 }
 

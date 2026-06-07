@@ -15,7 +15,10 @@ final class FoodSearchDTODecodingTests: XCTestCase {
         XCTAssertEqual(resp.results.count, 2)
         XCTAssertEqual(resp.results[0].fdcId, 171077)
         XCTAssertEqual(resp.results[0].proteinG, 22.5)
+        XCTAssertEqual(resp.results[0].dataType, "Foundation")
+        XCTAssertNil(resp.results[0].brandOwner)
         XCTAssertNil(resp.results[1].servingSize)
+        XCTAssertNil(resp.results[1].dataType)
     }
 
     func test_decodeCustomFoods() throws {
