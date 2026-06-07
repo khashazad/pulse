@@ -94,6 +94,7 @@ async def test_create_pool_pins_ipv4_and_disables_statement_cache(monkeypatch):
         "dsn": "postgresql://u:p@db.example.com:6543/postgres",
         "statement_cache_size": 0,
         "host": "1.2.3.4",
+        "port": 6543,
     }
 
 

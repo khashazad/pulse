@@ -123,10 +123,12 @@ class PinnedPostgreSQLStore(PostgreSQLStore):
         # async method runs on the event loop (a slow resolver would stall it).
         ipv4 = await asyncio.to_thread(resolve_ipv4, self._url)
         if ipv4 is not None:
-            # Explicit kwargs override the DSN host; auth/db/port still come
-            # from the DSN. TLS stays usable because asyncpg's default
-            # ssl='prefer' does not verify hostnames.
+            # An explicit host kwarg makes asyncpg skip DSN hostspec parsing
+            # entirely — which also drops the DSN's port — so pin both. Auth
+            # and database still come from the DSN. TLS stays usable because
+            # asyncpg's default ssl='prefer' does not verify hostnames.
             kwargs["host"] = ipv4
+            kwargs["port"] = urlparse(self._url).port or 5432
         pool = await asyncpg.create_pool(**kwargs)
         if pool is None:  # pragma: no cover - asyncpg returns a pool or raises
             raise RuntimeError("asyncpg.create_pool returned None")
