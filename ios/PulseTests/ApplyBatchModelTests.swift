@@ -172,4 +172,48 @@ final class ApplyBatchModelTests: XCTestCase {
         XCTAssertEqual(m.dayTotal(for: m.selections[0]),
                        MacroTotals(calories: 100, proteinG: 10, carbsG: 8, fatG: 2))
     }
+
+    /// The Prep per-portion preview (BatchCompositionModel.perPortionTotal) and
+    /// the Apply sheet's single-portion dayTotal must agree by construction: both
+    /// scale each item individually then sum. Uses three 100-kcal items over 3
+    /// portions, where aggregate-then-scale WOULD diverge (99 per-item vs 100
+    /// aggregate) — proving the two surfaces show the same number.
+    func test_previewMatchesDayTotalForOnePortion() {
+        let items = [item(fdc: 1, cal: 100, p: 0, c: 0, f: 0),
+                     item(fdc: 2, cal: 100, p: 0, c: 0, f: 0),
+                     item(fdc: 3, cal: 100, p: 0, c: 0, f: 0)]
+        let batch = BatchCompositionModel(items: items)
+        let m = ApplyBatchModel(items: items, portions: 3, appliedDayKeys: [], auth: nil)
+        m.toggle(day(1)) // count defaults to 1
+
+        let preview = batch.perPortionTotal(portions: 3)
+        let dayTotal = m.dayTotal(for: m.selections[0])
+        XCTAssertEqual(preview, dayTotal)
+        XCTAssertEqual(preview.calories, 99) // per-item, not the 100 aggregate-scale gives
+    }
+
+    /// submit() builds its payload from contributions() — the same builder these
+    /// tests exercise — so contributions() flattened equals buildEntries(),
+    /// proving the tested path is the production path.
+    func test_contributionsAreTheSubmitPayload() {
+        let m = ApplyBatchModel(
+            items: [item(fdc: 11, cal: 1000, p: 100, c: 50, f: 20),
+                    item(fdc: 12, cal: 500, p: 10, c: 80, f: 5)],
+            portions: 5, appliedDayKeys: [], auth: nil)
+        m.toggle(day(1)); m.toggle(day(2))
+        m.setCount(2, forDay: m.selections[1].dayKey)
+
+        let contributions = m.contributions()
+        // Day keys are the selections, in order.
+        XCTAssertEqual(contributions.map(\.dayKey), m.selections.map(\.dayKey))
+        // Flattening contributions reproduces buildEntries exactly (same path).
+        let flat = contributions.flatMap(\.entries)
+        let built = m.buildEntries()
+        XCTAssertEqual(flat.count, built.count)
+        XCTAssertEqual(flat.map(\.calories), built.map(\.calories))
+        // The applied-day-keys submit returns are exactly the non-empty
+        // contributions' keys.
+        let appliedKeys = Set(contributions.filter { !$0.entries.isEmpty }.map(\.dayKey))
+        XCTAssertEqual(appliedKeys, Set(m.selections.map(\.dayKey)))
+    }
 }

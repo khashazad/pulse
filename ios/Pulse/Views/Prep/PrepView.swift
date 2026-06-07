@@ -273,7 +273,7 @@ struct PrepView: View {
             if !batchModel.items.isEmpty {
                 HStack {
                     Spacer()
-                    Text(batchModel.total.scaled(count: 1, portions: model.portions).compactLine)
+                    Text(batchModel.perPortionTotal(portions: model.portions).compactLine)
                         .font(.system(size: 12, design: .monospaced))
                         .foregroundStyle(Theme.FG.secondary)
                 }
@@ -298,6 +298,19 @@ struct PrepView: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
+            // States the cause when Apply is disabled solely because weigh-ins
+            // are missing — the batch already has a loggable item, so the only
+            // blocker is unfinished weigh-ins. Mirrors the warning row styling.
+            if applyBlockedByWeighIns {
+                HStack {
+                    Spacer()
+                    Text("Enter all weigh-ins to apply")
+                        .font(.caption)
+                        .foregroundStyle(Theme.FG.secondary)
+                }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 10)
+            }
         }
     }
 
@@ -383,6 +396,14 @@ struct PrepView: View {
     /// the review).
     private var canApply: Bool {
         batchModel.items.contains(where: \.hasSource) && !model.hasUnenteredWeighIns
+    }
+
+    /// True when Apply is disabled for the single reason that weigh-ins are
+    /// incomplete: the batch already carries a source-bearing item, so the only
+    /// remaining blocker is unentered weigh-ins. Drives the explanatory caption
+    /// under the Apply button.
+    private var applyBlockedByWeighIns: Bool {
+        batchModel.items.contains(where: \.hasSource) && model.hasUnenteredWeighIns
     }
 
     // MARK: - Actions

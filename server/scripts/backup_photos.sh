@@ -87,10 +87,21 @@ rclone copy "PULSE:$S3_BUCKET" "$DEST" --transfers 8 --stats-one-line --stats 15
 
 echo
 echo "Verifying (every bucket object must exist locally with a matching hash)"
+# Hash verification relies on the bucket objects having plain-MD5 ETags, which
+# is what single-shot (non-multipart) PUTs produce — and what obstore uses for
+# these progress photos (each ≤ ~1.5 MB, well under any multipart threshold).
+# If uploads ever switch to multipart, those objects' ETags become composite
+# (md5-of-part-md5s), no longer comparable to a local file's MD5, and `rclone
+# check` silently degrades to a size-only comparison for them.
 rclone check "PULSE:$S3_BUCKET" "$DEST" --one-way \
   || die "verification failed: bucket objects are missing from or differ in $DEST"
 
 echo
-echo "Bucket:  $(rclone size "PULSE:$S3_BUCKET")"
-echo "Mirror:  $(rclone size "$DEST")"
+# Capture sizes into variables first: a failed rclone inside $(...) does NOT
+# trip `set -e`, but a plain assignment does — so a size lookup that fails now
+# aborts the run instead of printing an empty "Bucket:" line as if all was well.
+bucket_size=$(rclone size "PULSE:$S3_BUCKET")
+mirror_size=$(rclone size "$DEST")
+echo "Bucket:  $bucket_size"
+echo "Mirror:  $mirror_size"
 echo "Backup complete: $DEST"
