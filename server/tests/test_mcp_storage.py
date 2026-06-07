@@ -53,10 +53,20 @@ def test_normalize_asyncpg_url_strips_sqlalchemy_driver():
     assert normalize_asyncpg_url("postgres://u:p@h/db") == "postgres://u:p@h/db"
 
 
-def test_resolve_ipv4_handles_unresolvable_host():
-    """DNS failures return None instead of raising."""
+def test_resolve_ipv4_handles_unresolvable_host(monkeypatch):
+    """DNS failures return None instead of raising.
+
+    getaddrinfo is mocked so the test doesn't pay a real ~1s OS-resolver
+    timeout for the reserved `.invalid` TLD on every run.
+    """
+    import socket
+
     from pulse_server.mcp.storage import resolve_ipv4
 
+    def _raise_gaierror(*args, **kwargs):
+        raise socket.gaierror("mocked NXDOMAIN")
+
+    monkeypatch.setattr(socket, "getaddrinfo", _raise_gaierror)
     assert resolve_ipv4("postgresql://u:p@nonexistent.invalid:5432/db") is None
 
 
@@ -67,12 +77,16 @@ def test_resolve_ipv4_resolves_localhost():
     assert resolve_ipv4("postgresql://u:p@localhost:5432/db") == "127.0.0.1"
 
 
-@pytest.mark.asyncio
-async def test_create_pool_pins_ipv4_and_disables_statement_cache(monkeypatch):
-    """The pool connects via resolved IPv4 with asyncpg's statement cache off.
+async def _run_create_pool(monkeypatch, ipv4_value: str | None) -> dict:
+    """Drive `PinnedPostgreSQLStore._create_pool` with mocked DNS + asyncpg.
 
-    statement_cache_size=0 is required for Supabase's transaction-mode pooler;
-    the IPv4 pin mirrors db.py's psycopg fix for Railway's lack of IPv6.
+    **Inputs:**
+    - monkeypatch (pytest.MonkeyPatch): Used to stub `asyncpg.create_pool` and
+      `resolve_ipv4`.
+    - ipv4_value (str | None): What the stubbed `resolve_ipv4` returns.
+
+    **Outputs:**
+    - dict: The kwargs the store passed to `asyncpg.create_pool`.
     """
     import asyncpg
 
@@ -85,10 +99,23 @@ async def test_create_pool_pins_ipv4_and_disables_statement_cache(monkeypatch):
         return object()
 
     monkeypatch.setattr(asyncpg, "create_pool", fake_create_pool)
-    monkeypatch.setattr(storage_mod, "resolve_ipv4", lambda url: "1.2.3.4")
+    monkeypatch.setattr(storage_mod, "resolve_ipv4", lambda url: ipv4_value)
 
     store = storage_mod.PinnedPostgreSQLStore(url="postgresql://u:p@db.example.com:6543/postgres")
     await store._create_pool()
+    return captured
+
+
+@pytest.mark.asyncio
+async def test_create_pool_pins_ipv4_and_disables_statement_cache(monkeypatch):
+    """The pool connects via resolved IPv4 with asyncpg's statement cache off.
+
+    statement_cache_size=0 is required for Supabase's transaction-mode pooler;
+    the IPv4 pin mirrors db.py's psycopg fix for Railway's lack of IPv6. The
+    port must be pinned alongside the host (asyncpg drops the DSN port when an
+    explicit host kwarg is given) — the fixture URL's non-default 6543 proves it.
+    """
+    captured = await _run_create_pool(monkeypatch, "1.2.3.4")
 
     assert captured == {
         "dsn": "postgresql://u:p@db.example.com:6543/postgres",
@@ -101,21 +128,7 @@ async def test_create_pool_pins_ipv4_and_disables_statement_cache(monkeypatch):
 @pytest.mark.asyncio
 async def test_create_pool_omits_host_when_ipv4_unresolvable(monkeypatch):
     """When IPv4 resolution fails, the DSN host is used as-is (no host kwarg)."""
-    import asyncpg
-
-    from pulse_server.mcp import storage as storage_mod
-
-    captured: dict = {}
-
-    async def fake_create_pool(**kwargs):
-        captured.update(kwargs)
-        return object()
-
-    monkeypatch.setattr(asyncpg, "create_pool", fake_create_pool)
-    monkeypatch.setattr(storage_mod, "resolve_ipv4", lambda url: None)
-
-    store = storage_mod.PinnedPostgreSQLStore(url="postgresql://u:p@db.example.com:6543/postgres")
-    await store._create_pool()
+    captured = await _run_create_pool(monkeypatch, None)
 
     assert captured == {
         "dsn": "postgresql://u:p@db.example.com:6543/postgres",

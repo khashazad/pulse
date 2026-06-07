@@ -88,8 +88,8 @@ def resolve_ipv4(database_url: str) -> str | None:
         info = socket.getaddrinfo(host, parsed.port or 5432, socket.AF_INET, socket.SOCK_STREAM)
     except socket.gaierror:
         return None
-    if not info:
-        return None
+    # getaddrinfo raises gaierror rather than returning an empty list, so the
+    # first result always exists here.
     return info[0][4][0]
 
 
