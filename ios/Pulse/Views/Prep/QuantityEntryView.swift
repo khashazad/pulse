@@ -2,6 +2,8 @@
 /// Quantity step of the Prep food picker. Lets the user weigh (pick container →
 /// gross reading → net grams) or type a quantity (unit keyed to the food's
 /// basis), shows a live macro preview, and returns a built `BatchFoodItem`.
+/// A basis-context footer (e.g. "1 serving = 250 g") is shown beneath the
+/// quantity section so the field label is always interpretable.
 import SwiftUI
 
 /// Sheet for choosing a quantity for one searched food.
@@ -58,44 +60,81 @@ struct QuantityEntryView: View {
 
     var body: some View {
         NavigationStack {
-            Form {
-                if canWeigh {
-                    Picker("Mode", selection: $mode) {
-                        Text("Weigh").tag(Mode.weigh)
-                        Text("Type").tag(Mode.type)
+            ZStack {
+                Theme.BG.secondary.ignoresSafeArea()
+                Form {
+                    if canWeigh {
+                        Section {
+                            Picker("Mode", selection: $mode) {
+                                Text("Weigh").tag(Mode.weigh)
+                                Text("Type").tag(Mode.type)
+                            }
+                            .pickerStyle(.segmented)
+                        }
+                        .listRowBackground(Color.clear)
+                        .listRowInsets(EdgeInsets())
                     }
-                    .pickerStyle(.segmented)
-                }
 
-                if mode == .weigh && canWeigh {
-                    Section("Weigh") {
-                        containerMenu(required: true)
-                        TextField("Gross reading (g)", text: $grossText).keyboardType(.decimalPad)
-                        if let net = netGrams { Text("Net: \(Int(net)) g").foregroundStyle(.secondary) }
-                    }
-                } else {
-                    Section("Quantity") {
-                        TextField(typeUnitLabel, text: $typedText).keyboardType(.decimalPad)
-                        containerMenu(required: false)
-                    }
-                }
-
-                Section("Preview") {
-                    if let m = previewMacros {
-                        Text(m.compactLine)
+                    if mode == .weigh && canWeigh {
+                        Section {
+                            containerMenu(required: true)
+                            TextField("Gross reading (g)", text: $grossText)
+                                .keyboardType(.decimalPad)
+                                .foregroundStyle(Theme.FG.primary)
+                            if let net = netGrams {
+                                Text("Net: \(Int(net)) g")
+                                    .foregroundStyle(Theme.FG.secondary)
+                            }
+                        } header: {
+                            Text("Weigh")
+                        } footer: {
+                            Text(result.nutrition.basisContextLine)
+                                .foregroundStyle(Theme.FG.tertiary)
+                        }
+                        .listRowBackground(Theme.BG.tertiary)
                     } else {
-                        Text("Enter a quantity").foregroundStyle(.secondary)
+                        Section {
+                            TextField(typeUnitLabel, text: $typedText)
+                                .keyboardType(.decimalPad)
+                                .foregroundStyle(Theme.FG.primary)
+                            containerMenu(required: false)
+                        } header: {
+                            Text("Quantity")
+                        } footer: {
+                            Text(result.nutrition.basisContextLine)
+                                .foregroundStyle(Theme.FG.tertiary)
+                        }
+                        .listRowBackground(Theme.BG.tertiary)
                     }
+
+                    Section("Preview") {
+                        if let m = previewMacros {
+                            Text(m.compactLine)
+                                .font(.system(size: 14, design: .monospaced))
+                                .foregroundStyle(Theme.CTP.mauve)
+                        } else {
+                            Text("Enter a quantity")
+                                .foregroundStyle(Theme.FG.secondary)
+                        }
+                    }
+                    .listRowBackground(Theme.BG.tertiary)
                 }
+                .scrollContentBackground(.hidden)
+                .tint(Theme.CTP.mauve)
             }
             .navigationTitle(result.displayName)
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(Theme.BG.secondary, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Add") { addItem() }.disabled(previewMacros == nil)
+                    Button("Add") { addItem() }
+                        .foregroundStyle(Theme.CTP.mauve)
+                        .disabled(previewMacros == nil)
                 }
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
+                        .foregroundStyle(Theme.FG.secondary)
                 }
             }
             .onAppear { if canWeigh { mode = .weigh } }
@@ -119,8 +158,10 @@ struct QuantityEntryView: View {
         } label: {
             HStack {
                 Text(required ? "Container" : "Container (optional)")
+                    .foregroundStyle(Theme.FG.primary)
                 Spacer()
-                Text(container?.name ?? (required ? "Select" : "None")).foregroundStyle(.secondary)
+                Text(container?.name ?? (required ? "Select" : "None"))
+                    .foregroundStyle(Theme.FG.secondary)
             }
         }
     }
