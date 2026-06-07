@@ -15,6 +15,10 @@ struct FoodSearchResult: Identifiable, Equatable {
     let displayName: String
     let usdaFdcId: Int?
     let usdaDescription: String?
+    /// USDA dataset name ("Foundation", "SR Legacy", …); nil for non-USDA rows.
+    let usdaDataType: String?
+    /// Brand owner for Branded USDA foods; nil otherwise.
+    let usdaBrandOwner: String?
     let customFoodId: UUID?
     let nutrition: FoodNutrition
     let matchTerms: [String]
@@ -28,6 +32,8 @@ struct FoodSearchResult: Identifiable, Equatable {
         self.displayName = food.name
         self.usdaFdcId = nil
         self.usdaDescription = nil
+        self.usdaDataType = nil
+        self.usdaBrandOwner = nil
         self.customFoodId = food.id
         self.nutrition = FoodNutrition(basis: food.basis, servingSize: food.servingSize,
                                        servingSizeUnit: food.servingSizeUnit, caloriesPerBasis: food.calories,
@@ -48,6 +54,8 @@ struct FoodSearchResult: Identifiable, Equatable {
         self.displayName = entry.name
         self.usdaFdcId = fdc
         self.usdaDescription = entry.usdaDescription
+        self.usdaDataType = nil
+        self.usdaBrandOwner = nil
         self.customFoodId = nil
         self.nutrition = FoodNutrition(basis: basis, servingSize: entry.servingSize,
                                        servingSizeUnit: entry.servingSizeUnit, caloriesPerBasis: cal,
@@ -64,6 +72,8 @@ struct FoodSearchResult: Identifiable, Equatable {
         self.displayName = hit.description
         self.usdaFdcId = hit.fdcId
         self.usdaDescription = hit.description
+        self.usdaDataType = hit.dataType
+        self.usdaBrandOwner = hit.brandOwner
         self.customFoodId = nil
         self.nutrition = FoodNutrition(basis: .per100g, servingSize: hit.servingSize,
                                        servingSizeUnit: hit.servingSizeUnit, caloriesPerBasis: hit.calories,
