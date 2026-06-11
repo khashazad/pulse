@@ -42,6 +42,9 @@ struct AuthorizedAsyncImageRequestIdentity: Hashable {
 /// `content` receives the decoded `Image` on success; `placeholder` is shown otherwise.
 struct AuthorizedAsyncImage<Content: View, Placeholder: View>: View {
     let request: URLRequest
+    /// Session used to perform the request. Defaults to `.shared` so production
+    /// call sites are unchanged; tests inject a `StubURLProtocol`-backed session.
+    var urlSession: URLSession = .shared
     let content: (Image) -> Content
     let placeholder: () -> Placeholder
 
@@ -66,14 +69,14 @@ struct AuthorizedAsyncImage<Content: View, Placeholder: View>: View {
         }
     }
 
-    /// Performs the request via `URLSession.shared` and stores the decoded `UIImage`
+    /// Performs the request via `urlSession` and stores the decoded `UIImage`
     /// on success. Errors are swallowed so the view keeps showing the placeholder.
     /// Inputs: none.
     /// Outputs: Void; updates `loadedImage` when image decoding succeeds.
     /// Throws: none.
     private func load() async {
         do {
-            let (data, _) = try await URLSession.shared.data(for: request)
+            let (data, _) = try await urlSession.data(for: request)
             if let img = UIImage(data: data) {
                 self.loadedImage = img
             }

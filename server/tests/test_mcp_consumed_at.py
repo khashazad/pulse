@@ -1,4 +1,4 @@
-"""Tests for ``_parse_consumed_at`` in :mod:`mcp.server`.
+"""Tests for ``parse_consumed_at`` in :mod:`mcp.context`.
 
 Covers the single ``consumed_at`` argument shared by ``log_food`` and
 ``log_meal``: accepts both ``YYYY-MM-DD`` (expanded to noon in the server
@@ -14,7 +14,7 @@ from zoneinfo import ZoneInfo
 import pytest
 from fastmcp.exceptions import ToolError
 
-from pulse_server.mcp.server import _parse_consumed_at
+from pulse_server.mcp.context import parse_consumed_at as _parse_consumed_at
 
 TZ = ZoneInfo("America/Toronto")
 

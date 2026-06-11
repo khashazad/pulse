@@ -12,6 +12,7 @@ Sits at the edge of the request pipeline: every other router relies on
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import secrets
 from datetime import UTC, datetime, timedelta
@@ -33,11 +34,67 @@ from pulse_server.config import get_settings
 from pulse_server.db import get_session
 from pulse_server.repositories.auth_exchange_codes import AuthExchangeCodesRepository
 from pulse_server.repositories.sessions import SessionsRepository
+from pulse_server.services.rate_limit import SlidingWindowRateLimiter
 
 logger = logging.getLogger(__name__)
 
 
 router = APIRouter(prefix="/auth")
+
+# Per-client-IP throttle on the unauthenticated OAuth bootstrap routes. These
+# are the only endpoints reachable without a Bearer token, and each hit costs a
+# DB round-trip (/exchange consumes a code; /start mints state cookies), so an
+# unbounded caller can generate DB load at will. The window is deliberately
+# generous — a legitimate login uses one /start and one /exchange.
+AUTH_RATE_LIMIT_MAX_REQUESTS = 30
+AUTH_RATE_LIMIT_WINDOW_SECONDS = 60.0
+_auth_rate_limiter = SlidingWindowRateLimiter(
+    max_requests=AUTH_RATE_LIMIT_MAX_REQUESTS,
+    window_seconds=AUTH_RATE_LIMIT_WINDOW_SECONDS,
+)
+
+
+def _client_ip(request: Request) -> str:
+    """Resolve the caller's IP for rate-limit keying, honoring the proxy header.
+
+    Railway terminates TLS in front of uvicorn, so the peer address is the
+    edge proxy; the client is taken from ``X-Forwarded-For``. The RIGHTMOST
+    entry is used, never the leftmost: a client can prepend arbitrary values
+    to the header, but the last entry is appended by the trusted edge proxy
+    itself (one hop on this deployment) and cannot be spoofed — keying on the
+    leftmost value would let an attacker rotate fake IPs to mint a fresh
+    rate-limit bucket per request.
+
+    **Inputs:**
+    - request (Request): Incoming HTTP request.
+
+    **Outputs:**
+    - str: Best-effort client IP, or ``"unknown"`` when nothing is available.
+    """
+    forwarded = request.headers.get("x-forwarded-for", "")
+    if forwarded:
+        return forwarded.rsplit(",", 1)[-1].strip()
+    return request.client.host if request.client else "unknown"
+
+
+def _enforce_auth_rate_limit(request: Request) -> None:
+    """Reject the request with HTTP 429 when its client IP exceeds the auth throttle.
+
+    **Inputs:**
+    - request (Request): Incoming HTTP request whose client IP is the limit key.
+
+    **Outputs:**
+    - None: Returns nothing when the request is within the limit.
+
+    **Raises:**
+    - HTTPException(429): When the client IP has exhausted the window's budget.
+    """
+    if not _auth_rate_limiter.allow(_client_ip(request)):
+        raise HTTPException(
+            status_code=429,
+            detail="Too many authentication attempts; try again shortly.",
+            headers={"Retry-After": str(int(AUTH_RATE_LIMIT_WINDOW_SECONDS))},
+        )
 
 
 STATE_COOKIE_NAME = "oauth_state"
@@ -118,7 +175,11 @@ async def google_start(
     - RedirectResponse: 302 to Google with the state echoed in the query string,
       or a 302 back to the app's scheme with ``error=invalid_request`` when the
       PKCE challenge is absent or malformed.
+
+    **Raises:**
+    - HTTPException(429): When the client IP exceeds the auth rate limit.
     """
+    _enforce_auth_rate_limit(request)
     method = code_challenge_method or "S256"
     if not code_challenge or method != "S256":
         logger.info("google start rejected: missing/invalid PKCE challenge")
@@ -183,7 +244,10 @@ async def google_callback(
         logger.info("google denied auth: %s", error)
         return _app_redirect(error="access_denied")
 
-    if not state or not oauth_state or state != oauth_state:
+    # compare_digest for consistency with the PKCE verifier check — the state
+    # has 256 bits of entropy so a timing oracle is impractical, but there is
+    # no reason to leave one comparison in the auth path non-constant-time.
+    if not state or not oauth_state or not secrets.compare_digest(state, oauth_state):
         return _app_redirect(error="invalid_state")
 
     if not oauth_pkce:
@@ -196,7 +260,9 @@ async def google_callback(
 
     try:
         id_token_jwt = await exchange_code_for_id_token(code=code)
-        email, _sub = verify_id_token(id_token_jwt)
+        # verify_id_token uses google-auth's sync HTTP transport to fetch
+        # Google's signing certs — run it off the event loop.
+        email, _sub = await asyncio.to_thread(verify_id_token, id_token_jwt)
     except GoogleAuthError as exc:
         logger.warning("google oauth handshake failed: %s", exc)
         return _app_redirect(error="server_error")
@@ -247,7 +313,7 @@ class ExchangeResponse(BaseModel):
 
 
 @router.post("/google/exchange", response_model=ExchangeResponse)
-async def google_exchange(body: ExchangeRequest) -> ExchangeResponse:
+async def google_exchange(request: Request, body: ExchangeRequest) -> ExchangeResponse:
     """Redeem a one-time exchange code with its PKCE verifier for a session token.
 
     The code is consumed (deleted) on first lookup regardless of outcome, so it
@@ -256,6 +322,7 @@ async def google_exchange(body: ExchangeRequest) -> ExchangeResponse:
     token is never placed in a URL.
 
     **Inputs:**
+    - request (Request): Incoming HTTP request, used for rate-limit keying by client IP.
     - body (ExchangeRequest): The one-time ``code`` and the PKCE ``code_verifier``.
 
     **Outputs:**
@@ -264,7 +331,9 @@ async def google_exchange(body: ExchangeRequest) -> ExchangeResponse:
     **Raises:**
     - HTTPException(400): When the code is unknown/already used/expired, or the
       PKCE verifier does not match.
+    - HTTPException(429): When the client IP exceeds the auth rate limit.
     """
+    _enforce_auth_rate_limit(request)
     settings = get_settings()
     now = datetime.now(UTC)
 

@@ -95,11 +95,11 @@ def _validate_date(log_date: DateValue) -> None:
         )
 
 
-def _process_or_raise(raw: bytes) -> ProcessedProgressPhoto:
+def _process_or_raise(raw: bytes | bytearray) -> ProcessedProgressPhoto:
     """Run :func:`process_progress_photo`, mapping pipeline errors to HTTP responses.
 
     **Inputs:**
-    - raw (bytes): Raw upload bytes.
+    - raw (bytes | bytearray): Raw upload bytes.
 
     **Outputs:**
     - ProcessedProgressPhoto: The archive/display/thumb encodings plus MIME type.
@@ -129,7 +129,7 @@ async def insert_one(
     user_key: str,
     log_date: DateValue,
     tag_id: UUID,
-    raw: bytes,
+    raw: bytes | bytearray,
     idempotency_key: UUID | None = None,
 ) -> dict[str, Any]:
     """Validate, process, upload, and insert a single tagged progress photo.
@@ -176,7 +176,9 @@ async def insert_one(
     tag = await tag_repo.get_by_id(tag_id=tag_id, user_key=user_key)
     if tag is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="tag not found")
-    processed = _process_or_raise(raw)
+    # Pillow decode/resize/encode is CPU-bound; run it off the event loop so a
+    # large upload can't stall every concurrent request on the single worker.
+    processed = await asyncio.to_thread(_process_or_raise, raw)
     photo_id = uuid4()
     prefix = f"progress/{user_key}/{photo_id}"
     sha = hashlib.sha256(processed.display).hexdigest()

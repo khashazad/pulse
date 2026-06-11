@@ -39,6 +39,8 @@ from pulse_server.repositories.progress_photo import ProgressPhotoRepository
 from pulse_server.repositories.progress_photo_tag import (
     ProgressPhotoTagRepository,
 )
+from pulse_server.routers.uploads import read_capped
+from pulse_server.services.image_processing import PhotoTooLargeError
 from pulse_server.services.progress_photo_service import (
     MAX_UPLOAD_BYTES,
     VARIANT_OBJECTS,
@@ -49,35 +51,6 @@ from pulse_server.services.progress_photo_service import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/measures", dependencies=[Depends(require_session)])
-
-_UPLOAD_CHUNK_BYTES = 64 * 1024
-
-
-async def _read_capped(file: UploadFile, max_bytes: int) -> bytes:
-    """Stream an UploadFile in 64 KiB chunks, aborting once cumulative bytes exceed ``max_bytes``.
-
-    **Inputs:**
-    - file (UploadFile): Streaming multipart file handle.
-    - max_bytes (int): Inclusive cap on total payload size in bytes.
-
-    **Outputs:**
-    - bytes: The fully buffered payload, length ≤ ``max_bytes``.
-
-    **Exceptions:**
-    - HTTPException(413): Raised once the running total would exceed ``max_bytes``.
-    """
-    buffer = bytearray()
-    while True:
-        chunk = await file.read(_UPLOAD_CHUNK_BYTES)
-        if not chunk:
-            break
-        if len(buffer) + len(chunk) > max_bytes:
-            raise HTTPException(
-                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                detail=f"upload exceeds {max_bytes}-byte cap",
-            )
-        buffer.extend(chunk)
-    return bytes(buffer)
 
 
 def _row_to_metadata(row: dict) -> ProgressPhotoMetadata:
@@ -219,7 +192,12 @@ async def create_photo(
     - HTTPException(415): Raised when the image is unsupported.
     """
     user_key = request.state.user_key
-    raw = await _read_capped(file, MAX_UPLOAD_BYTES)
+    try:
+        raw = await read_capped(file, MAX_UPLOAD_BYTES)
+    except PhotoTooLargeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail=str(exc)
+        ) from exc
     repo = ProgressPhotoRepository(session)
     tag_repo = ProgressPhotoTagRepository(session)
     async with transaction(session):

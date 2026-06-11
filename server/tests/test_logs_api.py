@@ -1,12 +1,11 @@
 """HTTP unit tests for the `/logs` router.
 
 Covers the happy path (200 with serialized per-day aggregates), the
-inverted-range 400, and the equal-bounds single-day range (allowed). The
-logs endpoint intentionally enforces no maximum span (see
-``validate_logs_range``), so only the reversed-range error path exists. The
-DB and auth middleware are mocked via the shared ``rest_client`` fixture;
-the repository is patched at the router module level, so these tests need
-no database.
+inverted-range 400, the over-cap span 400 (``validate_logs_range`` caps at
+``MAX_RANGE_DAYS``, matching the weight/calorie endpoints), and the
+equal-bounds single-day range (allowed). The DB and auth middleware are
+mocked via the shared ``rest_client`` fixture; the repository is patched at
+the router module level, so these tests need no database.
 """
 
 from __future__ import annotations
@@ -65,10 +64,29 @@ def test_list_logs_rejects_inverted_range(rest_client: TestClient) -> None:
 
 
 def test_list_logs_accepts_single_day_range(rest_client: TestClient) -> None:
-    """An equal-bounds (single-day) range is accepted and queried (no max-span rule)."""
+    """An equal-bounds (single-day) range is accepted and queried."""
     with patch("pulse_server.routers.logs.LogsRepository") as MockRepo:
         instance = MockRepo.return_value
         instance.list_logs = AsyncMock(return_value=[_log_row(DateValue(2026, 1, 1))])
         resp = rest_client.get("/logs?from=2026-01-01&to=2026-01-01", headers=AUTH_HEADERS)
     assert resp.status_code == 200
     assert len(resp.json()["logs"]) == 1
+
+
+def test_list_logs_rejects_over_cap_span(rest_client: TestClient) -> None:
+    """A span beyond ``MAX_RANGE_DAYS`` returns 400 without touching the repository."""
+    with patch("pulse_server.routers.logs.LogsRepository") as MockRepo:
+        instance = MockRepo.return_value
+        instance.list_logs = AsyncMock(return_value=[])
+        resp = rest_client.get("/logs?from=2020-01-01&to=2026-01-01", headers=AUTH_HEADERS)
+    assert resp.status_code == 400
+    instance.list_logs.assert_not_awaited()
+
+
+def test_list_logs_accepts_full_year_range(rest_client: TestClient) -> None:
+    """A full calendar year (the iOS year view's request) stays within the cap."""
+    with patch("pulse_server.routers.logs.LogsRepository") as MockRepo:
+        instance = MockRepo.return_value
+        instance.list_logs = AsyncMock(return_value=[])
+        resp = rest_client.get("/logs?from=2026-01-01&to=2026-12-31", headers=AUTH_HEADERS)
+    assert resp.status_code == 200

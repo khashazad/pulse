@@ -217,10 +217,14 @@ def test_delete_container(client: TestClient) -> None:
 
 
 def test_upload_photo_resizes_and_returns_status(client: TestClient) -> None:
-    """Photo upload succeeds with 200 and reports ``has_photo=True``."""
+    """Photo upload succeeds with 200 and reports ``has_photo=True``.
+
+    The repository is patched at the service module — the upload path runs
+    router → ``containers_service.store_photo`` → repository.
+    """
     container_id = uuid.uuid4()
     src = _png_bytes(2000, 1000)
-    with patch("pulse_server.routers.containers.ContainersRepository") as MockRepo:
+    with patch("pulse_server.services.containers_service.ContainersRepository") as MockRepo:
         instance = MockRepo.return_value
         instance.set_photo = AsyncMock(return_value=True)
         resp = client.put(
@@ -245,9 +249,9 @@ def test_upload_photo_rejects_oversize_via_streaming_cap(
     big = b"\x00" * 4096  # 4 KB > 1 KB cap
     process_spy = MagicMock()
     with (
-        patch("pulse_server.routers.containers.ContainersRepository") as MockRepo,
+        patch("pulse_server.services.containers_service.ContainersRepository") as MockRepo,
         patch(
-            "pulse_server.routers.containers.process_photo",
+            "pulse_server.services.containers_service.process_photo",
             side_effect=process_spy,
         ),
     ):
@@ -265,7 +269,7 @@ def test_upload_photo_rejects_oversize_via_streaming_cap(
 def test_upload_photo_rejects_non_image(client: TestClient) -> None:
     """Non-image content type returns 415."""
     container_id = uuid.uuid4()
-    with patch("pulse_server.routers.containers.ContainersRepository") as MockRepo:
+    with patch("pulse_server.services.containers_service.ContainersRepository") as MockRepo:
         instance = MockRepo.return_value
         instance.set_photo = AsyncMock(return_value=True)
         resp = client.put(

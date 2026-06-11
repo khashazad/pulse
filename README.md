@@ -18,7 +18,7 @@ FastAPI + Postgres backend. JSON HTTP API for the iOS client, plus an MCP endpoi
 - **Custom foods + food memory.** Save your own foods, remember USDA picks under a name, attach aliases so "chicken" maps to the same thing every time.
 - **Meals.** Composable meal templates (a list of items with quantities) logged in one shot.
 - **Containers.** Tare-aware meal-prep containers with optional photo. The Prep tab on iOS uses these to compute net grams from gross weight.
-- **Weight + progress photos.** Weight entries with trends, progress photos with tags; photos are processed to JPEG + thumbnail and stored inline in Postgres.
+- **Weight + progress photos.** Weight entries with trends, progress photos with tags; photos are processed into archive/display/thumb JPEGs and stored in an S3-compatible object store (Backblaze B2 in production, local filesystem in dev) — Postgres keeps metadata only. Container photos remain inline BYTEA.
 - **Targets.** Per-user daily macro targets.
 - **MCP endpoint.** The same domain exposed as MCP tools at `/mcp`.
 
@@ -27,7 +27,7 @@ FastAPI + Postgres backend. JSON HTTP API for the iOS client, plus an MCP endpoi
 Google OAuth → opaque Bearer session tokens.
 
 - `/auth/google/start` + `/auth/google/callback` run the handshake, issue a 32-byte URL-safe token, and store `sha256(token)` in the `sessions` table.
-- `SessionAuthMiddleware` validates `Authorization: Bearer <token>` on every non-`/auth/*`/`/health` request and slides the TTL. Allowlist: `ALLOWED_EMAILS` (case-insensitive).
+- `SessionAuthMiddleware` validates `Authorization: Bearer <token>` on every non-`/auth/*`/`/health` request and slides the TTL once a session passes half its lifetime. The unauthenticated `/auth/google/*` routes are rate-limited per client IP. Allowlist: `ALLOWED_EMAILS` (case-insensitive).
 - The Bearer session token is the only client auth path; the legacy `?user_key=` query parameter is not part of the auth surface and is ignored.
 - MCP has two auth paths: GitHub OAuth (`GITHUB_CLIENT_ID/SECRET` + `PUBLIC_BASE_URL`) for interactive clients, and a static service token (`MCP_SERVICE_TOKEN`, min 32 chars) for headless agents. Both can run together. `/mcp` is exempt from session auth; non-local startup refuses to boot unless GitHub OAuth, the service token, or `MCP_ALLOW_UNAUTH=true` is configured.
 

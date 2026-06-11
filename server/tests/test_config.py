@@ -42,6 +42,7 @@ def _isolate_env(monkeypatch):
         "S3_BUCKET",
         "S3_ACCESS_KEY_ID",
         "S3_SECRET_ACCESS_KEY",
+        "SENTRY_DSN",
     ):
         monkeypatch.delenv(k, raising=False)
     monkeypatch.setenv("DATABASE_URL", "postgresql://localhost/test")
@@ -360,3 +361,28 @@ def test_mcp_persistence_keys_accept_exactly_min_length():
     )
     assert settings.mcp_jwt_signing_key == "j" * 32
     assert settings.mcp_storage_encryption_key == "e" * 32
+
+
+def test_env_example_covers_every_settings_field() -> None:
+    """Every `Settings` field appears in `.env.example` and no obsolete vars linger.
+
+    This is the drift guard: `.env.example` previously carried removed vars
+    (`API_KEY`, `DEFAULT_USER_KEY`) and omitted the OAuth/MCP/S3 settings
+    entirely, breaking fresh deploys bootstrapped from it.
+    """
+    from pathlib import Path
+
+    from pulse_server.config import Settings
+
+    example = Path(__file__).resolve().parents[1] / ".env.example"
+    content = example.read_text()
+    declared = {
+        line.split("=", 1)[0].strip()
+        for line in content.splitlines()
+        if line.strip() and not line.strip().startswith("#") and "=" in line
+    }
+    expected = {name.upper() for name in Settings.model_fields}
+    missing = expected - declared
+    assert not missing, f".env.example is missing Settings fields: {sorted(missing)}"
+    obsolete = declared - expected
+    assert not obsolete, f".env.example declares unknown vars: {sorted(obsolete)}"

@@ -17,6 +17,7 @@ dependencies = [
     "requests>=2.34.2",
     "Pillow>=10.4",
     "obstore>=0.10.0",
+    "sentry-sdk>=2.0",
 ]
 
 [project.optional-dependencies]

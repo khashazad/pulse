@@ -107,6 +107,26 @@ class SessionsRepository:
         )
         return cast(CursorResult[Any], result).rowcount or 0
 
+    async def purge_expired(self, now: DateTimeValue) -> int:
+        """Delete every session whose expiry has passed.
+
+        Run as best-effort startup maintenance (see ``app.lifespan``); the
+        ``idx_sessions_expires_at`` index in ``schema.sql`` exists for exactly
+        this scan. Without it, expired rows accumulate forever since expiry is
+        otherwise only enforced lazily on token lookup.
+
+        **Inputs:**
+        - now (DateTimeValue): Cutoff; rows with ``expires_at <= now`` are removed.
+
+        **Outputs:**
+        - int: Number of rows deleted.
+
+        **Exceptions:**
+        - sqlalchemy.exc.SQLAlchemyError: Raised when SQL execution fails.
+        """
+        result = await self._session.execute(delete(sessions).where(sessions.c.expires_at <= now))
+        return cast(CursorResult[Any], result).rowcount or 0
+
     async def delete(self, token_hash: bytes) -> int:
         """Delete the session row matching the given token hash.
 

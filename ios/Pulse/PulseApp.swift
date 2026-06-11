@@ -14,15 +14,26 @@ struct PulseApp: App {
     @State private var photoTagStore: ProgressPhotoTagStore
     @State private var targetsStore: UserTargetsStore
 
-    /// Constructs the shared stores and wires session-clear to targets reset so
-    /// per-user state is dropped when the auth session is invalidated.
+    /// Constructs the shared stores and wires session-clear to reset every
+    /// per-user store (targets, progress photos, photo tags) so no data or
+    /// retry loop from the prior session survives sign-out / 401 handling.
+    /// - Returns: Nothing; initializes the app's shared state.
     init() {
         let authInit = AuthSession(baseURL: Constants.baseURL)
         let targets = UserTargetsStore()
-        authInit.onSessionCleared = { [weak targets] in targets?.clear() }
+        let photos = ProgressPhotoStore(auth: authInit)
+        let photoTags = ProgressPhotoTagStore(auth: authInit)
+        authInit.onSessionCleared = { [weak targets, weak photos, weak photoTags] in
+            targets?.clear()
+            // The photo stores are main-actor isolated; hop before clearing.
+            Task { @MainActor in
+                photos?.clear()
+                photoTags?.clear()
+            }
+        }
         _auth = State(initialValue: authInit)
-        _photoStore = State(initialValue: ProgressPhotoStore(auth: authInit))
-        _photoTagStore = State(initialValue: ProgressPhotoTagStore(auth: authInit))
+        _photoStore = State(initialValue: photos)
+        _photoTagStore = State(initialValue: photoTags)
         _targetsStore = State(initialValue: targets)
     }
 
