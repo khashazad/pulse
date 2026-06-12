@@ -10,6 +10,11 @@ import UIKit
 /// Keys combine the photo's `sha256` with a `PhotoSize` (full/thumb) so that
 /// thumbnail bytes never satisfy a full-size request and vice versa.
 final class ProgressPhotoCache {
+    /// Pixel length of a derived thumbnail's long edge. Mirrors the server's
+    /// thumb rendition (1024 px long-edge JPEG) so a locally-derived thumb is
+    /// interchangeable with a downloaded one.
+    static let thumbLongEdgePixels: CGFloat = 1024
+
     private let root: URL
     private let memory = NSCache<NSString, UIImage>()
 
@@ -77,7 +82,9 @@ final class ProgressPhotoCache {
     }
 
     /// Promotes a pending upload file into the cache as the full-size variant
-    /// for the given sha. Called after a successful upload.
+    /// for the given sha, and derives the thumb variant locally so a freshly
+    /// uploaded photo's first cell render doesn't re-download its own
+    /// thumbnail. Called after a successful upload.
     /// Inputs:
     ///   - pendingURL: location of the pending bytes produced by `storePending`.
     ///   - sha: server-side content hash assigned by the upload response.
@@ -90,7 +97,42 @@ final class ProgressPhotoCache {
         try FileManager.default.moveItem(at: pendingURL, to: finalURL)
         if let data = try? Data(contentsOf: finalURL), let img = UIImage(data: data) {
             memory.setObject(img, forKey: cacheKey(sha: sha, variant: .full) as NSString, cost: data.count)
+            storeDerivedThumb(from: img, fullData: data, sha: sha)
         }
+    }
+
+    /// Derives and stores the thumb variant from a freshly-promoted full image.
+    /// Downscales to the server's thumbnail convention (1024 px long edge,
+    /// JPEG); when the source already fits within that bound the full bytes
+    /// are reused unchanged (the server never upscales). Best-effort: any
+    /// failure leaves only the full variant cached.
+    /// Inputs:
+    ///   - image: decoded full-size image promoted by `renameToSHA`.
+    ///   - fullData: encoded bytes of `image`, reused when no downscale is needed.
+    ///   - sha: server-side content hash assigned by the upload response.
+    /// Outputs: none.
+    private func storeDerivedThumb(from image: UIImage, fullData: Data, sha: String) {
+        let pixelSize = CGSize(
+            width: image.size.width * image.scale,
+            height: image.size.height * image.scale
+        )
+        let longEdge = max(pixelSize.width, pixelSize.height)
+        guard longEdge > Self.thumbLongEdgePixels else {
+            try? store(data: fullData, sha: sha, variant: .thumb)
+            return
+        }
+        let ratio = Self.thumbLongEdgePixels / longEdge
+        let target = CGSize(
+            width: (pixelSize.width * ratio).rounded(),
+            height: (pixelSize.height * ratio).rounded()
+        )
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let thumb = UIGraphicsImageRenderer(size: target, format: format).image { _ in
+            image.draw(in: CGRect(origin: .zero, size: target))
+        }
+        guard let data = thumb.jpegData(compressionQuality: 0.85) else { return }
+        try? store(data: data, sha: sha, variant: .thumb)
     }
 
     /// On-disk path for a given sha + variant.

@@ -37,9 +37,11 @@ def validate_range(from_date: DateValue, to_date: DateValue) -> None:
 def validate_logs_range(from_date: DateValue, to_date: DateValue) -> None:
     """Validate the inclusive date range for the historical ``/logs`` read.
 
-    Unlike :func:`validate_range`, the logs endpoint only rejects a reversed
-    range (no maximum span) and emits its own ``'from' date must be on or
-    before 'to' date`` message; both behaviors are preserved verbatim.
+    Caps the span at :data:`MAX_RANGE_DAYS`, matching the weight/calorie
+    endpoints: the largest range any client requests is the iOS year view
+    (one calendar year), and an uncapped span lets a single request join the
+    user's entire ``food_entries`` history. The reversed-range message is
+    preserved verbatim for the existing client error mapping.
 
     **Inputs:**
     - from_date (DateValue): Inclusive start date.
@@ -49,10 +51,13 @@ def validate_logs_range(from_date: DateValue, to_date: DateValue) -> None:
     - None: Returns nothing when the range is valid.
 
     **Raises:**
-    - ValueError: Raised when ``from_date`` is after ``to_date``.
+    - ValueError: Raised when ``from_date`` is after ``to_date`` or the span
+      exceeds ``MAX_RANGE_DAYS``.
     """
     if from_date > to_date:
         raise ValueError("'from' date must be on or before 'to' date")
+    if (to_date - from_date).days > MAX_RANGE_DAYS:
+        raise ValueError(f"range cannot exceed {MAX_RANGE_DAYS} days")
 
 
 def validate_log_date(log_date: DateValue, today: DateValue) -> None:

@@ -18,6 +18,14 @@ final class ProgressPhotoTagStore {
         self.auth = auth
     }
 
+    /// Drops the cached tag catalog and any recorded error so no prior-session
+    /// data survives sign-out.
+    /// - Returns: Void.
+    func clear() {
+        tags = []
+        lastError = nil
+    }
+
     /// Returns the cached tag for an id, or `nil` if not yet loaded.
     func tag(id: UUID) -> ProgressPhotoTag? {
         tags.first(where: { $0.id == id })

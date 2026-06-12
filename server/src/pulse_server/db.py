@@ -192,7 +192,18 @@ async def init_pool(database_url: str) -> None:
     global _session_factory
 
     sqlalchemy_url = _force_ipv4(to_sqlalchemy_url(database_url))
-    _engine = create_async_engine(sqlalchemy_url, pool_pre_ping=True)
+    # Explicit pool bounds: Supabase enforces a connection cap, so the defaults
+    # (5 + 10 overflow, never recycled) are replaced with a smaller, recycled
+    # pool. application_name makes this service identifiable in pg_stat_activity.
+    _engine = create_async_engine(
+        sqlalchemy_url,
+        pool_pre_ping=True,
+        pool_size=5,
+        max_overflow=5,
+        pool_recycle=1800,
+        pool_timeout=30,
+        connect_args={"application_name": "pulse-server"},
+    )
     _session_factory = async_sessionmaker(_engine, expire_on_commit=False)
 
     async with _engine.connect() as conn:

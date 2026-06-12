@@ -21,8 +21,10 @@ from fastmcp.utilities.lifespan import combine_lifespans
 from pulse_server import db
 from pulse_server.auth import SessionAuthMiddleware
 from pulse_server.config import get_settings
+from pulse_server.maintenance import purge_expired_auth_rows
 from pulse_server.mcp import build_mcp
 from pulse_server.mcp.storage import aclose_client_storage
+from pulse_server.observability import init_sentry, request_logging_middleware
 from pulse_server.photo_store import build_photo_store, set_photo_store
 from pulse_server.routers import auth as auth_router
 from pulse_server.routers import (
@@ -80,8 +82,10 @@ async def lifespan(app: FastAPI):
     """
     del app
     settings = get_settings()
+    init_sentry(settings)
     await db.init_pool(settings.database_url)
     await db.bootstrap_schema()
+    await purge_expired_auth_rows()
     usda_client = USDAClient(settings.usda_api_key)
     set_usda_client(usda_client)
     set_photo_store(build_photo_store(settings))
@@ -119,6 +123,9 @@ app.add_middleware(
     exempt_paths=_mcp_exempt_paths,
     exempt_prefixes=_mcp_exempt_prefixes,
 )
+
+# Registered after (= runs outside) the auth middleware so 401s are logged too.
+app.middleware("http")(request_logging_middleware)
 
 
 @app.get("/health")

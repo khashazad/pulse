@@ -17,6 +17,10 @@ struct ProgressPhotosView: View {
     @State private var showManageTags = false
     @State private var showCompare = false
     @State private var expandedId: UUID?
+    /// In-flight date-change reload. Stored so a rapid date change can cancel
+    /// the previous reload — otherwise a slow earlier response could land
+    /// after (and overwrite) a newer one. Same pattern as `FoodSearchModel`.
+    @State private var reloadTask: Task<Void, Never>?
     @Namespace private var photoNS
 
     private let gridColumns = [
@@ -65,7 +69,8 @@ struct ProgressPhotosView: View {
         }
         .refreshable { await reloadRange() }
         .onChange(of: selectedDate) { _, _ in
-            Task { await reloadRange() }
+            reloadTask?.cancel()
+            reloadTask = Task { await reloadRange() }
         }
         .sheet(isPresented: $showCapture) {
             PhotoCaptureSession(date: selectedDate)

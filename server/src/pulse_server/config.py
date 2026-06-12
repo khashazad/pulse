@@ -60,6 +60,9 @@ class Settings(BaseSettings):
     timezone: str = "America/Toronto"
     app_env: str = "local"
 
+    # Sentry error reporting. Empty disables (sentry_sdk is then never imported).
+    sentry_dsn: str = ""
+
     # MCP / claude.ai connector OAuth (separate from Google iOS auth).
     github_client_id: str = ""
     github_client_secret: str = ""

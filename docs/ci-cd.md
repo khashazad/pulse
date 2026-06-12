@@ -97,7 +97,20 @@ expiring entry there; keep the file empty in the steady state.
 CI never deploys. Railway watches `main`, and its **Wait for CI** setting holds
 the deploy until the commit's checks are green. The push-to-`main` workflow
 runs exist precisely to attach those checks to the deployed commit (PR runs
-attach to the PR head SHA, not the merge commit).
+attach to the PR head SHA, not the merge commit). Note this gate lives in Railway's
+service settings, not in this repo — if the service is ever recreated,
+re-enable **Wait for CI** or unchecked commits will deploy.
+
+## Backups
+
+`backup.yml` runs nightly (07:00 UTC) and on manual dispatch: a custom-format
+`pg_dump` of the Supabase database (verified with `pg_restore --list`,
+30-day retention) and an incremental `rclone copy` of the B2 photo bucket
+(never deletes from the backup), both into Google Drive. Required secrets are
+documented in the workflow header (`BACKUP_DATABASE_URL`, the four `S3_*`
+values, `GDRIVE_RCLONE_TOKEN`, `GDRIVE_FOLDER_ID`). The local equivalents for
+manual runs remain `server/scripts/backup_db.sh` and
+`server/scripts/backup_photos.sh`.
 
 ## Running the same checks locally
 

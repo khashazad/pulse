@@ -104,6 +104,13 @@ class SessionAuthMiddleware(BaseHTTPMiddleware):
         now = datetime.now(UTC)
         new_expires = now + timedelta(days=settings.session_ttl_days)
 
+        # Slide only when the session has burned through at least half its TTL.
+        # Sliding on every request meant a SELECT + UPDATE round-trip per call;
+        # with a 90-day TTL the fresh-session UPDATE buys nothing. The skip is
+        # behaviorally invisible to any client active more than once per
+        # ttl/2 — the practical expiry is identical.
+        slide_threshold = now + timedelta(days=settings.session_ttl_days / 2)
+        effective_expires: datetime
         async with get_session() as db_session:
             repo = SessionsRepository(db_session)
             row = await repo.get(token_hash)
@@ -113,12 +120,16 @@ class SessionAuthMiddleware(BaseHTTPMiddleware):
                 await repo.delete(token_hash)
                 await db_session.commit()
                 return JSONResponse(status_code=401, content={"error": "Session expired"})
-            await repo.slide(token_hash=token_hash, now=now, new_expires_at=new_expires)
-            await db_session.commit()
+            if row["expires_at"] <= slide_threshold:
+                await repo.slide(token_hash=token_hash, now=now, new_expires_at=new_expires)
+                await db_session.commit()
+                effective_expires = new_expires
+            else:
+                effective_expires = row["expires_at"]
 
         request.state.email = row["email"]
         request.state.user_key = email_to_user_key(row["email"])
-        request.state.session_expires_at = new_expires
+        request.state.session_expires_at = effective_expires
         return await call_next(request)
 
 

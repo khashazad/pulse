@@ -28,6 +28,24 @@ os.environ.setdefault("APP_ENV", "local")
 os.environ.setdefault("SESSION_TTL_DAYS", "7")
 
 
+@pytest.fixture(autouse=True)
+def _reset_auth_rate_limiter():
+    """Give every test a fresh auth rate-limit budget.
+
+    The limiter is module-level state keyed by client IP, and every TestClient
+    request shares the same synthetic ``testclient`` address — without a reset,
+    earlier tests would eat into a later test's budget.
+
+    **Outputs:**
+    - None: Yields control to the test, resetting before and after.
+    """
+    from pulse_server.routers.auth import _auth_rate_limiter
+
+    _auth_rate_limiter.reset()
+    yield
+    _auth_rate_limiter.reset()
+
+
 @pytest.fixture
 def client():
     """TestClient with DB pool, schema bootstrap, and USDA client mocked.
@@ -78,6 +96,65 @@ def test_start_without_pkce_challenge_redirects_invalid_request(client):
     r = client.get("/auth/google/start", follow_redirects=False)
     assert r.status_code == 302
     assert r.headers["location"] == "diettracker://auth?error=invalid_request"
+
+
+def test_start_rate_limited_after_budget_exhausted(client):
+    """`/auth/google/start` returns 429 with Retry-After once the per-IP budget is spent."""
+    from pulse_server.routers.auth import AUTH_RATE_LIMIT_MAX_REQUESTS
+
+    for _ in range(AUTH_RATE_LIMIT_MAX_REQUESTS):
+        r = client.get(
+            "/auth/google/start",
+            params={"code_challenge": "abc123challenge", "code_challenge_method": "S256"},
+            follow_redirects=False,
+        )
+        assert r.status_code == 302
+    r = client.get(
+        "/auth/google/start",
+        params={"code_challenge": "abc123challenge", "code_challenge_method": "S256"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 429
+    assert "retry-after" in {k.lower() for k in r.headers}
+
+
+def test_rate_limit_keys_on_rightmost_xff_entry(client):
+    """Spoofed leftmost X-Forwarded-For values cannot mint fresh rate-limit buckets.
+
+    The client controls every prepended entry; only the rightmost is appended
+    by the trusted edge proxy. Rotating leftmost values with a fixed rightmost
+    entry must all land in one bucket and trip the limit.
+    """
+    from pulse_server.routers.auth import AUTH_RATE_LIMIT_MAX_REQUESTS
+
+    last = None
+    for i in range(AUTH_RATE_LIMIT_MAX_REQUESTS + 1):
+        last = client.get(
+            "/auth/google/start",
+            params={"code_challenge": "abc123challenge", "code_challenge_method": "S256"},
+            headers={"X-Forwarded-For": f"10.0.0.{i}, 203.0.113.7"},
+            follow_redirects=False,
+        )
+    assert last is not None
+    assert last.status_code == 429
+
+
+def test_exchange_rate_limited_after_budget_exhausted(client):
+    """`/auth/google/exchange` returns 429 once the per-IP budget is spent.
+
+    Bodies are syntactically valid but the budget is exhausted before any code
+    lookup happens, so no DB patching is needed: the 429 fires first.
+    """
+    from pulse_server.routers.auth import _auth_rate_limiter
+
+    # Exhaust the budget directly (cheaper than 30 HTTP round-trips) for the
+    # IP TestClient reports for every request.
+    for _ in range(1000):
+        if not _auth_rate_limiter.allow("testclient"):
+            break
+    body = {"code": "x" * 32, "code_verifier": "v" * 43}
+    r = client.post("/auth/google/exchange", json=body)
+    assert r.status_code == 429
 
 
 from datetime import UTC

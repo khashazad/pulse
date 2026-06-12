@@ -34,3 +34,22 @@ def test_keys_are_isolated() -> None:
     assert limiter.allow("a", now=0.0) is True
     assert limiter.allow("a", now=1.0) is False
     assert limiter.allow("b", now=1.0) is True
+
+
+def test_idle_keys_are_pruned() -> None:
+    """Keys whose every hit has aged out are dropped from the internal dict."""
+    limiter = SlidingWindowRateLimiter(max_requests=2, window_seconds=10.0)
+    assert limiter.allow("old", now=0.0) is True
+    # 100s later "old" is fully expired; touching another key prunes it.
+    assert limiter.allow("fresh", now=100.0) is True
+    assert "old" not in limiter._hits
+    assert "fresh" in limiter._hits
+
+
+def test_reset_clears_all_budgets() -> None:
+    """`reset()` restores the full budget for every key."""
+    limiter = SlidingWindowRateLimiter(max_requests=1, window_seconds=60.0)
+    assert limiter.allow("a", now=0.0) is True
+    assert limiter.allow("a", now=1.0) is False
+    limiter.reset()
+    assert limiter.allow("a", now=2.0) is True

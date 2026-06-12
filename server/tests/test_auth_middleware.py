@@ -140,9 +140,13 @@ def test_protected_expired_session_returns_401_and_deletes():
 
 
 def test_protected_happy_path_slides_and_attaches_state():
-    """Valid session slides expiry and attaches email + user_key to `request.state`."""
+    """A session past half its TTL slides expiry and attaches state.
+
+    TTL is 7 days here (module env fixture), so the slide threshold is 3.5
+    days of remaining life; a session expiring in 2 days is due for a slide.
+    """
     app = _build_app()
-    future = datetime.now(UTC) + timedelta(days=7)
+    future = datetime.now(UTC) + timedelta(days=2)
     repo, ctx = _patched_session_repo(
         get_return={"email": "khashzd@gmail.com", "expires_at": future}
     )
@@ -155,6 +159,28 @@ def test_protected_happy_path_slides_and_attaches_state():
     assert r.status_code == 200
     assert r.json() == {"email": "khashzd@gmail.com", "user_key": "khash"}
     repo.slide.assert_awaited_once()
+
+
+def test_protected_fresh_session_skips_slide():
+    """A session with more than half its TTL remaining authenticates without an UPDATE.
+
+    TTL is 7 days here; a session expiring in 6 days is above the 3.5-day
+    threshold, so the middleware must not issue the slide write.
+    """
+    app = _build_app()
+    future = datetime.now(UTC) + timedelta(days=6)
+    repo, ctx = _patched_session_repo(
+        get_return={"email": "khashzd@gmail.com", "expires_at": future}
+    )
+    with (
+        patch("pulse_server.auth.middleware.get_session", return_value=ctx),
+        patch("pulse_server.auth.middleware.SessionsRepository", return_value=repo),
+    ):
+        with TestClient(app) as c:
+            r = c.get("/me", headers={"Authorization": "Bearer tok"})
+    assert r.status_code == 200
+    assert r.json() == {"email": "khashzd@gmail.com", "user_key": "khash"}
+    repo.slide.assert_not_awaited()
 
 
 def _build_app_with_mcp_exemptions():

@@ -3,7 +3,7 @@
 # wins — but it tells Dependabot which tag to track when proposing bumps
 # (without it, Dependabot once bumped us to the full non-slim image: PR #39).
 # python:3.11-slim -> 3.11.15-slim-trixie
-FROM python:3.11-slim@sha256:a3ab0b966bc4e91546a033e22093cb840908979487a9fc0e6e38295747e49ac0
+FROM python:3.11-slim@sha256:f9fa7f851e38bfb19c9de3afbc4b86ae7176ea7aaf94535c31df5458d5849457
 
 # ghcr.io/astral-sh/uv:0.11.16
 COPY --from=ghcr.io/astral-sh/uv:0.11.16@sha256:440fd6477af86a2f1b38080c539f1672cd22acb1b1a47e321dba5158ab08864d /uv /uvx /bin/

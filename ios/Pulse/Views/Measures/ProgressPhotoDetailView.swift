@@ -35,7 +35,9 @@ struct ProgressPhotoDetailView: View {
 
             header
         }
-        .task { image = await store.full(meta) }
+        // Keyed on the photo id so a metadata swap restarts the load instead
+        // of leaving the previous photo's image on screen.
+        .task(id: meta.id) { image = await store.full(meta) }
     }
 
     @ViewBuilder

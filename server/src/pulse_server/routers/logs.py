@@ -40,7 +40,8 @@ async def list_logs(
     - LogsListResponse: Daily aggregate totals and entry counts ordered by date descending.
 
     **Exceptions:**
-    - HTTPException(400): Raised when ``from_date`` is after ``to_date``.
+    - HTTPException(400): Raised when ``from_date`` is after ``to_date`` or the
+      span exceeds ``MAX_RANGE_DAYS``.
     - RuntimeError: Raised when the database pool is not initialized.
     - sqlalchemy.exc.SQLAlchemyError: Raised when SQL execution fails.
     """

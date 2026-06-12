@@ -31,10 +31,11 @@ from pulse_server.models import (
     container_response,
 )
 from pulse_server.repositories.containers import ContainersRepository
+from pulse_server.routers.uploads import read_capped
+from pulse_server.services.containers_service import store_photo
 from pulse_server.services.image_processing import (
     PhotoTooLargeError,
     UnsupportedImageError,
-    process_photo,
 )
 from pulse_server.services.normalize import normalize_name
 
@@ -43,37 +44,6 @@ router = APIRouter(dependencies=[Depends(require_session)])
 TZ = ZoneInfo(settings.timezone)
 
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB
-_UPLOAD_CHUNK_BYTES = 64 * 1024
-
-
-async def _read_capped(file: UploadFile, max_bytes: int) -> bytearray:
-    """Read an UploadFile in 64 KiB chunks, aborting once cumulative bytes exceed ``max_bytes``.
-
-    Returns a ``bytearray`` (not ``bytes``) so the payload is held in a single
-    contiguous buffer — no second copy at the join step. Downstream (Pillow via
-    ``BytesIO``, repo ``BYTEA`` insert) accepts bytes-like values.
-
-    **Inputs:**
-    - file (UploadFile): Streaming multipart file handle.
-    - max_bytes (int): Inclusive cap on total payload size in bytes.
-
-    **Outputs:**
-    - bytearray: The fully buffered payload, length ≤ ``max_bytes``.
-
-    **Exceptions:**
-    - PhotoTooLargeError: Raised once the running total would exceed ``max_bytes``.
-    """
-    buffer = bytearray()
-    while True:
-        chunk = await file.read(_UPLOAD_CHUNK_BYTES)
-        if not chunk:
-            break
-        if len(buffer) + len(chunk) > max_bytes:
-            raise PhotoTooLargeError(
-                f"Upload exceeds {max_bytes}-byte cap (read at least {len(buffer) + len(chunk)})"
-            )
-        buffer.extend(chunk)
-    return buffer
 
 
 @router.get("/containers", response_model=ContainersListResponse)
@@ -256,28 +226,23 @@ async def upload_container_photo(
     user_key = request.state.user_key
 
     try:
-        raw = await _read_capped(file, MAX_UPLOAD_BYTES)
+        raw = await read_capped(file, MAX_UPLOAD_BYTES)
     except PhotoTooLargeError as exc:
         raise HTTPException(status_code=413, detail=str(exc)) from exc
 
     try:
-        full, thumb, mime = process_photo(raw, max_bytes=MAX_UPLOAD_BYTES)
+        ok = await store_photo(
+            session,
+            container_id=container_id,
+            user_key=user_key,
+            raw=raw,
+            max_bytes=MAX_UPLOAD_BYTES,
+            now=DateTimeValue.now(tz=TZ),
+        )
     except PhotoTooLargeError as exc:
         raise HTTPException(status_code=413, detail=str(exc)) from exc
     except UnsupportedImageError as exc:
         raise HTTPException(status_code=415, detail="Unsupported or corrupt image") from exc
-
-    repo = ContainersRepository(session)
-    now = DateTimeValue.now(tz=TZ)
-    async with transaction(session):
-        ok = await repo.set_photo(
-            container_id=container_id,
-            user_key=user_key,
-            photo=full,
-            photo_thumb=thumb,
-            mime=mime,
-            now=now,
-        )
     if not ok:
         raise HTTPException(status_code=404, detail="Container not found")
     return ContainerPhotoStatus(has_photo=True)

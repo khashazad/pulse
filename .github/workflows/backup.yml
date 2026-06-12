@@ -1,0 +1,125 @@
+# Nightly off-site backups: Postgres → Google Drive, B2 photo bucket → Google Drive.
+#
+# Both data stores have exactly one copy without this job (Supabase holds the only
+# DB; the B2 bucket holds the only photo bytes — Postgres keeps metadata only), so
+# this workflow is the disaster-recovery path, not a convenience.
+#
+# Required repository secrets:
+#   BACKUP_DATABASE_URL     — Supabase connection string (session pooler or direct).
+#   S3_ENDPOINT             — B2 S3-compatible endpoint, e.g. https://s3.us-east-005.backblazeb2.com
+#   S3_BUCKET               — photo bucket name (pulse-photos)
+#   S3_ACCESS_KEY_ID        — B2 application key id
+#   S3_SECRET_ACCESS_KEY    — B2 application key
+#   GDRIVE_RCLONE_TOKEN     — rclone Drive OAuth token JSON. Generate once locally:
+#                             `rclone config` → new remote → drive → scope `drive.file`,
+#                             then paste the `token` value from `rclone config show`.
+#   GDRIVE_FOLDER_ID        — Drive folder id backups land under (the part of the
+#                             folder URL after /folders/).
+#
+# Layout in Drive:  <folder>/db/pulse-<UTC timestamp>.dump   (custom-format pg_dump)
+#                   <folder>/photos/...                      (incremental bucket mirror)
+# DB dumps older than 30 days are pruned; photos are copied (never deleted) so a
+# bucket-side deletion cannot propagate into the backup.
+#
+# Restore drill (do this once, and after schema overhauls):
+#   rclone copy gdrive:db/<latest>.dump . && pg_restore --list <latest>.dump
+#   createdb pulse_restore && pg_restore -d pulse_restore --no-owner <latest>.dump
+
+name: backup
+
+on:
+  schedule:
+    - cron: "0 7 * * *" # 07:00 UTC nightly (~02:00 Toronto)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backup
+  cancel-in-progress: false
+
+jobs:
+  backup-db:
+    name: Postgres → Google Drive
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      RCLONE_CONFIG_GDRIVE_TYPE: drive
+      RCLONE_CONFIG_GDRIVE_SCOPE: drive.file
+      RCLONE_CONFIG_GDRIVE_TOKEN: ${{ secrets.GDRIVE_RCLONE_TOKEN }}
+      RCLONE_CONFIG_GDRIVE_ROOT_FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID }}
+    steps:
+      - name: Install postgres client 17 and rclone
+        run: |
+          set -euo pipefail
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] \
+            https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-17 rclone
+
+      - name: Dump database (custom format) and verify
+        env:
+          DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          [ -n "$DATABASE_URL" ] || { echo "BACKUP_DATABASE_URL secret is not set" >&2; exit 1; }
+          stamp="$(date -u +%Y-%m-%d_%H%M%S)"
+          echo "dump_name=pulse-${stamp}.dump" >> "$GITHUB_ENV"
+          pg_dump "$DATABASE_URL" --format=custom --no-owner --no-privileges \
+            --file "pulse-${stamp}.dump"
+          # A dump that pg_restore cannot list is not a backup.
+          pg_restore --list "pulse-${stamp}.dump" > /dev/null
+          ls -lh "pulse-${stamp}.dump"
+
+      - name: Upload to Drive and prune dumps older than 30 days
+        run: |
+          set -euo pipefail
+          rclone copyto "$dump_name" "gdrive:db/$dump_name"
+          rclone lsl "gdrive:db/$dump_name" # fail loudly if the upload vanished
+          rclone delete --min-age 30d "gdrive:db/" || true
+          echo "Remaining dumps:"
+          rclone lsl "gdrive:db/"
+
+  backup-photos:
+    name: B2 photos → Google Drive
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      # On-the-fly remotes configured purely via env vars — no config file, no
+      # secret ever reaches a command line (mirrors scripts/backup_photos.sh).
+      RCLONE_CONFIG_PULSE_TYPE: s3
+      RCLONE_CONFIG_PULSE_PROVIDER: Other
+      RCLONE_CONFIG_PULSE_ENDPOINT: ${{ secrets.S3_ENDPOINT }}
+      RCLONE_CONFIG_PULSE_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
+      RCLONE_CONFIG_PULSE_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
+      RCLONE_CONFIG_GDRIVE_TYPE: drive
+      RCLONE_CONFIG_GDRIVE_SCOPE: drive.file
+      RCLONE_CONFIG_GDRIVE_TOKEN: ${{ secrets.GDRIVE_RCLONE_TOKEN }}
+      RCLONE_CONFIG_GDRIVE_ROOT_FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID }}
+      S3_BUCKET: ${{ secrets.S3_BUCKET }}
+    steps:
+      - name: Install rclone
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq rclone
+
+      - name: Mirror bucket to Drive (copy, never delete) and verify
+        run: |
+          set -euo pipefail
+          [ -n "$S3_BUCKET" ] || { echo "S3_BUCKET secret is not set" >&2; exit 1; }
+          # `copy` (not `sync`): a deletion in the bucket must never propagate
+          # into the backup — deleted objects accumulate in Drive by design.
+          rclone copy "PULSE:$S3_BUCKET" "gdrive:photos" --transfers 8 \
+            --stats-one-line --stats 30s
+          # Every bucket object must exist in Drive. Drive does not expose MD5s
+          # for all uploads, so fall back to size comparison explicitly rather
+          # than letting the check silently degrade.
+          rclone check "PULSE:$S3_BUCKET" "gdrive:photos" --one-way --size-only
+          echo "Bucket:  $(rclone size "PULSE:$S3_BUCKET")"
+          echo "Mirror:  $(rclone size gdrive:photos)"

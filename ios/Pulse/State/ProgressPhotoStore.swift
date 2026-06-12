@@ -35,11 +35,21 @@ final class ProgressPhotoStore {
     private var workerGeneration: Int = 0
     private var workerSleeping: Bool = false
 
-    init(auth: AuthSession) {
+    /// Builds the store, wiring its cache, durable upload queue, and network monitor.
+    /// - Parameters:
+    ///   - auth: session provider used to mint authenticated photo clients (held weakly).
+    ///   - queueFileURL: override for the upload-queue JSON file; defaults to
+    ///     `Documents/pending_uploads.json`. Tests inject a temp file for isolation.
+    ///   - cacheDirectory: override for the photo cache root; defaults to
+    ///     `Caches/ProgressPhotos`. Tests inject a temp directory for isolation.
+    /// - Returns: Nothing; initializes the store.
+    init(auth: AuthSession, queueFileURL: URL? = nil, cacheDirectory: URL? = nil) {
         self.auth = auth
-        self.cache = ProgressPhotoCache()
+        self.cache = ProgressPhotoCache(rootDirectory: cacheDirectory)
         let docs = URL.documentsDirectory
-        self.queue = PhotoUploadQueue(fileURL: docs.appendingPathComponent("pending_uploads.json"))
+        self.queue = PhotoUploadQueue(
+            fileURL: queueFileURL ?? docs.appendingPathComponent("pending_uploads.json")
+        )
         self.monitor = NWPathMonitor()
         startMonitor()
         recountPending()
@@ -59,6 +69,30 @@ final class ProgressPhotoStore {
     }
 
     // MARK: read
+
+    /// True while an upload worker task exists and has not been cancelled.
+    /// Exposed so tests can assert that sign-out cancels the worker.
+    var hasActiveWorker: Bool {
+        workerTask.map { !$0.isCancelled } ?? false
+    }
+
+    /// Drops all per-session photo state after sign-out: cancels the upload
+    /// worker (including any backoff sleep), empties the metadata map, and
+    /// resets the pending counter and last error so nothing from the prior
+    /// session survives or keeps retrying. The durable upload queue file is
+    /// left intact so captured-but-unsynced photos are not lost.
+    /// - Returns: Void.
+    func clear() {
+        workerTask?.cancel()
+        workerTask = nil
+        workerSleeping = false
+        // Bump the generation so the cancelled drain loop's exit bookkeeping
+        // can never clobber state belonging to a future worker.
+        workerGeneration += 1
+        photos = [:]
+        pendingCount = 0
+        lastError = nil
+    }
 
     /// Returns the thumbnail UIImage for a photo, fetching and caching on demand.
     func thumb(_ meta: ProgressPhotoMetadata) async -> UIImage? {
@@ -135,10 +169,14 @@ final class ProgressPhotoStore {
     /// Refreshes server metadata across the given range, evicts now-stale sha
     /// caches for that range, merges the result into the local metadata map
     /// without disturbing dates outside `[from, to]`, and kicks the worker.
+    /// Cancellation-safe: when the surrounding task is cancelled (e.g. the
+    /// user changed dates again mid-flight) the stale response is discarded
+    /// instead of overwriting newer state.
     func reconcile(from: Date, to: Date) async {
         guard let client = auth?.makeProgressPhotoClient() else { return }
         do {
             let rows = try await client.listMetadata(from: from, to: to)
+            guard !Task.isCancelled else { return }
             var grouped: [Date: [ProgressPhotoMetadata]] = [:]
             for row in rows {
                 grouped[normalize(row.date), default: []].append(row)
@@ -159,15 +197,21 @@ final class ProgressPhotoStore {
                 photos[date] = metas
             }
         } catch {
+            // URLSession surfaces task cancellation as URLError(.cancelled)
+            // (mapped to PulseError.network); a cancelled reload is not an
+            // error worth surfacing.
+            guard !Task.isCancelled else { return }
             lastError = error.localizedDescription
         }
         kickWorker()
     }
 
-    /// Spawns the worker task when no active worker is running.
+    /// Spawns the worker task when no active worker is running. No-ops while
+    /// signed out so a network-path change cannot revive retries after sign-out.
     ///
     /// - Returns: Void.
     func kickWorker() {
+        guard auth?.isSignedIn == true else { return }
         if let existing = workerTask, !existing.isCancelled { return }
         workerGeneration += 1
         let gen = workerGeneration
@@ -209,6 +253,9 @@ final class ProgressPhotoStore {
             for item in due {
                 await processOne(item)
             }
+            // A cancelled worker (sign-out clear) must not resurrect the
+            // pending counter that `clear()` just reset.
+            guard !Task.isCancelled else { return }
             recountPending()
         }
     }
@@ -257,6 +304,10 @@ final class ProgressPhotoStore {
                     idempotencyKey: p.id
                 )
             } catch {
+                // Cancellation mid-POST (e.g. sign-out clear) is not a real
+                // failure: leave the entry as-is and don't touch `lastError`
+                // that `clear()` may have just reset.
+                guard !Task.isCancelled else { return }
                 // True upload failure — schedule a backoff retry.
                 lastError = error.localizedDescription
                 try? queue.markFailure(id: item.id)
