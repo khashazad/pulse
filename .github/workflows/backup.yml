@@ -68,12 +68,16 @@ jobs:
         run: |
           set -euo pipefail
           [ -n "$DATABASE_URL" ] || { echo "BACKUP_DATABASE_URL secret is not set" >&2; exit 1; }
+          # Explicit v17 binaries: the runner image preinstalls an older
+          # postgresql-client that wins the PATH race over the pgdg install,
+          # and pg_dump aborts on a server-newer-than-client version mismatch.
+          PG_BIN=/usr/lib/postgresql/17/bin
           stamp="$(date -u +%Y-%m-%d_%H%M%S)"
           echo "dump_name=pulse-${stamp}.dump" >> "$GITHUB_ENV"
-          pg_dump "$DATABASE_URL" --format=custom --no-owner --no-privileges \
+          "$PG_BIN/pg_dump" "$DATABASE_URL" --format=custom --no-owner --no-privileges \
             --file "pulse-${stamp}.dump"
           # A dump that pg_restore cannot list is not a backup.
-          pg_restore --list "pulse-${stamp}.dump" > /dev/null
+          "$PG_BIN/pg_restore" --list "pulse-${stamp}.dump" > /dev/null
           ls -lh "pulse-${stamp}.dump"
 
       - name: Upload to Drive and prune dumps older than 30 days
