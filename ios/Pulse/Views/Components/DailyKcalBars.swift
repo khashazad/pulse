@@ -11,7 +11,7 @@ struct DailyKcalBars: View {
     /// Y-axis ceiling: the larger of the max day kcal and the target, floored at 1.
     /// Outputs: positive integer used as the chart's vertical scale.
     private var ceiling: Int {
-        max(logs.map(\.totalCalories).max() ?? 0, targetCalories ?? 0, 1)
+        logs.calorieCeiling(target: targetCalories)
     }
 
     private static let cal = Calendar.current
@@ -81,21 +81,11 @@ struct DailyKcalBars: View {
                 .fill(gradient)
                 .frame(height: h)
                 .shadow(color: isLast ? Theme.CTP.mauve.opacity(0.45) : .clear, radius: 6)
-            Text(weekdayLetter(for: log.date))
+            Text(Self.cal.veryShortWeekdaySymbol(for: log.date))
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(isLast ? Theme.CTP.mauve : Theme.FG.secondary)
         }
         .frame(maxWidth: .infinity)
-    }
-
-    /// Very-short weekday symbol (e.g. "M", "T") for the given date.
-    /// Inputs:
-    ///   - date: the date to format.
-    /// Outputs: one-letter weekday string from the current calendar.
-    private func weekdayLetter(for date: Date) -> String {
-        let symbols = Self.cal.veryShortWeekdaySymbols
-        let comp = Self.cal.component(.weekday, from: date)
-        return symbols[(comp - 1) % symbols.count]
     }
 }
 
