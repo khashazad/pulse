@@ -179,7 +179,7 @@ jobs:
           # MORE objects than the new layout, those extras have no DB row (orphans)
           # — do NOT purge the legacy tree, since it may be their only backup.
           bucket_objs=$(rclone lsf --files-only -R "PULSE:$S3_BUCKET/progress" | wc -l | tr -d ' ')
-          new_objs=$(rclone lsf --files-only -R "gdrive:photos" --exclude "progress/**" | wc -l | tr -d ' ')
+          new_objs=$(rclone lsf --files-only -R "gdrive:photos" --exclude "/progress/**" | wc -l | tr -d ' ')
           echo "Bucket objects: $bucket_objs   New-layout objects: $new_objs"
 
           if [ "$bucket_objs" -gt 0 ] && [ "$new_objs" -ge "$bucket_objs" ]; then
@@ -207,4 +207,4 @@ jobs:
           fi
 
           echo "Bucket:  $(rclone size "PULSE:$S3_BUCKET/progress")"
-          echo "Mirror:  $(rclone size gdrive:photos --exclude "progress/**")"
+          echo "Mirror:  $(rclone size gdrive:photos --exclude "/progress/**")"
