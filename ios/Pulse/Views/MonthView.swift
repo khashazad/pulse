@@ -41,35 +41,47 @@ struct MonthView: View {
         .refreshable { await model?.load() }
     }
 
-    /// Body for the loaded state. Computes weekly buckets and averages from `logs`
-    /// and assembles the summary card + macros table.
+    /// Body for the loaded state. Groups `logs` into weeks and renders a stacked-macro
+    /// bar row per week (shared y-scale), preceded by a macro color key and followed by
+    /// the month-average macros table.
     /// Inputs:
     ///   - logs: daily logs for the current month.
     /// Outputs: composed scrollable view.
     private func loadedBody(_ logs: [DailyLog]) -> some View {
-        let chronological = logs.sorted { $0.date < $1.date }
-        let buckets = PeriodIntakeModel.weeklyBuckets(chronological)
-        let avgKcal = chronological.avgCalories
+        // `weeklyLogGroups` sorts each week's days internally, and avg/ceiling are
+        // order-independent, so no pre-sort of `logs` is needed here.
+        let weeks = PeriodIntakeModel.weeklyLogGroups(logs)
+        let avgKcal = logs.avgCalories
         let dailyTarget = model?.targets?.calories
+        // Shared vertical scale across all week rows so bars and the target line line up.
+        let ceiling = logs.calorieCeiling(target: dailyTarget)
 
         return ScrollView {
             VStack(spacing: Theme.Layout.sectionSpacing) {
-                PeriodSummaryCard(
-                    title: "Month avg / day",
-                    avgKcal: avgKcal,
-                    buckets: buckets,
-                    barsHeader: "Weekly avg",
-                    dailyTarget: dailyTarget
-                )
-                .padding(.horizontal, 16)
+                if weeks.isEmpty {
+                    EmptyStateView(
+                        icon: "calendar",
+                        title: "No intake yet",
+                        description: "Days you log this month will show up here as weekly macro bars."
+                    )
+                    .padding(.top, 40)
+                } else {
+                    MacroLegend()
+                        .padding(.horizontal, 16)
 
-                AverageMacrosTable(
-                    avgKcal: avgKcal,
-                    avgProteinG: Int(chronological.avgProtein.rounded()),
-                    avgCarbsG: Int(chronological.avgCarbs.rounded()),
-                    avgFatG: Int(chronological.avgFat.rounded())
-                )
-                .padding(.horizontal, 16)
+                    ForEach(weeks) { week in
+                        WeeklyMacroBars(group: week, ceiling: ceiling, targetCalories: dailyTarget)
+                            .padding(.horizontal, 16)
+                    }
+
+                    AverageMacrosTable(
+                        avgKcal: avgKcal,
+                        avgProteinG: Int(logs.avgProtein.rounded()),
+                        avgCarbsG: Int(logs.avgCarbs.rounded()),
+                        avgFatG: Int(logs.avgFat.rounded())
+                    )
+                    .padding(.horizontal, 16)
+                }
 
                 Spacer(minLength: Theme.Layout.dockClearance)
             }

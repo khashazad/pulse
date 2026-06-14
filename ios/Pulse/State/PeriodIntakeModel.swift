@@ -81,31 +81,79 @@ final class PeriodIntakeModel {
         }
     }
 
-    /// Group logs into weekly buckets within the displayed month.
-    /// Buckets are keyed by the week's start date (not weekOfYear) so the order
-    /// stays chronological across year boundaries (e.g., Dec week 52 → Jan week 1).
+    /// Group logs by the start of their calendar week. Keys are week-start instants
+    /// (not weekOfYear) so order stays chronological across year boundaries
+    /// (e.g., Dec week 52 → Jan week 1). Shared by `weeklyBuckets` / `weeklyLogGroups`.
+    /// Inputs:
+    ///   - logs: daily log rows to group.
+    ///   - today: date whose week is marked current.
+    ///   - calendar: calendar used to derive week boundaries.
+    /// Outputs: chronologically sorted week-start keys, the per-week day lists, and
+    ///   the week-start key for `today`.
+    private static func groupByWeek(_ logs: [DailyLog], today: Date, calendar: Calendar)
+        -> (sortedKeys: [Date], byWeek: [Date: [DailyLog]], currentKey: Date) {
+        /// Returns the first instant of the week containing `date`, falling back to the date.
+        func weekStart(for date: Date) -> Date {
+            calendar.dateInterval(of: .weekOfYear, for: date)?.start ?? date
+        }
+        let byWeek = Dictionary(grouping: logs) { weekStart(for: $0.date) }
+        return (byWeek.keys.sorted(), byWeek, weekStart(for: today))
+    }
+
+    /// Group logs into weekly buckets within the displayed month, each collapsed to
+    /// an average kcal/day. See `groupByWeek` for the keying scheme.
     /// Inputs:
     ///   - logs: daily log rows for the displayed month.
     ///   - today: date used to mark the "current" bucket.
     ///   - calendar: calendar used to derive week boundaries.
     /// Outputs: ordered weekly buckets with average kcal per logged day.
     static func weeklyBuckets(_ logs: [DailyLog], today: Date = Date(), calendar: Calendar = .current) -> [PeriodBucket] {
-        /// Returns the start-of-week for the given date, falling back to the date itself.
-        /// Inputs:
-        ///   - date: date whose week-start is needed.
-        /// Outputs: the first instant of the week containing `date`.
-        func weekStart(for date: Date) -> Date {
-            calendar.dateInterval(of: .weekOfYear, for: date)?.start ?? date
-        }
-        let groups = Dictionary(grouping: logs) { weekStart(for: $0.date) }
-        let todayWeekStart = weekStart(for: today)
-        return groups.keys.sorted().enumerated().map { idx, key in
-            let bucket = groups[key] ?? []
+        let (sortedKeys, byWeek, currentKey) = groupByWeek(logs, today: today, calendar: calendar)
+        return sortedKeys.enumerated().map { idx, key in
+            let bucket = byWeek[key] ?? []
             return PeriodBucket(
                 id: "week-\(Int(key.timeIntervalSince1970))",
                 label: "W\(idx + 1)",
                 avgKcalPerDay: bucket.avgCalories,
-                isCurrent: key == todayWeekStart
+                isCurrent: key == currentKey
+            )
+        }
+    }
+
+    /// One week's worth of daily logs within the displayed month, used by the
+    /// Month view's per-week stacked-macro bar rows. Display aggregates (`avgKcal`,
+    /// `avgMacroSplit`) are precomputed once at construction so the render path
+    /// doesn't recompute them on every `body` evaluation.
+    struct WeekLogGroup: Identifiable {
+        let id: String
+        let label: String
+        let days: [DailyLog]
+        let isCurrent: Bool
+        /// Average kcal per logged day in this week (skips empty days).
+        let avgKcal: Int
+        /// Aggregate protein/carbs/fat split for the week (nil when no macros).
+        let avgMacroSplit: MacroSplit?
+    }
+
+    /// Group logs into weeks within the displayed month, preserving each week's
+    /// individual daily logs (unlike `weeklyBuckets`, which collapses to an average).
+    /// Each group's days are sorted ascending by date. See `groupByWeek` for keying.
+    /// Inputs:
+    ///   - logs: daily log rows for the displayed month.
+    ///   - today: date used to mark the "current" week.
+    ///   - calendar: calendar used to derive week boundaries.
+    /// Outputs: ordered week groups, each carrying its sorted daily logs.
+    static func weeklyLogGroups(_ logs: [DailyLog], today: Date = Date(), calendar: Calendar = .current) -> [WeekLogGroup] {
+        let (sortedKeys, byWeek, currentKey) = groupByWeek(logs, today: today, calendar: calendar)
+        return sortedKeys.enumerated().map { idx, key in
+            let days = (byWeek[key] ?? []).sorted { $0.date < $1.date }
+            return WeekLogGroup(
+                id: "week-\(Int(key.timeIntervalSince1970))",
+                label: "Week \(idx + 1)",
+                days: days,
+                isCurrent: key == currentKey,
+                avgKcal: days.avgCalories,
+                avgMacroSplit: days.macroSplit
             )
         }
     }

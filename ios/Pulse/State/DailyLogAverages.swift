@@ -35,4 +35,13 @@ extension Array where Element == DailyLog {
         guard !logged.isEmpty else { return 0 }
         return logged.map(\.totalFatG).reduce(0, +) / Double(logged.count)
     }
+
+    /// Y-axis ceiling for a kcal bar chart: the larger of the peak day and an
+    /// optional target, floored at 1 so the vertical scale is always positive.
+    /// Inputs:
+    ///   - target: optional daily kcal target the chart also marks.
+    /// Outputs: a positive ceiling used as the chart's vertical scale.
+    func calorieCeiling(target: Int?) -> Int {
+        Swift.max(map(\.totalCalories).max() ?? 0, target ?? 0, 1)
+    }
 }
