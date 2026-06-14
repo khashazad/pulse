@@ -33,6 +33,7 @@ from pulse_server.mcp.tools import (
     meal_tools,
     memory_tools,
     targets_summary_tools,
+    weight_tools,
 )
 
 WORKFLOW_INSTRUCTIONS = """
@@ -241,5 +242,6 @@ def build_mcp(usda_getter) -> FastMCP:
     container_tools.register(mcp, ctx)
     memory_tools.register(mcp, ctx)
     meal_tools.register(mcp, ctx)
+    weight_tools.register(mcp, ctx)
 
     return mcp

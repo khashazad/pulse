@@ -15,6 +15,7 @@ tests (mirroring ``tests/integration/test_weight_integration.py``).
 from __future__ import annotations
 
 import os
+from datetime import UTC
 from typing import Any
 
 import pytest
@@ -79,7 +80,7 @@ async def mcp_server():
         await session.execute(
             text(
                 "truncate table food_entries, meal_items, meals, food_memory, "
-                "custom_foods, daily_logs, daily_target_profile, containers "
+                "custom_foods, daily_logs, daily_target_profile, containers, weight_entries "
                 "restart identity cascade"
             )
         )
@@ -1421,3 +1422,166 @@ async def test_get_day_explicit_date_with_entries(mcp_server) -> None:
     payload = result.structured_content
     assert payload["consumed"]["calories"] == 300
     assert len(payload["entries"]) == 1
+
+
+# --------------------------------------------------------------------------- #
+# Weight tools: get_weights and get_weight.
+# --------------------------------------------------------------------------- #
+
+
+async def _seed_weight(log_date, weight_lb: str, source_unit: str = "lb") -> None:
+    """Insert one weight entry under the server's configured user key.
+
+    **Inputs:**
+    - log_date (date): Calendar date for the entry.
+    - weight_lb (str): Weight in pounds, as a Decimal-parseable string.
+    - source_unit (str): Original entry unit ("lb"/"kg").
+
+    **Outputs:**
+    - None: Commits the row to the test database.
+    """
+    from datetime import datetime
+    from decimal import Decimal
+
+    from pulse_server.config import get_settings
+    from pulse_server.repositories.weight import WeightRepository
+
+    async with db.get_session() as session:
+        repo = WeightRepository(session)
+        await repo.upsert(
+            user_key=get_settings().legacy_user_key,
+            log_date=log_date,
+            weight_lb=Decimal(weight_lb),
+            source_unit=source_unit,
+            updated_at=datetime.now(UTC),
+        )
+        await session.commit()
+
+
+def _server_today():
+    """Return 'today' in the server's configured timezone.
+
+    **Inputs:**
+    - None.
+
+    **Outputs:**
+    - date: The current calendar date in ``settings.timezone``.
+    """
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    from pulse_server.config import get_settings
+
+    return datetime.now(tz=ZoneInfo(get_settings().timezone)).date()
+
+
+async def _seed_two_weights(today) -> None:
+    """Seed the shared two-entry fixture: 180.00 lb two days ago, 178.50 lb today.
+
+    **Inputs:**
+    - today (date): The anchor date; the older entry is ``today - 2 days``.
+
+    **Outputs:**
+    - None: Commits both weight rows to the test database.
+    """
+    from datetime import timedelta
+
+    await _seed_weight(today - timedelta(days=2), "180.00")
+    await _seed_weight(today, "178.50")
+
+
+@pytest.mark.asyncio
+async def test_get_weights_default_window_returns_entries_and_summary(mcp_server) -> None:
+    """``get_weights`` with no args returns the trailing-30-day entries with summary stats."""
+    today = _server_today()
+    await _seed_two_weights(today)
+
+    async with Client(mcp_server) as client:
+        result = await client.call_tool("get_weights", {})
+
+    payload = result.structured_content
+    assert payload["count"] == 2
+    assert len(payload["entries"]) == 2
+    assert payload["latest_lb"] == 178.5
+    assert payload["min_lb"] == 178.5
+    assert payload["max_lb"] == 180.0
+    assert payload["net_change_lb"] == -1.5
+
+
+@pytest.mark.asyncio
+async def test_get_weights_explicit_range_bounds_entries(mcp_server) -> None:
+    """``get_weights`` with an explicit range includes only entries inside it."""
+    from datetime import timedelta
+
+    today = _server_today()
+    await _seed_two_weights(today)
+
+    async with Client(mcp_server) as client:
+        result = await client.call_tool(
+            "get_weights",
+            {
+                "from_date": (today - timedelta(days=3)).isoformat(),
+                "to_date": (today - timedelta(days=1)).isoformat(),
+            },
+        )
+
+    payload = result.structured_content
+    assert payload["count"] == 1
+    assert payload["latest_lb"] == 180.0
+    assert payload["net_change_lb"] is None
+
+
+@pytest.mark.asyncio
+async def test_get_weights_empty_range_has_null_stats(mcp_server) -> None:
+    """``get_weights`` over a range with no entries returns count 0 and null stats."""
+    async with Client(mcp_server) as client:
+        result = await client.call_tool(
+            "get_weights",
+            {"from_date": "2000-01-01", "to_date": "2000-01-31"},
+        )
+
+    payload = result.structured_content
+    assert payload["count"] == 0
+    assert payload["entries"] == []
+    assert payload["latest_lb"] is None
+    assert payload["net_change_lb"] is None
+
+
+@pytest.mark.asyncio
+async def test_get_weights_reversed_range_raises_tool_error(mcp_server) -> None:
+    """``get_weights`` with from > to raises a ToolError (range validation)."""
+    async with Client(mcp_server) as client:
+        with pytest.raises(Exception) as exc_info:
+            await client.call_tool(
+                "get_weights",
+                {"from_date": "2026-06-30", "to_date": "2026-06-01"},
+            )
+    assert _raised_tool_error(exc_info)
+
+
+@pytest.mark.asyncio
+async def test_get_weights_invalid_date_raises_tool_error(mcp_server) -> None:
+    """``get_weights`` with a malformed date string raises a ToolError."""
+    async with Client(mcp_server) as client:
+        with pytest.raises(Exception) as exc_info:
+            await client.call_tool("get_weights", {"to_date": "30-06-2026"})
+    assert _raised_tool_error(exc_info)
+
+
+@pytest.mark.asyncio
+async def test_get_weight_present_and_absent_date(mcp_server) -> None:
+    """``get_weight`` returns the entry for a recorded date and null for an unrecorded one."""
+    from datetime import timedelta
+
+    today = _server_today()
+    await _seed_weight(today, "178.50")
+
+    async with Client(mcp_server) as client:
+        present = await client.call_tool("get_weight", {"date": today.isoformat()})
+        absent = await client.call_tool(
+            "get_weight", {"date": (today - timedelta(days=10)).isoformat()}
+        )
+
+    assert present.structured_content["result"]["weight_lb"] == 178.5
+    assert present.structured_content["result"]["source_unit"] == "lb"
+    assert absent.structured_content.get("result") is None
