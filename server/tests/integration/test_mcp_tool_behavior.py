@@ -1475,14 +1475,26 @@ def _server_today():
     return datetime.now(tz=ZoneInfo(get_settings().timezone)).date()
 
 
+async def _seed_two_weights(today) -> None:
+    """Seed the shared two-entry fixture: 180.00 lb two days ago, 178.50 lb today.
+
+    **Inputs:**
+    - today (date): The anchor date; the older entry is ``today - 2 days``.
+
+    **Outputs:**
+    - None: Commits both weight rows to the test database.
+    """
+    from datetime import timedelta
+
+    await _seed_weight(today - timedelta(days=2), "180.00")
+    await _seed_weight(today, "178.50")
+
+
 @pytest.mark.asyncio
 async def test_get_weights_default_window_returns_entries_and_summary(mcp_server) -> None:
     """``get_weights`` with no args returns the trailing-30-day entries with summary stats."""
-    from datetime import timedelta
-
     today = _server_today()
-    await _seed_weight(today - timedelta(days=2), "180.00")
-    await _seed_weight(today, "178.50")
+    await _seed_two_weights(today)
 
     async with Client(mcp_server) as client:
         result = await client.call_tool("get_weights", {})
@@ -1502,8 +1514,7 @@ async def test_get_weights_explicit_range_bounds_entries(mcp_server) -> None:
     from datetime import timedelta
 
     today = _server_today()
-    await _seed_weight(today - timedelta(days=2), "180.00")
-    await _seed_weight(today, "178.50")
+    await _seed_two_weights(today)
 
     async with Client(mcp_server) as client:
         result = await client.call_tool(

@@ -52,6 +52,23 @@ def _parse_date(value: str) -> DateValue:
         raise ToolError(f"Invalid date '{value}', expected YYYY-MM-DD") from exc
 
 
+def _resolve_date(value: str | None, default: DateValue) -> DateValue:
+    """Parse an optional ``YYYY-MM-DD`` argument, falling back to a default.
+
+    **Inputs:**
+    - value (str | None): The raw date string, or ``None`` to use the default.
+    - default (DateValue): The date to return when ``value`` is ``None``.
+
+    **Outputs:**
+    - DateValue: The parsed date, or ``default`` when no value was supplied.
+
+    **Raises:**
+    - ToolError: Raised when ``value`` is non-``None`` but not a valid ISO
+      ``YYYY-MM-DD`` date.
+    """
+    return _parse_date(value) if value is not None else default
+
+
 def summarize_weights(
     from_date: DateValue,
     to_date: DateValue,
@@ -72,28 +89,16 @@ def summarize_weights(
     **Outputs:**
     - WeightRange: The entries plus computed summary stats.
     """
-    if not entries:
-        return WeightRange(
-            from_date=from_date,
-            to_date=to_date,
-            count=0,
-            entries=[],
-            latest_lb=None,
-            min_lb=None,
-            max_lb=None,
-            net_change_lb=None,
-        )
     weights = [entry.weight_lb for entry in entries]
-    net_change = float(weights[-1] - weights[0]) if len(weights) >= 2 else None
     return WeightRange(
         from_date=from_date,
         to_date=to_date,
         count=len(entries),
         entries=entries,
-        latest_lb=float(weights[-1]),
-        min_lb=float(min(weights)),
-        max_lb=float(max(weights)),
-        net_change_lb=net_change,
+        latest_lb=float(weights[-1]) if weights else None,
+        min_lb=float(min(weights)) if weights else None,
+        max_lb=float(max(weights)) if weights else None,
+        net_change_lb=float(weights[-1] - weights[0]) if len(weights) >= 2 else None,
     )
 
 
@@ -124,13 +129,8 @@ def register(mcp: FastMCP, ctx: ToolContext) -> None:
         summary stats are in pounds; each entry also reports its original
         source_unit. The range may not be reversed or span more than 366 days.
         """
-        today = DateTimeValue.now(tz=tz).date()
-        to_value = _parse_date(to_date) if to_date is not None else today
-        from_value = (
-            _parse_date(from_date)
-            if from_date is not None
-            else to_value - timedelta(days=DEFAULT_RANGE_DAYS)
-        )
+        to_value = _resolve_date(to_date, DateTimeValue.now(tz=tz).date())
+        from_value = _resolve_date(from_date, to_value - timedelta(days=DEFAULT_RANGE_DAYS))
         async with get_session() as session:
             try:
                 entries = await list_weight_range(
@@ -146,7 +146,7 @@ def register(mcp: FastMCP, ctx: ToolContext) -> None:
     @mcp.tool
     async def get_weight(date: str | None = None) -> WeightEntryResponse | None:
         """Return the weight entry for one date (YYYY-MM-DD), or null if none. Defaults to today."""
-        day = _parse_date(date) if date is not None else DateTimeValue.now(tz=tz).date()
+        day = _resolve_date(date, DateTimeValue.now(tz=tz).date())
         async with get_session() as session:
             return await fetch_weight_entry(
                 session=session,
