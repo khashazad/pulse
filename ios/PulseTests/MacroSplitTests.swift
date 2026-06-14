@@ -102,7 +102,7 @@ final class WeeklyLogGroupTests: XCTestCase {
                 log(day(19), kcal: 2100), // Tue, current week
                 log(day(6), kcal: 1000),  // Wed, earlier week
                 log(day(18), kcal: 2000), // Mon, current week
-                log(day(21), kcal: 9999), // Thu — future, must be dropped
+                log(day(21), kcal: 9999) // Thu — future, must be dropped
             ],
             today: today, calendar: cal()
         )
