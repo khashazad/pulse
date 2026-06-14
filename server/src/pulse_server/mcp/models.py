@@ -18,6 +18,7 @@ from pulse_server.models import (
     FoodEntryResponse,
     MacroTargets,
     MacroTotals,
+    WeightEntryResponse,
 )
 
 
@@ -94,3 +95,23 @@ class DaySummary(BaseModel):
     consumed: MacroTotals
     remaining: MacroTotals | None
     entries: list[FoodEntryResponse]
+
+
+class WeightRange(BaseModel):
+    """Date-range of weight entries returned by ``get_weights``.
+
+    Bundles the resolved (inclusive) date bounds, the entries ascending by
+    ``log_date``, and a light summary. All summary stats are in pounds (the
+    canonical stored unit); each entry additionally carries its original
+    ``source_unit``. Stat fields are ``None`` for an empty range, and
+    ``net_change_lb`` is ``None`` for a range with fewer than two entries.
+    """
+
+    from_date: DateValue
+    to_date: DateValue
+    count: int
+    entries: list[WeightEntryResponse]
+    latest_lb: float | None
+    min_lb: float | None
+    max_lb: float | None
+    net_change_lb: float | None

@@ -87,3 +87,94 @@ def test_basis_for_is_always_per_100g() -> None:
     assert basis_for({"serving_size": 112.0}) == "per_100g"
     assert basis_for({"serving_size": None}) == "per_100g"
     assert basis_for({}) == "per_100g"
+
+
+def _weight_entry(log_date: str, weight_lb: float, source_unit: str = "lb"):
+    """Build a WeightEntryResponse fixture for summarize_weights tests.
+
+    **Inputs:**
+    - log_date (str): ISO date for the entry.
+    - weight_lb (float): Stored weight in pounds.
+    - source_unit (str): Original entry unit ("lb"/"kg").
+
+    **Outputs:**
+    - WeightEntryResponse: A fully-populated entry with fixed id/timestamps.
+    """
+    from datetime import date, datetime, timezone
+    from decimal import Decimal
+    from uuid import UUID
+
+    from pulse_server.models.weight import WeightEntryResponse
+
+    ts = datetime(2026, 6, 14, 12, 0, tzinfo=timezone.utc)
+    return WeightEntryResponse(
+        id=UUID("00000000-0000-0000-0000-000000000001"),
+        log_date=date.fromisoformat(log_date),
+        weight_lb=Decimal(str(weight_lb)),
+        source_unit=source_unit,
+        created_at=ts,
+        updated_at=ts,
+    )
+
+
+def test_summarize_weights_empty_range() -> None:
+    """An empty range yields count 0 and null summary stats."""
+    # Arrange
+    from datetime import date
+
+    from pulse_server.mcp.tools.weight_tools import summarize_weights
+
+    # Act
+    result = summarize_weights(date(2026, 6, 1), date(2026, 6, 30), [])
+
+    # Assert
+    assert result.count == 0
+    assert result.entries == []
+    assert result.latest_lb is None
+    assert result.min_lb is None
+    assert result.max_lb is None
+    assert result.net_change_lb is None
+
+
+def test_summarize_weights_single_entry_has_null_net_change() -> None:
+    """A single entry sets latest/min/max but leaves net_change null."""
+    # Arrange
+    from datetime import date
+
+    from pulse_server.mcp.tools.weight_tools import summarize_weights
+
+    entries = [_weight_entry("2026-06-10", 180.0)]
+
+    # Act
+    result = summarize_weights(date(2026, 6, 1), date(2026, 6, 30), entries)
+
+    # Assert
+    assert result.count == 1
+    assert result.latest_lb == 180.0
+    assert result.min_lb == 180.0
+    assert result.max_lb == 180.0
+    assert result.net_change_lb is None
+
+
+def test_summarize_weights_multi_entry_stats() -> None:
+    """Multiple ascending entries produce correct min/max/latest and signed net change."""
+    # Arrange
+    from datetime import date
+
+    from pulse_server.mcp.tools.weight_tools import summarize_weights
+
+    entries = [
+        _weight_entry("2026-06-01", 180.0),
+        _weight_entry("2026-06-15", 182.0),
+        _weight_entry("2026-06-29", 178.5),
+    ]
+
+    # Act
+    result = summarize_weights(date(2026, 6, 1), date(2026, 6, 30), entries)
+
+    # Assert
+    assert result.count == 3
+    assert result.latest_lb == 178.5            # last entry (ascending)
+    assert result.min_lb == 178.5
+    assert result.max_lb == 182.0
+    assert result.net_change_lb == -1.5         # last - first = 178.5 - 180.0

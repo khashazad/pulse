@@ -1,0 +1,153 @@
+"""MCP tools for body-weight retrieval (read-only).
+
+Registers ``get_weights`` (date-range list + summary) and ``get_weight``
+(single day). Both reuse the weight service layer that backs the REST
+``/weight`` endpoints, so no SQL or business logic is duplicated here. Range
+aggregation lives in the pure module-level :func:`summarize_weights` so it is
+unit-testable without building the MCP server.
+
+The single-day tool is named ``get_weight``; the service function it calls is
+imported as ``fetch_weight_entry`` to avoid the closure shadowing (and
+recursing into) itself.
+"""
+
+from __future__ import annotations
+
+from datetime import date as DateValue
+from datetime import datetime as DateTimeValue
+from datetime import timedelta
+
+from fastmcp import FastMCP
+from fastmcp.exceptions import ToolError
+
+from pulse_server.db import get_session
+from pulse_server.mcp.context import ToolContext
+from pulse_server.mcp.models import WeightRange
+from pulse_server.models.weight import WeightEntryResponse
+from pulse_server.services.weight_service import (
+    get_weight as fetch_weight_entry,
+)
+from pulse_server.services.weight_service import (
+    list_weight_range,
+)
+
+DEFAULT_RANGE_DAYS = 30
+
+
+def _parse_date(value: str) -> DateValue:
+    """Parse a ``YYYY-MM-DD`` string, raising ``ToolError`` on bad input.
+
+    **Inputs:**
+    - value (str): The raw date string from the MCP client.
+
+    **Outputs:**
+    - DateValue: The parsed calendar date.
+
+    **Raises:**
+    - ToolError: Raised when ``value`` is not a valid ISO ``YYYY-MM-DD`` date.
+    """
+    try:
+        return DateValue.fromisoformat(value)
+    except ValueError as exc:
+        raise ToolError(f"Invalid date '{value}', expected YYYY-MM-DD") from exc
+
+
+def summarize_weights(
+    from_date: DateValue,
+    to_date: DateValue,
+    entries: list[WeightEntryResponse],
+) -> WeightRange:
+    """Build a ``WeightRange`` (entries + summary stats) for a resolved range.
+
+    Entries are assumed ascending by ``log_date`` (as the repository returns
+    them). Summary stats are in pounds. ``net_change_lb`` is ``last - first``
+    and is ``None`` when fewer than two entries are present; all stat fields are
+    ``None`` for an empty range.
+
+    **Inputs:**
+    - from_date (DateValue): Inclusive lower bound that produced ``entries``.
+    - to_date (DateValue): Inclusive upper bound that produced ``entries``.
+    - entries (list[WeightEntryResponse]): Weight entries ascending by date.
+
+    **Outputs:**
+    - WeightRange: The entries plus computed summary stats.
+    """
+    if not entries:
+        return WeightRange(
+            from_date=from_date,
+            to_date=to_date,
+            count=0,
+            entries=[],
+            latest_lb=None,
+            min_lb=None,
+            max_lb=None,
+            net_change_lb=None,
+        )
+    weights = [float(entry.weight_lb) for entry in entries]
+    net_change = weights[-1] - weights[0] if len(weights) >= 2 else None
+    return WeightRange(
+        from_date=from_date,
+        to_date=to_date,
+        count=len(entries),
+        entries=entries,
+        latest_lb=weights[-1],
+        min_lb=min(weights),
+        max_lb=max(weights),
+        net_change_lb=net_change,
+    )
+
+
+def register(mcp: FastMCP, ctx: ToolContext) -> None:
+    """Register the weight-retrieval tools on the MCP server.
+
+    **Inputs:**
+    - mcp (FastMCP): The server to attach the tool closures to.
+    - ctx (ToolContext): Shared context carrying ``user_key`` and ``tz``.
+
+    **Outputs:**
+    - None: Tools are registered as a side effect.
+    """
+    user_key = ctx.user_key
+    tz = ctx.tz
+
+    @mcp.tool
+    async def get_weights(
+        from_date: str | None = None,
+        to_date: str | None = None,
+    ) -> WeightRange:
+        """Return weight entries for a date range (YYYY-MM-DD), ascending, with summary stats.
+
+        Defaults to the trailing 30 days (to=today, from=today-30) when dates
+        are omitted. Weights and summary stats are in pounds; each entry also
+        reports its original source_unit. The range may not be reversed or span
+        more than 366 days.
+        """
+        today = DateTimeValue.now(tz=tz).date()
+        to_value = _parse_date(to_date) if to_date is not None else today
+        from_value = (
+            _parse_date(from_date)
+            if from_date is not None
+            else to_value - timedelta(days=DEFAULT_RANGE_DAYS)
+        )
+        async with get_session() as session:
+            try:
+                entries = await list_weight_range(
+                    session=session,
+                    user_key=user_key,
+                    from_date=from_value,
+                    to_date=to_value,
+                )
+            except ValueError as exc:
+                raise ToolError(str(exc)) from exc
+        return summarize_weights(from_value, to_value, entries)
+
+    @mcp.tool
+    async def get_weight(date: str | None = None) -> WeightEntryResponse | None:
+        """Return the weight entry for one date (YYYY-MM-DD), or null if none. Defaults to today."""
+        day = _parse_date(date) if date is not None else DateTimeValue.now(tz=tz).date()
+        async with get_session() as session:
+            return await fetch_weight_entry(
+                session=session,
+                user_key=user_key,
+                log_date=day,
+            )
