@@ -72,14 +72,15 @@ struct DailyKcalBars: View {
     /// Outputs: composed column view.
     private func barColumn(log: DailyLog, isLast: Bool, plotHeight: CGFloat) -> some View {
         let h = max(2, CGFloat(log.totalCalories) / CGFloat(ceiling) * plotHeight)
-        let gradient: LinearGradient = isLast
-            ? LinearGradient(colors: [Theme.CTP.mauve, Theme.CTP.blue], startPoint: .top, endPoint: .bottom)
-            : LinearGradient(colors: [Theme.CTP.lavender.opacity(0.85), Theme.CTP.blue.opacity(0.55)], startPoint: .top, endPoint: .bottom)
         return VStack(spacing: 6) {
             Spacer(minLength: 0)
-            RoundedRectangle(cornerRadius: Theme.Layout.barRadius, style: .continuous)
-                .fill(gradient)
+            StackedMacroBar(fractions: log.macroFractions)
                 .frame(height: h)
+                .clipShape(RoundedRectangle(cornerRadius: Theme.Layout.barRadius, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: Theme.Layout.barRadius, style: .continuous)
+                        .strokeBorder(Theme.FG.primary.opacity(isLast ? 0.8 : 0), lineWidth: 1.5)
+                )
                 .shadow(color: isLast ? Theme.CTP.mauve.opacity(0.45) : .clear, radius: 6)
             Text(Self.cal.veryShortWeekdaySymbol(for: log.date))
                 .font(.system(size: 11, weight: .semibold))
@@ -94,10 +95,14 @@ struct DailyKcalBars: View {
     let today = Date()
     let kcals = [2300, 2050, 1890, 2210, 2460, 1980, 1240]
     let logs: [DailyLog] = (0..<7).map { i in
-        DailyLog(
+        let kcal = kcals[i]
+        return DailyLog(
             date: cal.date(byAdding: .day, value: -6 + i, to: today) ?? today,
-            totalCalories: kcals[i],
-            totalProteinG: 0, totalCarbsG: 0, totalFatG: 0,
+            totalCalories: kcal,
+            // ~30/45/25 split by calories → grams via Atwater (4/4/9).
+            totalProteinG: Double(kcal) * 0.30 / 4,
+            totalCarbsG: Double(kcal) * 0.45 / 4,
+            totalFatG: Double(kcal) * 0.25 / 9,
             entryCount: 4
         )
     }

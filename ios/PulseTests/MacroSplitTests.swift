@@ -74,9 +74,11 @@ final class MacroSplitTests: XCTestCase {
 // MARK: - Weekly log grouping
 
 final class WeeklyLogGroupTests: XCTestCase {
+    /// Monday-first gregorian calendar, matching `PeriodIntakeModel.weekCalendar`.
     private func cal() -> Calendar {
         var c = Calendar(identifier: .gregorian)
         c.timeZone = TimeZone(identifier: "America/Toronto")!
+        c.firstWeekday = 2 // Monday
         return c
     }
 
@@ -85,27 +87,39 @@ final class WeeklyLogGroupTests: XCTestCase {
                  totalFatG: 0, entryCount: entries)
     }
 
-    /// Groups preserve each week's individual days (sorted ascending), label
-    /// sequentially, and mark the week containing `today`.
-    func test_weeklyLogGroups_preservesDaysAndMarksCurrent() {
-        let c = cal()
-        let today = c.date(from: DateComponents(year: 2026, month: 5, day: 20))!
-        // Current week: two days (intentionally out of order on input).
-        let d19 = c.date(from: DateComponents(year: 2026, month: 5, day: 19))!
-        let d18 = c.date(from: DateComponents(year: 2026, month: 5, day: 18))!
-        // Earlier week: one day.
-        let d6 = c.date(from: DateComponents(year: 2026, month: 5, day: 6))!
+    private func day(_ d: Int) -> Date {
+        cal().date(from: DateComponents(year: 2026, month: 5, day: d))!
+    }
+
+    /// Each week renders a full Monday→Sunday grid: complete past weeks show 7 days,
+    /// the current week is capped at today, unlogged days are zero-entry placeholders,
+    /// future days are dropped, and aggregates skip the placeholders.
+    func test_weeklyLogGroups_fillsMondayToSundayCappedAtToday() {
+        // In May 2026, the 18th is a Monday; today is Wed the 20th.
+        let today = day(20)
         let groups = PeriodIntakeModel.weeklyLogGroups(
-            [log(d19, kcal: 2100), log(d6, kcal: 1000), log(d18, kcal: 2000)],
-            today: today, calendar: c
+            [
+                log(day(19), kcal: 2100), // Tue, current week
+                log(day(6), kcal: 1000),  // Wed, earlier week
+                log(day(18), kcal: 2000), // Mon, current week
+                log(day(21), kcal: 9999) // Thu — future, must be dropped
+            ],
+            today: today, calendar: cal()
         )
         XCTAssertEqual(groups.count, 2)
         XCTAssertEqual(groups.map(\.label), ["Week 1", "Week 2"])
         XCTAssertFalse(groups[0].isCurrent)
         XCTAssertTrue(groups[1].isCurrent)
-        // Current week keeps both days, sorted ascending by date.
-        XCTAssertEqual(groups[1].days.map(\.date), [d18, d19])
-        XCTAssertEqual(groups[1].avgKcal, 2050)
+
+        // Earlier week (May 4–10): full Monday→Sunday grid, only May 6 logged.
+        XCTAssertEqual(groups[0].days.map(\.date), (4...10).map(day))
+        XCTAssertEqual(groups[0].days.filter { $0.entryCount > 0 }.map(\.date), [day(6)])
+        XCTAssertEqual(groups[0].avgKcal, 1000) // placeholders skipped
+
+        // Current week: Mon 18 → today (Wed 20); Thu 21 future log excluded.
+        XCTAssertEqual(groups[1].days.map(\.date), [day(18), day(19), day(20)])
+        XCTAssertEqual(groups[1].days.last?.entryCount, 0) // May 20 unlogged placeholder
+        XCTAssertEqual(groups[1].avgKcal, 2050) // avg of 2000 & 2100, placeholder skipped
     }
 
     /// Empty input yields no groups.

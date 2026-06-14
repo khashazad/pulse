@@ -12,6 +12,14 @@ struct MacroSplit: Equatable {
     let fatPct: Int
 }
 
+/// Protein/carbs/fat as normalized shares of macro calories (each 0–1, summing to 1).
+/// Used for the stacked bar-segment heights across the week / month / year charts.
+struct MacroFractions: Equatable, Hashable, Sendable {
+    let protein: Double
+    let carbs: Double
+    let fat: Double
+}
+
 /// Calories contributed by each macro using Atwater factors.
 /// Inputs:
 ///   - proteinG: protein grams.
@@ -27,12 +35,12 @@ private func macroCalories(proteinG: Double, carbsG: Double, fatG: Double) -> (p
 ///   - proteinG: protein grams.
 ///   - carbsG: carbohydrate grams.
 ///   - fatG: fat grams.
-/// Outputs: per-macro fraction tuple summing to 1, or nil when there are no macro calories.
-func macroFractions(proteinG: Double, carbsG: Double, fatG: Double) -> (protein: Double, carbs: Double, fat: Double)? {
+/// Outputs: per-macro fractions summing to 1, or nil when there are no macro calories.
+func macroFractions(proteinG: Double, carbsG: Double, fatG: Double) -> MacroFractions? {
     let cals = macroCalories(proteinG: proteinG, carbsG: carbsG, fatG: fatG)
     let total = cals.protein + cals.carbs + cals.fat
     guard total > 0 else { return nil }
-    return (cals.protein / total, cals.carbs / total, cals.fat / total)
+    return MacroFractions(protein: cals.protein / total, carbs: cals.carbs / total, fat: cals.fat / total)
 }
 
 /// Whole-number macro percentages, or nil when there are no macro calories to split.
@@ -62,7 +70,7 @@ func macroSplit(proteinG: Double, carbsG: Double, fatG: Double) -> MacroSplit? {
 extension DailyLog {
     /// This day's macro composition as normalized segment fractions (protein, carbs, fat).
     /// Outputs: fractions summing to 1, or nil when the day has no macros.
-    var macroFractions: (protein: Double, carbs: Double, fat: Double)? {
+    var macroFractions: MacroFractions? {
         Pulse.macroFractions(proteinG: totalProteinG, carbsG: totalCarbsG, fatG: totalFatG)
     }
 
@@ -78,10 +86,26 @@ extension Array where Element == DailyLog {
     /// with entries — matching the `avg*` helpers — then splits).
     /// Outputs: a `MacroSplit` summing to 100, or nil when the span has no macros.
     var macroSplit: MacroSplit? {
+        let g = loggedMacroGrams
+        return Pulse.macroSplit(proteinG: g.protein, carbsG: g.carbs, fatG: g.fat)
+    }
+
+    /// Aggregate macro composition (segment fractions) across the collection's logged
+    /// days, for the bucketed bar charts (week days, year months).
+    /// Outputs: fractions summing to 1, or nil when the span has no macros.
+    var macroFractions: MacroFractions? {
+        let g = loggedMacroGrams
+        return Pulse.macroFractions(proteinG: g.protein, carbsG: g.carbs, fatG: g.fat)
+    }
+
+    /// Summed protein/carbs/fat grams over days that have entries (empty days skipped).
+    /// Outputs: total grams per macro across logged days.
+    private var loggedMacroGrams: (protein: Double, carbs: Double, fat: Double) {
         let logged = filter { $0.entryCount > 0 }
-        let p = logged.map(\.totalProteinG).reduce(0, +)
-        let c = logged.map(\.totalCarbsG).reduce(0, +)
-        let f = logged.map(\.totalFatG).reduce(0, +)
-        return Pulse.macroSplit(proteinG: p, carbsG: c, fatG: f)
+        return (
+            logged.map(\.totalProteinG).reduce(0, +),
+            logged.map(\.totalCarbsG).reduce(0, +),
+            logged.map(\.totalFatG).reduce(0, +)
+        )
     }
 }

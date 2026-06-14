@@ -48,13 +48,18 @@ struct MonthView: View {
     ///   - logs: daily logs for the current month.
     /// Outputs: composed scrollable view.
     private func loadedBody(_ logs: [DailyLog]) -> some View {
+        // Only show days up to and including today — never future-dated logs, which must
+        // also be excluded from the averages and the y-scale.
+        let today = Date()
+        let visibleLogs = logs.filter { $0.date <= today }
         // `weeklyLogGroups` sorts each week's days internally, and avg/ceiling are
-        // order-independent, so no pre-sort of `logs` is needed here.
-        let weeks = PeriodIntakeModel.weeklyLogGroups(logs)
-        let avgKcal = logs.avgCalories
+        // order-independent, so no pre-sort is needed. Reverse so the current week is
+        // on top (rows stay labeled by chronological week-of-month).
+        let weeks = PeriodIntakeModel.weeklyLogGroups(visibleLogs, today: today).reversed()
+        let avgKcal = visibleLogs.avgCalories
         let dailyTarget = model?.targets?.calories
         // Shared vertical scale across all week rows so bars and the target line line up.
-        let ceiling = logs.calorieCeiling(target: dailyTarget)
+        let ceiling = visibleLogs.calorieCeiling(target: dailyTarget)
 
         return ScrollView {
             VStack(spacing: Theme.Layout.sectionSpacing) {
@@ -76,9 +81,9 @@ struct MonthView: View {
 
                     AverageMacrosTable(
                         avgKcal: avgKcal,
-                        avgProteinG: Int(logs.avgProtein.rounded()),
-                        avgCarbsG: Int(logs.avgCarbs.rounded()),
-                        avgFatG: Int(logs.avgFat.rounded())
+                        avgProteinG: Int(visibleLogs.avgProtein.rounded()),
+                        avgCarbsG: Int(visibleLogs.avgCarbs.rounded()),
+                        avgFatG: Int(visibleLogs.avgFat.rounded())
                     )
                     .padding(.horizontal, 16)
                 }

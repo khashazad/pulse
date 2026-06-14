@@ -59,21 +59,23 @@ struct BucketKcalBars: View {
         }
     }
 
-    /// One bar column: gradient-filled rounded rect with the bucket label underneath.
+    /// One bar column: stacked protein/carbs/fat segments with the bucket label below;
+    /// the current bucket gets a highlight border + shadow.
     /// Inputs:
     ///   - bucket: the period bucket to render.
     ///   - plotHeight: vertical space available for the bar (excluding label).
     /// Outputs: composed column view.
     private func barColumn(bucket: PeriodBucket, plotHeight: CGFloat) -> some View {
         let h = max(2, CGFloat(bucket.avgKcalPerDay) / CGFloat(ceiling) * plotHeight)
-        let gradient: LinearGradient = bucket.isCurrent
-            ? LinearGradient(colors: [Theme.CTP.mauve, Theme.CTP.blue], startPoint: .top, endPoint: .bottom)
-            : LinearGradient(colors: [Theme.CTP.lavender.opacity(0.85), Theme.CTP.blue.opacity(0.55)], startPoint: .top, endPoint: .bottom)
         return VStack(spacing: 6) {
             Spacer(minLength: 0)
-            RoundedRectangle(cornerRadius: Theme.Layout.barRadius, style: .continuous)
-                .fill(gradient)
+            StackedMacroBar(fractions: bucket.macroFractions)
                 .frame(height: h)
+                .clipShape(RoundedRectangle(cornerRadius: Theme.Layout.barRadius, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: Theme.Layout.barRadius, style: .continuous)
+                        .strokeBorder(Theme.FG.primary.opacity(bucket.isCurrent ? 0.8 : 0), lineWidth: 1.5)
+                )
                 .shadow(color: bucket.isCurrent ? Theme.CTP.mauve.opacity(0.45) : .clear, radius: 6)
             Text(bucket.label)
                 .font(.system(size: 11, weight: .semibold))
@@ -84,11 +86,12 @@ struct BucketKcalBars: View {
 }
 
 #Preview {
+    let sample = MacroFractions(protein: 0.30, carbs: 0.45, fat: 0.25)
     let buckets: [PeriodBucket] = [
-        .init(id: "week-1", label: "W1", avgKcalPerDay: 1980, isCurrent: false),
-        .init(id: "week-2", label: "W2", avgKcalPerDay: 2120, isCurrent: false),
-        .init(id: "week-3", label: "W3", avgKcalPerDay: 2310, isCurrent: false),
-        .init(id: "week-4", label: "W4", avgKcalPerDay: 1840, isCurrent: true)
+        .init(id: "week-1", label: "W1", avgKcalPerDay: 1980, isCurrent: false, macroFractions: sample),
+        .init(id: "week-2", label: "W2", avgKcalPerDay: 2120, isCurrent: false, macroFractions: sample),
+        .init(id: "week-3", label: "W3", avgKcalPerDay: 2310, isCurrent: false, macroFractions: sample),
+        .init(id: "week-4", label: "W4", avgKcalPerDay: 1840, isCurrent: true, macroFractions: sample)
     ]
     return BucketKcalBars(buckets: buckets, header: "Avg cal / day", targetCalories: 2200)
         .padding()
