@@ -121,6 +121,10 @@ def register(mcp: FastMCP, ctx: ToolContext) -> None:
         are omitted. Weights and summary stats are in pounds; each entry also
         reports its original source_unit. The range may not be reversed or span
         more than 366 days.
+
+        ``to_date`` is the anchor: when only one date is provided, ``to_date``
+        defaults to today first, then ``from_date`` is derived as 30 days before
+        the resolved ``to_date`` — not before a supplied ``from_date``.
         """
         today = DateTimeValue.now(tz=tz).date()
         to_value = _parse_date(to_date) if to_date is not None else today

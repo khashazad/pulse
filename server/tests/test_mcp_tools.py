@@ -8,9 +8,14 @@ instructions reference the canonical helpers (e.g., `resolve_food`,
 
 from __future__ import annotations
 
+from datetime import UTC, date, datetime
+from decimal import Decimal
 from unittest.mock import MagicMock
+from uuid import UUID
 
 import pytest
+
+from pulse_server.models.weight import WeightEntryResponse
 
 
 @pytest.mark.asyncio
@@ -89,7 +94,7 @@ def test_basis_for_is_always_per_100g() -> None:
     assert basis_for({}) == "per_100g"
 
 
-def _weight_entry(log_date: str, weight_lb: float, source_unit: str = "lb"):
+def _weight_entry(log_date: str, weight_lb: float, source_unit: str = "lb") -> WeightEntryResponse:
     """Build a WeightEntryResponse fixture for summarize_weights tests.
 
     **Inputs:**
@@ -100,13 +105,7 @@ def _weight_entry(log_date: str, weight_lb: float, source_unit: str = "lb"):
     **Outputs:**
     - WeightEntryResponse: A fully-populated entry with fixed id/timestamps.
     """
-    from datetime import date, datetime, timezone
-    from decimal import Decimal
-    from uuid import UUID
-
-    from pulse_server.models.weight import WeightEntryResponse
-
-    ts = datetime(2026, 6, 14, 12, 0, tzinfo=timezone.utc)
+    ts = datetime(2026, 6, 14, 12, 0, tzinfo=UTC)
     return WeightEntryResponse(
         id=UUID("00000000-0000-0000-0000-000000000001"),
         log_date=date.fromisoformat(log_date),
