@@ -25,7 +25,8 @@
 # via BACKUP_DATABASE_URL to file each object under its date/tag folder.
 # DB dumps older than 30 days are pruned; photos are copied (never deleted) so a
 # bucket-side deletion cannot propagate into the backup. The pre-date-keyed legacy
-# photos/progress/ tree is purged once every object is re-filed under a date folder.
+# photos/progress/ tree (from before this job was date-keyed) is left for manual
+# deletion — this job never deletes from Drive; see the backup-photos step.
 #
 # Restore drill (do this once, and after schema overhauls):
 #   rclone copy gdrive:db/<latest>.dump . && pg_restore --list <latest>.dump
@@ -174,37 +175,31 @@ jobs:
           done <<< "$mapping"
           echo "Copied and verified $count photo prefixes."
 
-          # Coverage reconciliation before any deletion: every bucket object under
-          # progress/ must now exist in the new date-keyed tree. If the bucket has
-          # MORE objects than the new layout, those extras have no DB row (orphans)
-          # — do NOT purge the legacy tree, since it may be their only backup.
+          # Informational coverage tripwire — NOT a delete gate. The loop above
+          # already verified every DB-mapped photo is present (it aborts otherwise),
+          # so a shortfall here means the bucket holds objects with no DB row:
+          # orphans left when a best-effort delete removed the row but not the
+          # bytes. Those are not copied by the DB-driven mirror, so they live only
+          # in B2 (and the legacy photos/progress tree, if it still exists). Warn so
+          # a human investigates; never act on this count automatically.
           bucket_objs=$(rclone lsf --files-only -R "PULSE:$S3_BUCKET/progress" | wc -l | tr -d ' ')
           new_objs=$(rclone lsf --files-only -R "gdrive:photos" --exclude "/progress/**" | wc -l | tr -d ' ')
-          echo "Bucket objects: $bucket_objs   New-layout objects: $new_objs"
-
-          if [ "$bucket_objs" -gt 0 ] && [ "$new_objs" -ge "$bucket_objs" ]; then
-            # Remove the old date-less mirror now that every object is re-filed
-            # under photos/<date>/<tag>/. No-op on later nightly runs.
-            #
-            # Best-effort: the gdrive remote uses the least-privilege drive.file
-            # scope, which can only delete files THIS app created. Legacy files
-            # written under an earlier OAuth grant return 403 appNotAuthorizedToChild
-            # on purge. That must NOT fail the job — the date-keyed backup above is
-            # already complete and verified; the legacy tree is a stale duplicate,
-            # not a data-loss risk. Delete photos/progress by hand in Drive (or
-            # regenerate GDRIVE_RCLONE_TOKEN with the broader `drive` scope) to
-            # silence this note; once it's gone the lsf guard skips this block.
-            if [ -n "$(rclone lsf gdrive:photos/progress 2>/dev/null || true)" ]; then
-              echo "Pruning legacy photos/progress tree…"
-              rclone purge "gdrive:photos/progress" || \
-                echo "NOTE: could not delete legacy photos/progress (drive.file scope" \
-                     "only manages app-created files). Backup is complete; delete that" \
-                     "folder manually in Drive, or widen the rclone scope to 'drive'." >&2
-            fi
-          else
-            echo "WARNING: bucket has objects absent from the new layout (possible" \
-                 "orphans without a DB row); leaving legacy photos/progress in place." >&2
+          echo "Bucket objects: $bucket_objs   New-layout (date-keyed) objects: $new_objs"
+          if [ "$new_objs" -lt "$bucket_objs" ]; then
+            echo "WARNING: $((bucket_objs - new_objs)) bucket object(s) have no date-keyed" \
+                 "copy — likely orphans (bytes whose DB row was deleted). They are NOT" \
+                 "backed up by this job; investigate before relying on this mirror." >&2
           fi
+
+          # Legacy cleanup is MANUAL by design — this job does NOT delete anything.
+          # The old date-less photos/progress tree (from before this job was
+          # date-keyed) is a stale duplicate of the date folders above. It is not
+          # auto-purged: the gdrive remote's least-privilege drive.file scope can't
+          # delete files it didn't create (403 appNotAuthorizedToChild), and a
+          # count-gated purge would be unsound against an append-only backup (the
+          # destination keeps copies of deleted/renamed photos, so object counts
+          # cannot prove per-object coverage). Once the date-keyed tree looks right,
+          # delete photos/progress by hand in Drive.
 
           echo "Bucket:  $(rclone size "PULSE:$S3_BUCKET/progress")"
           echo "Mirror:  $(rclone size gdrive:photos --exclude "/progress/**")"
