@@ -115,7 +115,8 @@ final class PeriodIntakeModel {
                 id: "week-\(Int(key.timeIntervalSince1970))",
                 label: "W\(idx + 1)",
                 avgKcalPerDay: bucket.avgCalories,
-                isCurrent: key == currentKey
+                isCurrent: key == currentKey,
+                macroFractions: bucket.macroFractions
             )
         }
     }
@@ -135,18 +136,29 @@ final class PeriodIntakeModel {
         let avgMacroSplit: MacroSplit?
     }
 
-    /// Group logs into weeks within the displayed month, preserving each week's
-    /// individual daily logs (unlike `weeklyBuckets`, which collapses to an average).
-    /// Each group's days are sorted ascending by date. See `groupByWeek` for keying.
+    /// Calendar for the Month view's week rows: the user's current calendar pinned to a
+    /// Monday-first week so every row reads Monday → Sunday regardless of device locale.
+    /// Outputs: a `Calendar` identical to `.current` but with `firstWeekday == Monday`.
+    static var weekCalendar: Calendar {
+        var cal = Calendar.current
+        cal.firstWeekday = 2 // Monday
+        return cal
+    }
+
+    /// Group logs into weeks within the displayed month. Each week renders as a full
+    /// Monday→Sunday grid (capped at today): real logs where present, zero-entry
+    /// placeholders for unlogged days, so every row shares one weekday axis. Display
+    /// aggregates skip the placeholders. See `groupByWeek` for keying.
     /// Inputs:
     ///   - logs: daily log rows for the displayed month.
-    ///   - today: date used to mark the "current" week.
-    ///   - calendar: calendar used to derive week boundaries.
-    /// Outputs: ordered week groups, each carrying its sorted daily logs.
-    static func weeklyLogGroups(_ logs: [DailyLog], today: Date = Date(), calendar: Calendar = .current) -> [WeekLogGroup] {
+    ///   - today: date used to mark the "current" week and cap future days.
+    ///   - calendar: calendar used to derive week boundaries (Monday-first by default).
+    /// Outputs: ordered week groups, each carrying its Monday→(Sunday or today) days.
+    static func weeklyLogGroups(_ logs: [DailyLog], today: Date = Date(), calendar: Calendar = weekCalendar) -> [WeekLogGroup] {
         let (sortedKeys, byWeek, currentKey) = groupByWeek(logs, today: today, calendar: calendar)
+        let todayStart = calendar.startOfDay(for: today)
         return sortedKeys.enumerated().map { idx, key in
-            let days = (byWeek[key] ?? []).sorted { $0.date < $1.date }
+            let days = filledWeekDays(weekStart: key, logs: byWeek[key] ?? [], todayStart: todayStart, calendar: calendar)
             return WeekLogGroup(
                 id: "week-\(Int(key.timeIntervalSince1970))",
                 label: "Week \(idx + 1)",
@@ -155,6 +167,25 @@ final class PeriodIntakeModel {
                 avgKcal: days.avgCalories,
                 avgMacroSplit: days.macroSplit
             )
+        }
+    }
+
+    /// Build a week's Monday→Sunday day sequence, capped at today: real logs where
+    /// present, zero-entry placeholders for unlogged days so every row shares one axis.
+    /// Inputs:
+    ///   - weekStart: the week's first instant (Monday under `weekCalendar`).
+    ///   - logs: the logs that fall within this week.
+    ///   - todayStart: start-of-day for today; later days are omitted (no future bars).
+    ///   - calendar: calendar used to step days and key logs by start-of-day.
+    /// Outputs: 1–7 daily logs ordered Monday→(Sunday or today), gaps filled with empties.
+    private static func filledWeekDays(weekStart: Date, logs: [DailyLog], todayStart: Date, calendar: Calendar) -> [DailyLog] {
+        let byDay = Dictionary(logs.map { (calendar.startOfDay(for: $0.date), $0) }, uniquingKeysWith: { first, _ in first })
+        return (0..<7).compactMap { offset -> DailyLog? in
+            guard let date = calendar.date(byAdding: .day, value: offset, to: weekStart) else { return nil }
+            let dayStart = calendar.startOfDay(for: date)
+            if dayStart > todayStart { return nil } // never render future days
+            if let log = byDay[dayStart] { return log }
+            return DailyLog(date: date, totalCalories: 0, totalProteinG: 0, totalCarbsG: 0, totalFatG: 0, entryCount: 0)
         }
     }
 
@@ -176,7 +207,8 @@ final class PeriodIntakeModel {
                 id: "month-\(monthKey)",
                 label: label,
                 avgKcalPerDay: bucket.avgCalories,
-                isCurrent: monthKey == currentMonth
+                isCurrent: monthKey == currentMonth,
+                macroFractions: bucket.macroFractions
             )
         }
     }

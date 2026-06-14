@@ -135,7 +135,7 @@ struct WeeklyMacroBars: View {
         let dimmed = selectedDate != nil && !isSelected
         return VStack(spacing: 6) {
             Spacer(minLength: 0)
-            StackedMacroBar(day: day)
+            StackedMacroBar(fractions: day.macroFractions)
                 .frame(height: barHeight)
                 .clipShape(RoundedRectangle(cornerRadius: Theme.Layout.barRadius, style: .continuous))
                 .overlay(
@@ -183,29 +183,6 @@ struct WeeklyMacroBars: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-}
-
-/// The colored protein/carbs/fat segments of a single day's bar (protein at the
-/// bottom). Falls back to a faint placeholder when the day has no macros.
-private struct StackedMacroBar: View {
-    let day: DailyLog
-
-    var body: some View {
-        GeometryReader { geo in
-            if let f = day.macroFractions {
-                // Carbs + protein get exact proportional heights; fat (top) absorbs the
-                // sub-pixel remainder via maxHeight so the segments always fill the bar
-                // with no gap from independent rounding.
-                VStack(spacing: 0) {
-                    Rectangle().fill(Theme.Macro.fat.color).frame(maxHeight: .infinity)
-                    Rectangle().fill(Theme.Macro.carbs.color).frame(height: geo.size.height * f.carbs)
-                    Rectangle().fill(Theme.Macro.protein.color).frame(height: geo.size.height * f.protein)
-                }
-            } else {
-                Rectangle().fill(Theme.CTP.surface1.opacity(0.6))
-            }
-        }
-    }
 }
 
 /// Three small colored "P 30%" / "C 45%" / "F 25%" chips for a macro split.

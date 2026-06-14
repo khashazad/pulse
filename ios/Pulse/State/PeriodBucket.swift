@@ -9,4 +9,7 @@ struct PeriodBucket: Identifiable, Hashable {
     let label: String
     let avgKcalPerDay: Int
     let isCurrent: Bool
+    /// Aggregate protein/carbs/fat shares for the bucket, for its stacked-macro bar
+    /// fill (nil when the bucket has no logged macros).
+    let macroFractions: MacroFractions?
 }

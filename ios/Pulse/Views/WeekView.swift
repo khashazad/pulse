@@ -57,6 +57,9 @@ struct WeekView: View {
         }()
         return ScrollView {
             VStack(spacing: Theme.Layout.sectionSpacing) {
+                MacroLegend()
+                    .padding(.horizontal, 16)
+
                 weekSummaryCard(logs: chronological, total: total, pct: pct, dailyTarget: dailyTarget)
                     .padding(.horizontal, 16)
 
