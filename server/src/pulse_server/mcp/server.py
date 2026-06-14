@@ -83,6 +83,13 @@ Diet tracking workflow. Follow this order on every food-related interaction:
    `delete_entry`. Same pattern for "replace yesterday's eggs": `get_day` → `delete_entry`
    → `log_food(..., consumed_at="<that day>")`.
 
+9) READING BACK. For a single day's individual entries (e.g. to find an entry id to
+   edit/delete), use `get_day(date)`. For any weekly or multi-day macro summary, use
+   `get_range(start, end)` — it returns one row per day with target, consumed totals, and
+   per-meal subtotals (no individual entries), so a week is one cheap call instead of
+   seven `get_day` calls. For body-weight over a range, use `get_weights(from_date,
+   to_date)`; `get_weight(date)` is the single-day form.
+
 `forget_food(name)` and `list_remembered_foods()` let the user audit memory.
 """.strip()
 

@@ -97,6 +97,50 @@ class DaySummary(BaseModel):
     entries: list[FoodEntryResponse]
 
 
+class MealGroup(BaseModel):
+    """Macro subtotal for one meal group within a day (no individual entries).
+
+    The ``label`` is either a saved meal's ``meal_name`` (when the entries were
+    logged from a meal) or a time-of-day bucket (``breakfast``/``lunch``/
+    ``dinner``/``snack``) for ad-hoc entries that have no ``meal_id``.
+    """
+
+    label: str
+    calories: int
+    protein_g: float
+    carbs_g: float
+    fat_g: float
+
+
+class RangeDay(BaseModel):
+    """One calendar day's macro rollup in a ``get_range`` response.
+
+    ``by_meal`` holds per-meal-group subtotals (ordered by the earliest entry in
+    each group) and sums to ``consumed``. ``target`` is the active profile (or
+    ``None`` when none is set). Unlogged days are still present (zero-filled):
+    ``consumed`` is all zeros and ``by_meal`` is empty.
+    """
+
+    date: DateValue
+    target: MacroTargets | None
+    consumed: MacroTotals
+    by_meal: list[MealGroup]
+
+
+class RangeSummary(BaseModel):
+    """Ranged daily macro summary returned by ``get_range``.
+
+    Bundles the resolved (inclusive) date bounds and one :class:`RangeDay` per
+    calendar day in the range. Every day in ``[from_date, to_date]`` appears,
+    including unlogged days (zero-filled) — callers get a complete grid without
+    gap-filling client-side.
+    """
+
+    from_date: DateValue
+    to_date: DateValue
+    days: list[RangeDay]
+
+
 class WeightRange(BaseModel):
     """Date-range of weight entries returned by ``get_weights``.
 

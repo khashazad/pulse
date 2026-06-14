@@ -21,7 +21,7 @@ from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 
 from pulse_server.db import get_session
-from pulse_server.mcp.context import ToolContext
+from pulse_server.mcp.context import ToolContext, resolve_iso_date
 from pulse_server.mcp.models import WeightRange
 from pulse_server.models.weight import WeightEntryResponse
 from pulse_server.services.weight_service import (
@@ -32,41 +32,6 @@ from pulse_server.services.weight_service import (
 )
 
 DEFAULT_RANGE_DAYS = 30
-
-
-def _parse_date(value: str) -> DateValue:
-    """Parse a ``YYYY-MM-DD`` string, raising ``ToolError`` on bad input.
-
-    **Inputs:**
-    - value (str): The raw date string from the MCP client.
-
-    **Outputs:**
-    - DateValue: The parsed calendar date.
-
-    **Raises:**
-    - ToolError: Raised when ``value`` is not a valid ISO ``YYYY-MM-DD`` date.
-    """
-    try:
-        return DateValue.fromisoformat(value)
-    except ValueError as exc:
-        raise ToolError(f"Invalid date '{value}', expected YYYY-MM-DD") from exc
-
-
-def _resolve_date(value: str | None, default: DateValue) -> DateValue:
-    """Parse an optional ``YYYY-MM-DD`` argument, falling back to a default.
-
-    **Inputs:**
-    - value (str | None): The raw date string, or ``None`` to use the default.
-    - default (DateValue): The date to return when ``value`` is ``None``.
-
-    **Outputs:**
-    - DateValue: The parsed date, or ``default`` when no value was supplied.
-
-    **Raises:**
-    - ToolError: Raised when ``value`` is non-``None`` but not a valid ISO
-      ``YYYY-MM-DD`` date.
-    """
-    return _parse_date(value) if value is not None else default
 
 
 def summarize_weights(
@@ -128,8 +93,8 @@ def register(mcp: FastMCP, ctx: ToolContext) -> None:
         summary stats are in pounds; each entry also reports its original
         source_unit. The range may not be reversed or span more than 366 days.
         """
-        to_value = _resolve_date(to_date, DateTimeValue.now(tz=tz).date())
-        from_value = _resolve_date(from_date, to_value - timedelta(days=DEFAULT_RANGE_DAYS))
+        to_value = resolve_iso_date(to_date, DateTimeValue.now(tz=tz).date())
+        from_value = resolve_iso_date(from_date, to_value - timedelta(days=DEFAULT_RANGE_DAYS))
         async with get_session() as session:
             try:
                 entries = await list_weight_range(
@@ -145,7 +110,7 @@ def register(mcp: FastMCP, ctx: ToolContext) -> None:
     @mcp.tool
     async def get_weight(date: str | None = None) -> WeightEntryResponse | None:
         """Return the weight entry for one date (YYYY-MM-DD), or null if none. Defaults to today."""
-        day = _resolve_date(date, DateTimeValue.now(tz=tz).date())
+        day = resolve_iso_date(date, DateTimeValue.now(tz=tz).date())
         async with get_session() as session:
             return await fetch_weight_entry(
                 session=session,
