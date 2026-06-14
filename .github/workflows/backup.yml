@@ -132,15 +132,16 @@ jobs:
           # Each photo's day + tag live ONLY in Postgres (the bucket key is
           # progress/<user>/<photo_id>/ — date-less). Pull a TSV mapping of
           # source prefix -> destination folder. The destination is
-          # photos/<YYYY-MM-DD>/<tag>/, where tag = normalized_name with '/' -> '-'
-          # and empty -> 'untagged'. Collision rule: if >1 photo shares the same
+          # photos/<YYYY-MM-DD>/<tag>/, where tag is normalized_name slugified to a
+          # safe [a-z0-9-] folder name (any run of other chars -> '-', then trimmed;
+          # empty -> 'untagged'). Collision rule: if >1 photo shares the same
           # day AND tag, every member of that group gets an extra /<photo_id>/
           # level so no object is ever overwritten in the backup.
           mapping="$(psql "$DATABASE_URL" -At -F $'\t' -c "
           with f as (
             select p.storage_key_prefix as src,
                    to_char(p.log_date, 'YYYY-MM-DD') as d,
-                   coalesce(nullif(replace(t.normalized_name, '/', '-'), ''), 'untagged') as tag,
+                   coalesce(nullif(trim(both '-' from regexp_replace(t.normalized_name, '[^a-z0-9]+', '-', 'g')), ''), 'untagged') as tag,
                    p.id::text as pid
             from progress_photos p
             join progress_photo_tags t on t.id = p.tag_id
