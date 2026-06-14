@@ -83,16 +83,16 @@ def summarize_weights(
             max_lb=None,
             net_change_lb=None,
         )
-    weights = [float(entry.weight_lb) for entry in entries]
-    net_change = weights[-1] - weights[0] if len(weights) >= 2 else None
+    weights = [entry.weight_lb for entry in entries]
+    net_change = float(weights[-1] - weights[0]) if len(weights) >= 2 else None
     return WeightRange(
         from_date=from_date,
         to_date=to_date,
         count=len(entries),
         entries=entries,
-        latest_lb=weights[-1],
-        min_lb=min(weights),
-        max_lb=max(weights),
+        latest_lb=float(weights[-1]),
+        min_lb=float(min(weights)),
+        max_lb=float(max(weights)),
         net_change_lb=net_change,
     )
 
@@ -117,14 +117,12 @@ def register(mcp: FastMCP, ctx: ToolContext) -> None:
     ) -> WeightRange:
         """Return weight entries for a date range (YYYY-MM-DD), ascending, with summary stats.
 
-        Defaults to the trailing 30 days (to=today, from=today-30) when dates
-        are omitted. Weights and summary stats are in pounds; each entry also
-        reports its original source_unit. The range may not be reversed or span
-        more than 366 days.
-
-        ``to_date`` is the anchor: when only one date is provided, ``to_date``
-        defaults to today first, then ``from_date`` is derived as 30 days before
-        the resolved ``to_date`` — not before a supplied ``from_date``.
+        When dates are omitted, defaults to ``to_date`` = today and
+        ``from_date`` = today - 30 days (both bounds inclusive). ``to_date`` is
+        the anchor, so ``from_date`` is always derived as 30 days before the
+        resolved ``to_date`` — not before a supplied ``from_date``. Weights and
+        summary stats are in pounds; each entry also reports its original
+        source_unit. The range may not be reversed or span more than 366 days.
         """
         today = DateTimeValue.now(tz=tz).date()
         to_value = _parse_date(to_date) if to_date is not None else today

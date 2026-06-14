@@ -175,7 +175,7 @@ def test_summarize_weights_multi_entry_stats() -> None:
 
     # Assert
     assert result.count == 3
-    assert result.latest_lb == 178.5            # last entry (ascending)
+    assert result.latest_lb == 178.5  # last entry (ascending)
     assert result.min_lb == 178.5
     assert result.max_lb == 182.0
-    assert result.net_change_lb == -1.5         # last - first = 178.5 - 180.0
+    assert result.net_change_lb == -1.5  # last - first = 178.5 - 180.0
