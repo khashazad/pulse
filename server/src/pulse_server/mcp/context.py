@@ -60,6 +60,44 @@ def basis_for(food: dict[str, Any]) -> str:
     return "per_100g"
 
 
+def parse_iso_date(value: str) -> DateValue:
+    """Parse a ``YYYY-MM-DD`` argument, raising ``ToolError`` on bad input.
+
+    Shared by the date-range and single-day tools so the parse-and-translate
+    step lives in one place rather than being copied into each closure.
+
+    **Inputs:**
+    - value (str): The raw date string from the MCP client.
+
+    **Outputs:**
+    - DateValue: The parsed calendar date.
+
+    **Exceptions:**
+    - ToolError: Raised when ``value`` is not a valid ISO ``YYYY-MM-DD`` date.
+    """
+    try:
+        return DateValue.fromisoformat(value)
+    except ValueError as exc:
+        raise ToolError(f"Invalid date '{value}', expected YYYY-MM-DD") from exc
+
+
+def resolve_iso_date(value: str | None, default: DateValue) -> DateValue:
+    """Parse an optional ``YYYY-MM-DD`` argument, falling back to a default.
+
+    **Inputs:**
+    - value (str | None): The raw date string, or ``None`` to use the default.
+    - default (DateValue): The date to return when ``value`` is ``None``.
+
+    **Outputs:**
+    - DateValue: The parsed date, or ``default`` when no value was supplied.
+
+    **Exceptions:**
+    - ToolError: Raised when ``value`` is non-``None`` but not a valid ISO
+      ``YYYY-MM-DD`` date.
+    """
+    return parse_iso_date(value) if value is not None else default
+
+
 def parse_consumed_at(value: str | None, tz: ZoneInfo) -> DateTimeValue | None:
     """Parse the MCP ``consumed_at`` argument shared by ``log_food`` / ``log_meal``.
 
