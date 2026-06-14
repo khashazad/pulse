@@ -122,10 +122,9 @@ def register(mcp: FastMCP, ctx: ToolContext) -> None:
     ) -> WeightRange:
         """Return weight entries for a date range (YYYY-MM-DD), ascending, with summary stats.
 
-        When dates are omitted, defaults to ``to_date`` = today and
-        ``from_date`` = today - 30 days (both bounds inclusive). ``to_date`` is
-        the anchor, so ``from_date`` is always derived as 30 days before the
-        resolved ``to_date`` — not before a supplied ``from_date``. Weights and
+        Either bound may be omitted: ``to_date`` defaults to today and a missing
+        ``from_date`` defaults to 30 days before the resolved ``to_date`` (both
+        bounds inclusive). A bound that is supplied is used as given. Weights and
         summary stats are in pounds; each entry also reports its original
         source_unit. The range may not be reversed or span more than 366 days.
         """
