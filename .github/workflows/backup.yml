@@ -184,9 +184,21 @@ jobs:
           if [ "$bucket_objs" -gt 0 ] && [ "$new_objs" -ge "$bucket_objs" ]; then
             # Remove the old date-less mirror now that every object is re-filed
             # under photos/<date>/<tag>/. No-op on later nightly runs.
+            #
+            # Best-effort: the gdrive remote uses the least-privilege drive.file
+            # scope, which can only delete files THIS app created. Legacy files
+            # written under an earlier OAuth grant return 403 appNotAuthorizedToChild
+            # on purge. That must NOT fail the job — the date-keyed backup above is
+            # already complete and verified; the legacy tree is a stale duplicate,
+            # not a data-loss risk. Delete photos/progress by hand in Drive (or
+            # regenerate GDRIVE_RCLONE_TOKEN with the broader `drive` scope) to
+            # silence this note; once it's gone the lsf guard skips this block.
             if [ -n "$(rclone lsf gdrive:photos/progress 2>/dev/null || true)" ]; then
               echo "Pruning legacy photos/progress tree…"
-              rclone purge "gdrive:photos/progress"
+              rclone purge "gdrive:photos/progress" || \
+                echo "NOTE: could not delete legacy photos/progress (drive.file scope" \
+                     "only manages app-created files). Backup is complete; delete that" \
+                     "folder manually in Drive, or widen the rclone scope to 'drive'." >&2
             fi
           else
             echo "WARNING: bucket has objects absent from the new layout (possible" \
