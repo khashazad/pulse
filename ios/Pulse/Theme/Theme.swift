@@ -61,6 +61,21 @@ enum Theme {
     static let separator = CTP.surface2.opacity(0.45)
     static let tint = CTP.mauve
 
+    /// Accent for the "pending" (applied-but-unconfirmed) state. Deliberately
+    /// distinct from any `Macro.color` — sky reads as informational and avoids
+    /// colliding with Fat (peach) on the day view.
+    static let pending = CTP.sky
+
+    /// Muted slate used for the "projected" (if-pending-were-confirmed) ghost
+    /// overlay on the day's ring and macro chips. Not a macro color — it reads as
+    /// a faint, secondary layer rather than a fourth channel.
+    static let projected = CTP.overlay2
+
+    /// Neutral hairline color for kcal-bar target reference lines. Was yellow,
+    /// which now reads as Carbs — a neutral light gray keeps the target line from
+    /// being mistaken for a macro.
+    static let targetLine = CTP.subtext0
+
     /// Macro channel identifier (protein / carbs / fat) with associated display
     /// color, translucent background tint, full label, and one-letter short label.
     enum Macro {
@@ -68,8 +83,8 @@ enum Theme {
         var color: Color {
             switch self {
             case .protein: CTP.blue
-            case .carbs:   CTP.peach
-            case .fat:     CTP.pink
+            case .carbs:   CTP.yellow
+            case .fat:     CTP.peach
             }
         }
         var bgTint: Color { color.opacity(0.16) }

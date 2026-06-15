@@ -41,26 +41,21 @@ struct WeekView: View {
         .refreshable { await model?.load() }
     }
 
-    /// Body for the loaded state. Computes totals and percent-of-target from `logs`
-    /// then assembles the summary card and averages table.
+    /// Body for the loaded state. Assembles the daily-bars card (tap a day for its
+    /// macros) and the week-average macros table. The week-total kcal number is
+    /// intentionally omitted — the per-day bars and averages carry the signal.
     /// Inputs:
     ///   - logs: daily logs for the last seven days.
     /// Outputs: composed scrollable view.
     private func loadedBody(_ logs: [DailyLog]) -> some View {
         let chronological = logs.sorted { $0.date < $1.date }
-        let total = chronological.map(\.totalCalories).reduce(0, +)
         let dailyTarget = model?.targets?.calories
-        let weeklyTarget = dailyTarget.map { $0 * chronological.count }
-        let pct: Int? = {
-            guard let weeklyTarget, weeklyTarget > 0 else { return nil }
-            return Int((Double(total) / Double(weeklyTarget) * 100).rounded())
-        }()
         return ScrollView {
             VStack(spacing: Theme.Layout.sectionSpacing) {
                 MacroLegend()
                     .padding(.horizontal, 16)
 
-                weekSummaryCard(logs: chronological, total: total, pct: pct, dailyTarget: dailyTarget)
+                weekSummaryCard(logs: chronological, dailyTarget: dailyTarget)
                     .padding(.horizontal, 16)
 
                 AverageMacrosTable(
@@ -77,51 +72,18 @@ struct WeekView: View {
         }
     }
 
-    /// Top summary card: week total kcal, percent-of-target chip, and daily kcal bars.
+    /// Daily-bars card: the seven-day kcal bar chart with tap-to-reveal day detail.
+    /// The week-total number and percent-of-target chip were removed by design;
+    /// the bars and the averages table below carry the week's signal.
     /// Inputs:
     ///   - logs: chronologically sorted daily logs.
-    ///   - total: total kcal across the week.
-    ///   - pct: percent of weekly kcal target reached (nil if no target).
     ///   - dailyTarget: daily kcal target used for the bar threshold line.
     /// Outputs: composed card view.
-    private func weekSummaryCard(logs: [DailyLog], total: Int, pct: Int?, dailyTarget: Int?) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .firstTextBaseline) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Week total")
-                        .font(.system(size: 11, weight: .semibold))
-                        .tracking(0.8)
-                        .textCase(.uppercase)
-                        .foregroundStyle(Theme.FG.secondary)
-                    HStack(alignment: .firstTextBaseline, spacing: 4) {
-                        Text(total.formatted())
-                            .font(.system(size: 28, weight: .bold, design: .rounded))
-                            .monospacedDigit()
-                            .foregroundStyle(Theme.FG.primary)
-                        Text("cal")
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundStyle(Theme.FG.tertiary)
-                    }
-                }
-                Spacer()
-                if let pct {
-                    Text("\(pct)% of target")
-                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                        .tracking(0.4)
-                        .foregroundStyle(Theme.CTP.green)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 4)
-                        .background(
-                            Capsule().fill(Theme.CTP.green.opacity(0.14))
-                        )
-                }
-            }
-
-            DailyKcalBars(logs: logs, targetCalories: dailyTarget)
-        }
-        .padding(.horizontal, 16)
-        .padding(.top, 14)
-        .padding(.bottom, 16)
-        .ctpCard()
+    private func weekSummaryCard(logs: [DailyLog], dailyTarget: Int?) -> some View {
+        DailyKcalBars(logs: logs, targetCalories: dailyTarget)
+            .padding(.horizontal, 16)
+            .padding(.top, 14)
+            .padding(.bottom, 16)
+            .ctpCard()
     }
 }

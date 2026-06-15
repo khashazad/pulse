@@ -60,7 +60,9 @@ struct RootView: View {
             if dockVisible {
                 FloatingDock(tab: $tab)
                     .padding(.horizontal, 32)
-                    .padding(.bottom, 4)
+                    // Ride just above the home indicator (TickTick-style) rather
+                    // than floating high off the bottom edge.
+                    .padding(.bottom, 0)
             }
         }
         .sheet(isPresented: $showSettings) {

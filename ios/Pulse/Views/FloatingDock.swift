@@ -21,25 +21,7 @@ struct FloatingDock: View {
             tabButton(.measures, system: "figure.arms.open", label: "Measures")
         }
         .padding(6)
-        .background(
-            ZStack {
-                Capsule(style: .continuous)
-                    .fill(Theme.BG.secondary.opacity(0.72))
-                Capsule(style: .continuous)
-                    .fill(.ultraThinMaterial)
-                    .opacity(0.6)
-            }
-        )
-        .overlay(
-            Capsule(style: .continuous)
-                .strokeBorder(Theme.CTP.lavender.opacity(0.18), lineWidth: 0.5)
-        )
-        .shadow(
-            color: Theme.dockShadow.color,
-            radius: Theme.dockShadow.radius,
-            x: Theme.dockShadow.x,
-            y: Theme.dockShadow.y
-        )
+        .modifier(DockSurface())
     }
 
     /// One tap-target in the dock; selects `target` on tap.
@@ -79,6 +61,65 @@ struct FloatingDock: View {
             Capsule().fill(isActive ? Theme.CTP.mauve.opacity(0.16) : .clear)
         )
         .contentShape(Capsule())
+    }
+}
+
+/// Dock background surface. On iOS 26+ it uses the native Liquid Glass material,
+/// which refracts and blurs the content scrolling beneath the floating capsule.
+/// On earlier OS versions it falls back to a tuned translucent material (a low
+/// solid fill behind `.ultraThinMaterial`) plus a hairline border, approximating
+/// the glass look without the live refraction.
+private struct DockSurface: ViewModifier {
+    func body(content: Content) -> some View {
+        // `glassEffect` only exists in the iOS 26 SDK (Xcode 26 / Swift 6.2+). A
+        // runtime `#available` check is not enough — the symbol must exist at
+        // compile time — so gate it behind a compiler check too. Older toolchains
+        // (e.g. CI's Xcode 16.4) compile only the material fallback.
+#if compiler(>=6.2)
+        if #available(iOS 26.0, *) {
+            content
+                .glassEffect(.regular, in: Capsule(style: .continuous))
+                .shadow(
+                    color: Theme.dockShadow.color,
+                    radius: Theme.dockShadow.radius,
+                    x: Theme.dockShadow.x,
+                    y: Theme.dockShadow.y
+                )
+        } else {
+            materialFallback(content)
+        }
+#else
+        materialFallback(content)
+#endif
+    }
+
+    /// Translucent material dock surface used below iOS 26 (or whenever the build
+    /// SDK predates Liquid Glass). Uses only iOS 17 APIs: a low solid fill behind
+    /// `.ultraThinMaterial`, a hairline border, and the shared dock shadow.
+    /// Inputs:
+    ///   - content: the dock content to place on the surface.
+    /// Outputs: the content backed by the fallback capsule surface.
+    private func materialFallback(_ content: Content) -> some View {
+        content
+            .background(
+                ZStack {
+                    Capsule(style: .continuous)
+                        .fill(Theme.BG.secondary.opacity(0.55))
+                    Capsule(style: .continuous)
+                        .fill(.ultraThinMaterial)
+                        .opacity(0.7)
+                }
+            )
+            .overlay(
+                Capsule(style: .continuous)
+                    .strokeBorder(Theme.CTP.lavender.opacity(0.18), lineWidth: 0.5)
+            )
+            .shadow(
+                color: Theme.dockShadow.color,
+                radius: Theme.dockShadow.radius,
+                x: Theme.dockShadow.x,
+                y: Theme.dockShadow.y
+            )
     }
 }
 

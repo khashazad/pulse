@@ -27,7 +27,7 @@ struct BucketKcalBars: View {
                 if let target = targetCalories {
                     HStack(spacing: 6) {
                         Rectangle()
-                            .fill(Theme.CTP.yellow)
+                            .fill(Theme.targetLine)
                             .frame(width: 14, height: 1)
                         Text("target \(target)")
                             .monospacedDigit()
@@ -43,7 +43,7 @@ struct BucketKcalBars: View {
                 ZStack(alignment: .bottomLeading) {
                     if targetCalories != nil {
                         Rectangle()
-                            .fill(Theme.CTP.yellow.opacity(0.7))
+                            .fill(Theme.targetLine.opacity(0.7))
                             .frame(height: 1)
                             .offset(y: -targetY - 20)
                             .opacity(0.7)
@@ -72,11 +72,7 @@ struct BucketKcalBars: View {
             StackedMacroBar(fractions: bucket.macroFractions)
                 .frame(height: h)
                 .clipShape(RoundedRectangle(cornerRadius: Theme.Layout.barRadius, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: Theme.Layout.barRadius, style: .continuous)
-                        .strokeBorder(Theme.FG.primary.opacity(bucket.isCurrent ? 0.8 : 0), lineWidth: 1.5)
-                )
-                .shadow(color: bucket.isCurrent ? Theme.CTP.mauve.opacity(0.45) : .clear, radius: 6)
+                .barEmphasis(emphasized: bucket.isCurrent, dimmed: false)
             Text(bucket.label)
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(bucket.isCurrent ? Theme.CTP.mauve : Theme.FG.secondary)
