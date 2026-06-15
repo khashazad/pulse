@@ -71,6 +71,11 @@ struct FloatingDock: View {
 /// the glass look without the live refraction.
 private struct DockSurface: ViewModifier {
     func body(content: Content) -> some View {
+        // `glassEffect` only exists in the iOS 26 SDK (Xcode 26 / Swift 6.2+). A
+        // runtime `#available` check is not enough — the symbol must exist at
+        // compile time — so gate it behind a compiler check too. Older toolchains
+        // (e.g. CI's Xcode 16.4) compile only the material fallback.
+#if compiler(>=6.2)
         if #available(iOS 26.0, *) {
             content
                 .glassEffect(.regular, in: Capsule(style: .continuous))
@@ -81,27 +86,40 @@ private struct DockSurface: ViewModifier {
                     y: Theme.dockShadow.y
                 )
         } else {
-            content
-                .background(
-                    ZStack {
-                        Capsule(style: .continuous)
-                            .fill(Theme.BG.secondary.opacity(0.55))
-                        Capsule(style: .continuous)
-                            .fill(.ultraThinMaterial)
-                            .opacity(0.7)
-                    }
-                )
-                .overlay(
-                    Capsule(style: .continuous)
-                        .strokeBorder(Theme.CTP.lavender.opacity(0.18), lineWidth: 0.5)
-                )
-                .shadow(
-                    color: Theme.dockShadow.color,
-                    radius: Theme.dockShadow.radius,
-                    x: Theme.dockShadow.x,
-                    y: Theme.dockShadow.y
-                )
+            materialFallback(content)
         }
+#else
+        materialFallback(content)
+#endif
+    }
+
+    /// Translucent material dock surface used below iOS 26 (or whenever the build
+    /// SDK predates Liquid Glass). Uses only iOS 17 APIs: a low solid fill behind
+    /// `.ultraThinMaterial`, a hairline border, and the shared dock shadow.
+    /// Inputs:
+    ///   - content: the dock content to place on the surface.
+    /// Outputs: the content backed by the fallback capsule surface.
+    private func materialFallback(_ content: Content) -> some View {
+        content
+            .background(
+                ZStack {
+                    Capsule(style: .continuous)
+                        .fill(Theme.BG.secondary.opacity(0.55))
+                    Capsule(style: .continuous)
+                        .fill(.ultraThinMaterial)
+                        .opacity(0.7)
+                }
+            )
+            .overlay(
+                Capsule(style: .continuous)
+                    .strokeBorder(Theme.CTP.lavender.opacity(0.18), lineWidth: 0.5)
+            )
+            .shadow(
+                color: Theme.dockShadow.color,
+                radius: Theme.dockShadow.radius,
+                x: Theme.dockShadow.x,
+                y: Theme.dockShadow.y
+            )
     }
 }
 
