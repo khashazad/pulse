@@ -21,7 +21,7 @@ from fastmcp.exceptions import ToolError
 from sqlalchemy.exc import IntegrityError
 
 from pulse_server.db import get_session, transaction
-from pulse_server.macro_aggregates import sum_food_entry_macros
+from pulse_server.macro_aggregates import confirmed_entries, sum_food_entry_macros
 from pulse_server.mcp.context import ToolContext, parse_consumed_at, target_and_remaining
 from pulse_server.mcp.models import LogMealResponse
 from pulse_server.models import (
@@ -370,7 +370,7 @@ def register(mcp: FastMCP, ctx: ToolContext) -> None:
                 raise ToolError(str(exc.detail)) from exc
 
             day_entries = [FoodEntryResponse(**row) for row in day_rows]
-            daily_totals = sum_food_entry_macros(day_entries)
+            daily_totals = sum_food_entry_macros(confirmed_entries(day_entries))
 
             targets_repo = TargetsRepository(session)
             target_row = await targets_repo.get_target_profile(user_key)

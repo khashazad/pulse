@@ -196,6 +196,7 @@ def _food_entry(
     consumed_at: datetime,
     meal_id: UUID | None = None,
     meal_name: str | None = None,
+    confirmed: bool = True,
 ) -> FoodEntryResponse:
     """Build a FoodEntryResponse fixture for meal-grouping tests.
 
@@ -206,6 +207,7 @@ def _food_entry(
       time-of-day fallback bucket and group ordering).
     - meal_id (UUID | None): Saved-meal id, or ``None`` for an ad-hoc entry.
     - meal_name (str | None): Saved-meal name used as the group label when set.
+    - confirmed (bool): Whether the entry counts toward totals (default ``True``).
 
     **Outputs:**
     - FoodEntryResponse: A fully-populated entry with fixed id/group/log ids.
@@ -228,6 +230,7 @@ def _food_entry(
         meal_name=meal_name,
         consumed_at=consumed_at,
         created_at=consumed_at,
+        confirmed=confirmed,
     )
 
 
@@ -428,6 +431,44 @@ def test_group_entries_by_meal_empty() -> None:
     from pulse_server.mcp.tools.targets_summary_tools import group_entries_by_meal
 
     assert group_entries_by_meal([], ZoneInfo("UTC")) == []
+
+
+def test_build_range_days_excludes_pending_from_by_meal() -> None:
+    """``build_range_days`` drops pending entries so ``by_meal`` matches confirmed ``consumed``."""
+    from pulse_server.mcp.tools.targets_summary_tools import build_range_days
+    from pulse_server.models import DailySummaryResponse, MacroTotals
+
+    summary = DailySummaryResponse(
+        date=date(2026, 6, 20),
+        target=None,
+        # consumed already excludes pending (computed by _assemble_daily_summary).
+        consumed=MacroTotals(calories=300, protein_g=20, carbs_g=30, fat_g=10),
+        remaining=None,
+        entries=[
+            _food_entry(
+                calories=300,
+                protein_g=20,
+                carbs_g=30,
+                fat_g=10,
+                consumed_at=datetime(2026, 6, 20, 8, 0, tzinfo=UTC),
+            ),
+            _food_entry(
+                calories=700,
+                protein_g=50,
+                carbs_g=40,
+                fat_g=20,
+                consumed_at=datetime(2026, 6, 20, 13, 0, tzinfo=UTC),
+                confirmed=False,
+            ),
+        ],
+    )
+
+    rows = build_range_days([summary], ZoneInfo("UTC"))
+
+    assert len(rows) == 1
+    by_meal_calories = sum(group.calories for group in rows[0].by_meal)
+    assert by_meal_calories == 300
+    assert by_meal_calories == rows[0].consumed.calories
 
 
 def test_build_range_days_spans_logged_and_unlogged_days() -> None:

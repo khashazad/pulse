@@ -25,7 +25,7 @@ from fastmcp.exceptions import ToolError
 from pydantic import Field
 
 from pulse_server.db import get_session, transaction
-from pulse_server.macro_aggregates import sum_food_entry_macros
+from pulse_server.macro_aggregates import confirmed_entries, sum_food_entry_macros
 from pulse_server.mcp.context import ToolContext, parse_iso_date
 from pulse_server.mcp.models import DaySummary, MealGroup, RangeDay, RangeSummary
 from pulse_server.models import DailySummaryResponse, FoodEntryResponse, MacroTargets
@@ -107,8 +107,10 @@ def build_range_days(summaries: Sequence[DailySummaryResponse], tz: ZoneInfo) ->
     """Map per-day summaries into lightweight meal-grouped range rows.
 
     Each summary's entries are collapsed into meal-group subtotals; the entries
-    themselves are dropped. Unlogged days (empty ``entries``) pass through as
-    zero-filled rows with an empty ``by_meal`` list.
+    themselves are dropped. Pending (unconfirmed) entries are excluded so the
+    ``by_meal`` subtotals match the day's confirmed ``consumed`` total. Unlogged
+    days (empty ``entries``) pass through as zero-filled rows with an empty
+    ``by_meal`` list.
 
     **Inputs:**
     - summaries (Sequence[DailySummaryResponse]): One summary per calendar day,
@@ -123,7 +125,7 @@ def build_range_days(summaries: Sequence[DailySummaryResponse], tz: ZoneInfo) ->
             date=summary.date,
             target=summary.target,
             consumed=summary.consumed,
-            by_meal=group_entries_by_meal(summary.entries, tz),
+            by_meal=group_entries_by_meal(confirmed_entries(summary.entries), tz),
         )
         for summary in summaries
     ]

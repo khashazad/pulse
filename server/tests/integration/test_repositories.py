@@ -27,7 +27,10 @@ from pulse_server.models import FoodEntryCreate
 from pulse_server.repositories.entries import EntriesRepository, FoodEntryPayload
 from pulse_server.repositories.logs import LogsRepository
 from pulse_server.repositories.targets import TargetsRepository
-from pulse_server.services.entries_service import create_entries_with_side_effects
+from pulse_server.services.entries_service import (
+    confirm_pending_entries,
+    create_entries_with_side_effects,
+)
 from pulse_server.services.summary_service import build_daily_summary
 
 pytestmark = pytest.mark.integration
@@ -260,3 +263,275 @@ async def test_logs_and_summary_aggregates(session: AsyncSession) -> None:
     assert summary.consumed.protein_g == 18.0
     assert summary.remaining.calories == 1600
     assert summary.remaining.carbs_g == 138.0
+
+
+def _payload(
+    *,
+    daily_log_id: str,
+    user_key: str,
+    calories: int,
+    consumed_at: DateTimeValue,
+    confirmed: bool = True,
+    fdc_id: int = 900001,
+    name: str = "food",
+) -> FoodEntryPayload:
+    """Build a minimal USDA-backed ``FoodEntryPayload`` for pending-flag tests.
+
+    **Inputs:**
+    - daily_log_id (str): Owning daily-log id.
+    - user_key (str): Owning user key.
+    - calories (int): Calories to record (protein/carbs/fat fixed at 1.0).
+    - consumed_at (DateTimeValue): Consumption timestamp.
+    - confirmed (bool): Whether the entry counts toward totals (default ``True``).
+    - fdc_id (int): USDA id to satisfy the one-source constraint.
+    - name (str): Display name for the entry.
+
+    **Outputs:**
+    - FoodEntryPayload: Frozen payload ready for ``create_food_entry``.
+    """
+    return FoodEntryPayload(
+        entry_id=uuid.uuid4(),
+        daily_log_id=daily_log_id,
+        user_key=user_key,
+        entry_group_id=uuid.uuid4(),
+        display_name=name,
+        quantity_text="1 serving",
+        normalized_quantity_value=1,
+        normalized_quantity_unit="serving",
+        usda_fdc_id=fdc_id,
+        usda_description=name,
+        custom_food_id=None,
+        calories=calories,
+        protein_g=1,
+        carbs_g=1,
+        fat_g=1,
+        consumed_at=consumed_at,
+        confirmed=confirmed,
+    )
+
+
+@pytest.mark.asyncio
+async def test_create_food_entry_persists_confirmed_flag(session: AsyncSession) -> None:
+    """``create_food_entry`` stores ``confirmed`` (default true, explicit false) and lists it back."""
+    user_key = f"user-{uuid.uuid4()}"
+    log_date = DateValue(2026, 5, 1)
+    consumed_at = DateTimeValue(2026, 5, 1, 12, 0, tzinfo=UTC)
+    entries_repo = EntriesRepository(session)
+    log_id = entries_repo.daily_log_id(user_key=user_key, log_date=log_date)
+
+    async with transaction(session):
+        await entries_repo.ensure_daily_log(log_id, user_key, log_date)
+        await entries_repo.create_food_entry(
+            _payload(daily_log_id=log_id, user_key=user_key, calories=200, consumed_at=consumed_at)
+        )
+        await entries_repo.create_food_entry(
+            _payload(
+                daily_log_id=log_id,
+                user_key=user_key,
+                calories=700,
+                consumed_at=consumed_at,
+                confirmed=False,
+            )
+        )
+
+    rows = await entries_repo.list_entries_by_daily_log_id(log_id)
+    by_cal = {row["calories"]: row["confirmed"] for row in rows}
+    assert by_cal == {200: True, 700: False}
+
+
+@pytest.mark.asyncio
+async def test_list_logs_excludes_unconfirmed(session: AsyncSession) -> None:
+    """``list_logs`` sums/counts only confirmed entries; a pending-only day appears with zeros."""
+    user_key = f"user-{uuid.uuid4()}"
+    mixed_date = DateValue(2026, 5, 2)
+    pending_only_date = DateValue(2026, 5, 3)
+    consumed_at = DateTimeValue(2026, 5, 2, 12, 0, tzinfo=UTC)
+    entries_repo = EntriesRepository(session)
+    logs_repo = LogsRepository(session)
+    mixed_log = entries_repo.daily_log_id(user_key=user_key, log_date=mixed_date)
+    pending_log = entries_repo.daily_log_id(user_key=user_key, log_date=pending_only_date)
+
+    async with transaction(session):
+        await entries_repo.ensure_daily_log(mixed_log, user_key, mixed_date)
+        await entries_repo.ensure_daily_log(pending_log, user_key, pending_only_date)
+        await entries_repo.create_food_entry(
+            _payload(
+                daily_log_id=mixed_log, user_key=user_key, calories=300, consumed_at=consumed_at
+            )
+        )
+        await entries_repo.create_food_entry(
+            _payload(
+                daily_log_id=mixed_log,
+                user_key=user_key,
+                calories=999,
+                consumed_at=consumed_at,
+                confirmed=False,
+            )
+        )
+        await entries_repo.create_food_entry(
+            _payload(
+                daily_log_id=pending_log,
+                user_key=user_key,
+                calories=800,
+                consumed_at=consumed_at,
+                confirmed=False,
+            )
+        )
+
+    rows = await logs_repo.list_logs(
+        user_key=user_key, from_date=mixed_date, to_date=pending_only_date
+    )
+    by_date = {row["log_date"]: row for row in rows}
+    assert int(by_date[mixed_date]["total_calories"]) == 300
+    assert int(by_date[mixed_date]["entry_count"]) == 1
+    # The pending-only day still appears (outer join) but contributes nothing.
+    assert int(by_date[pending_only_date]["total_calories"]) == 0
+    assert int(by_date[pending_only_date]["entry_count"]) == 0
+
+
+@pytest.mark.asyncio
+async def test_calorie_totals_by_day_excludes_unconfirmed(session: AsyncSession) -> None:
+    """``calorie_totals_by_day`` sums only confirmed entries."""
+    user_key = f"user-{uuid.uuid4()}"
+    log_date = DateValue(2026, 5, 4)
+    consumed_at = DateTimeValue(2026, 5, 4, 12, 0, tzinfo=UTC)
+    entries_repo = EntriesRepository(session)
+    log_id = entries_repo.daily_log_id(user_key=user_key, log_date=log_date)
+
+    async with transaction(session):
+        await entries_repo.ensure_daily_log(log_id, user_key, log_date)
+        await entries_repo.create_food_entry(
+            _payload(daily_log_id=log_id, user_key=user_key, calories=300, consumed_at=consumed_at)
+        )
+        await entries_repo.create_food_entry(
+            _payload(
+                daily_log_id=log_id,
+                user_key=user_key,
+                calories=999,
+                consumed_at=consumed_at,
+                confirmed=False,
+            )
+        )
+
+    rows = await entries_repo.calorie_totals_by_day(
+        user_key=user_key, from_date=log_date, to_date=log_date
+    )
+    assert [(row["log_date"], int(row["calories"])) for row in rows] == [(log_date, 300)]
+
+
+@pytest.mark.asyncio
+async def test_confirm_entries_flips_scoped_and_idempotent(session: AsyncSession) -> None:
+    """``confirm_entries`` flips pending→confirmed, is user-scoped, and is idempotent."""
+    user_key = f"user-{uuid.uuid4()}"
+    other_user = f"user-{uuid.uuid4()}"
+    log_date = DateValue(2026, 5, 5)
+    consumed_at = DateTimeValue(2026, 5, 5, 12, 0, tzinfo=UTC)
+    entries_repo = EntriesRepository(session)
+    log_id = entries_repo.daily_log_id(user_key=user_key, log_date=log_date)
+
+    async with transaction(session):
+        await entries_repo.ensure_daily_log(log_id, user_key, log_date)
+        pending_row = await entries_repo.create_food_entry(
+            _payload(
+                daily_log_id=log_id,
+                user_key=user_key,
+                calories=500,
+                consumed_at=consumed_at,
+                confirmed=False,
+            )
+        )
+    entry_id = pending_row["id"]
+
+    # Wrong user confirms nothing.
+    async with transaction(session):
+        none_confirmed = await entries_repo.confirm_entries([entry_id], other_user)
+    assert none_confirmed == []
+
+    # Owner confirms the entry.
+    async with transaction(session):
+        confirmed = await entries_repo.confirm_entries([entry_id], user_key)
+    assert len(confirmed) == 1
+    assert confirmed[0]["id"] == entry_id
+    assert confirmed[0]["confirmed"] is True
+
+    # Re-confirming is a no-op (already confirmed → no rows updated).
+    async with transaction(session):
+        again = await entries_repo.confirm_entries([entry_id], user_key)
+    assert again == []
+
+    rows = await entries_repo.list_entries_by_daily_log_id(log_id)
+    assert rows[0]["confirmed"] is True
+
+
+@pytest.mark.asyncio
+async def test_daily_summary_consumed_excludes_pending_but_lists_it(session: AsyncSession) -> None:
+    """``build_daily_summary`` excludes pending from ``consumed`` yet still returns the pending entry flagged."""
+    user_key = f"user-{uuid.uuid4()}"
+    log_date = DateValue(2026, 5, 6)
+    consumed_at = DateTimeValue(2026, 5, 6, 12, 0, tzinfo=UTC)
+    entries_repo = EntriesRepository(session)
+    log_id = entries_repo.daily_log_id(user_key=user_key, log_date=log_date)
+
+    async with transaction(session):
+        await entries_repo.ensure_daily_log(log_id, user_key, log_date)
+        await entries_repo.create_food_entry(
+            _payload(daily_log_id=log_id, user_key=user_key, calories=300, consumed_at=consumed_at)
+        )
+        await entries_repo.create_food_entry(
+            _payload(
+                daily_log_id=log_id,
+                user_key=user_key,
+                calories=700,
+                consumed_at=consumed_at,
+                confirmed=False,
+            )
+        )
+
+    summary = await build_daily_summary(
+        session=session, user_key=user_key, summary_date=log_date, missing_target="null"
+    )
+    assert summary.consumed.calories == 300
+    assert len(summary.entries) == 2
+    assert sorted(entry.confirmed for entry in summary.entries) == [False, True]
+
+
+@pytest.mark.asyncio
+async def test_confirm_pending_entries_rejects_cross_day(session: AsyncSession) -> None:
+    """``confirm_pending_entries`` raises (and rolls back) when ids span two days."""
+    user_key = f"user-{uuid.uuid4()}"
+    day_a = DateValue(2026, 5, 7)
+    day_b = DateValue(2026, 5, 8)
+    entries_repo = EntriesRepository(session)
+    log_a = entries_repo.daily_log_id(user_key=user_key, log_date=day_a)
+    log_b = entries_repo.daily_log_id(user_key=user_key, log_date=day_b)
+
+    async with transaction(session):
+        await entries_repo.ensure_daily_log(log_a, user_key, day_a)
+        await entries_repo.ensure_daily_log(log_b, user_key, day_b)
+        row_a = await entries_repo.create_food_entry(
+            _payload(
+                daily_log_id=log_a,
+                user_key=user_key,
+                calories=300,
+                consumed_at=DateTimeValue(2026, 5, 7, 12, 0, tzinfo=UTC),
+                confirmed=False,
+            )
+        )
+        row_b = await entries_repo.create_food_entry(
+            _payload(
+                daily_log_id=log_b,
+                user_key=user_key,
+                calories=400,
+                consumed_at=DateTimeValue(2026, 5, 8, 12, 0, tzinfo=UTC),
+                confirmed=False,
+            )
+        )
+
+    with pytest.raises(ValueError, match="same day"):
+        await confirm_pending_entries(session, user_key, [row_a["id"], row_b["id"]])
+
+    # The cross-day confirm rolled back: both entries are still pending.
+    rows_a = await entries_repo.list_entries_by_daily_log_id(log_a)
+    rows_b = await entries_repo.list_entries_by_daily_log_id(log_b)
+    assert rows_a[0]["confirmed"] is False
+    assert rows_b[0]["confirmed"] is False

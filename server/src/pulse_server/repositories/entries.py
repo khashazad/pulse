@@ -13,13 +13,14 @@ allowed to issue ``food_entries`` SQL.
 from __future__ import annotations
 
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date as DateValue
 from datetime import datetime as DateTimeValue
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy import func as sa_func
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -60,6 +61,9 @@ class FoodEntryPayload:
     - consumed_at (DateTimeValue): Timestamp when the food was consumed.
     - meal_id (UUID | None): Optional meal UUID associating the entry with a meal.
     - meal_name (str | None): Optional meal-name snapshot at entry creation time.
+    - confirmed (bool): Whether the entry counts toward totals. Defaults to
+      ``True``; future-dated prep portions are inserted with ``False`` so they
+      stay out of every aggregate until the user confirms them.
     """
 
     entry_id: uuid.UUID
@@ -80,6 +84,7 @@ class FoodEntryPayload:
     consumed_at: DateTimeValue
     meal_id: UUID | None = None
     meal_name: str | None = None
+    confirmed: bool = True
 
 
 def _food_entry_response_columns() -> tuple[Any, ...]:
@@ -111,6 +116,7 @@ def _food_entry_response_columns() -> tuple[Any, ...]:
         food_entries.c.meal_name,
         food_entries.c.consumed_at,
         food_entries.c.created_at,
+        food_entries.c.confirmed,
     )
 
 
@@ -196,6 +202,7 @@ class EntriesRepository:
                 consumed_at=payload.consumed_at,
                 meal_id=payload.meal_id,
                 meal_name=payload.meal_name,
+                confirmed=payload.confirmed,
             )
             .returning(*_food_entry_response_columns())
         )
@@ -257,6 +264,7 @@ class EntriesRepository:
             .where(daily_logs.c.user_key == user_key)
             .where(daily_logs.c.log_date >= from_date)
             .where(daily_logs.c.log_date <= to_date)
+            .where(food_entries.c.confirmed.is_(True))
             .group_by(daily_logs.c.log_date)
             .order_by(daily_logs.c.log_date.asc())
         )
@@ -284,3 +292,38 @@ class EntriesRepository:
         )
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none() is not None
+
+    async def confirm_entries(
+        self, entry_ids: Sequence[UUID], user_key: str
+    ) -> list[dict[str, Any]]:
+        """Mark pending food entries as confirmed and return the updated rows.
+
+        Flips ``confirmed`` from ``False`` to ``True`` for the given entry ids
+        owned by ``user_key``. Already-confirmed or non-matching ids are skipped,
+        so the operation is idempotent and only rows actually changed are
+        returned.
+
+        **Inputs:**
+        - entry_ids (Sequence[UUID]): Food-entry primary keys to confirm.
+        - user_key (str): Owning user identifier used to scope the update.
+
+        **Outputs:**
+        - list[dict[str, Any]]: The newly confirmed food-entry rows (response
+          column projection); empty when no row matched or all were already
+          confirmed.
+
+        **Raises:**
+        - sqlalchemy.exc.SQLAlchemyError: Raised when SQL execution fails.
+        """
+        if not entry_ids:
+            return []
+        stmt = (
+            update(food_entries)
+            .where(food_entries.c.id.in_(list(entry_ids)))
+            .where(food_entries.c.user_key == user_key)
+            .where(food_entries.c.confirmed.is_(False))
+            .values(confirmed=True)
+            .returning(*_food_entry_response_columns())
+        )
+        result = await self._session.execute(stmt)
+        return [dict(row) for row in result.mappings().all()]

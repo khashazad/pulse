@@ -96,6 +96,41 @@ final class ApplyBatchModelTests: XCTestCase {
         XCTAssertEqual(last.quantityText, "2/5 of prep batch")
     }
 
+    /// Entries applied to a future day are marked pending (`confirmed == false`)
+    /// so they stay out of totals until the user confirms them.
+    func test_futureDayEntriesArePending() {
+        let m = ApplyBatchModel(items: [item(fdc: 1, cal: 500, p: 50, c: 40, f: 10)],
+                                portions: 5, appliedDayKeys: [], auth: nil)
+        m.toggle(day(1))  // tomorrow
+        XCTAssertTrue(m.isPending(m.selections[0]))
+        let entries = m.buildEntries()
+        XCTAssertEqual(entries.count, 1)
+        XCTAssertFalse(entries[0].confirmed)
+    }
+
+    /// Entries applied to today (or a past day) are confirmed immediately.
+    func test_todayEntriesAreConfirmed() {
+        let m = ApplyBatchModel(items: [item(fdc: 1, cal: 500, p: 50, c: 40, f: 10)],
+                                portions: 5, appliedDayKeys: [], auth: nil)
+        m.toggle(day(0))  // today
+        m.toggle(day(-1))  // yesterday
+        XCTAssertFalse(m.isPending(m.selections[0]))
+        XCTAssertFalse(m.isPending(m.selections[1]))
+        XCTAssertTrue(m.buildEntries().allSatisfy(\.confirmed))
+    }
+
+    /// The future/confirmed split is computed against the injected `now`, not the
+    /// wall clock, so it is deterministic. With `now` pinned to day 0, day 1 is
+    /// pending and day 0 is confirmed regardless of when the test runs.
+    func test_pendingSplitUsesInjectedNow() {
+        let m = ApplyBatchModel(items: [item(fdc: 1, cal: 500, p: 50, c: 40, f: 10)],
+                                portions: 5, appliedDayKeys: [], auth: nil,
+                                calendar: cal, now: day(0))
+        m.toggle(day(0)); m.toggle(day(1))
+        XCTAssertFalse(m.isPending(m.selections[0]))
+        XCTAssertTrue(m.isPending(m.selections[1]))
+    }
+
     /// Items with neither food source are skipped, never sent.
     func test_buildEntriesSkipsSourcelessItems() {
         let m = ApplyBatchModel(items: [item(cal: 100, p: 1, c: 1, f: 1)],

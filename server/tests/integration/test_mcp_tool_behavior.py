@@ -116,6 +116,74 @@ async def test_log_food_returns_daily_totals_not_day_totals(mcp_server) -> None:
 
 
 @pytest.mark.asyncio
+async def test_pending_entry_excluded_from_totals_but_listed(mcp_server) -> None:
+    """A pending entry is listed by ``get_day`` but excluded from ``consumed`` and ``log_food`` totals."""
+    import uuid
+    from datetime import datetime as DateTimeValue
+    from zoneinfo import ZoneInfo
+
+    from pulse_server.config import get_settings
+    from pulse_server.repositories.entries import EntriesRepository, FoodEntryPayload
+
+    tz = ZoneInfo(get_settings().timezone)
+    today = DateTimeValue.now(tz=tz).date()
+    user_key = get_settings().legacy_user_key
+
+    # Seed a pending (unconfirmed) future-style entry directly for today.
+    async with db.get_session() as session:
+        repo = EntriesRepository(session)
+        log_id = repo.daily_log_id(user_key=user_key, log_date=today)
+        async with session.begin():
+            await repo.ensure_daily_log(log_id, user_key, today)
+            await repo.create_food_entry(
+                FoodEntryPayload(
+                    entry_id=uuid.uuid4(),
+                    daily_log_id=log_id,
+                    user_key=user_key,
+                    entry_group_id=uuid.uuid4(),
+                    display_name="Pending Prep Bowl",
+                    quantity_text="1 portion",
+                    normalized_quantity_value=None,
+                    normalized_quantity_unit=None,
+                    usda_fdc_id=555,
+                    usda_description="Prep bowl",
+                    custom_food_id=None,
+                    calories=900,
+                    protein_g=60,
+                    carbs_g=50,
+                    fat_g=30,
+                    consumed_at=DateTimeValue.now(tz=tz),
+                    confirmed=False,
+                )
+            )
+
+    async with Client(mcp_server) as client:
+        logged = await client.call_tool(
+            "log_food",
+            {
+                "display_name": "Stub Oats",
+                "quantity_text": "1 bowl",
+                "calories": 300,
+                "protein_g": 12.0,
+                "carbs_g": 50.0,
+                "fat_g": 6.0,
+                "fdc_id": 999,
+                "usda_description": "Oats, raw",
+            },
+        )
+        day = await client.call_tool("get_day", {})
+
+    # log_food's day total counts only the confirmed entry it just wrote.
+    assert logged.structured_content["daily_totals"]["calories"] == 300
+
+    day_payload = day.structured_content
+    # consumed excludes the pending entry; both entries are still listed.
+    assert day_payload["consumed"]["calories"] == 300
+    confirmed_flags = sorted(entry["confirmed"] for entry in day_payload["entries"])
+    assert confirmed_flags == [False, True]
+
+
+@pytest.mark.asyncio
 async def test_search_food_uses_stub_and_reports_basis(mcp_server) -> None:
     """``search_food`` returns the stub candidate with a per_100g basis."""
     async with Client(mcp_server) as client:

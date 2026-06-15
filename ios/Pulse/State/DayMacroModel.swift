@@ -15,6 +15,8 @@ final class DayMacroModel {
     private(set) var copyState: CopyState = .idle
     /// Outcome of the most recent "delete selected entries" action.
     private(set) var deleteState: DeleteState = .idle
+    /// Outcome of the most recent "confirm pending entries" action.
+    private(set) var confirmState: ConfirmState = .idle
     private weak var auth: AuthSession?
 
     /// Discrete states of a copy-entries action, kept separate from `state` so the
@@ -45,6 +47,16 @@ final class DayMacroModel {
         case deleting
         case finished(deleted: Int)
         case failed(deleted: Int, error: PulseError)
+    }
+
+    /// Discrete states of a confirm-entries action. Confirming is one atomic
+    /// `POST /entries/confirm` over all selected ids (unlike copy/delete, which
+    /// loop per entry), so there is no partial-failure remainder to track.
+    enum ConfirmState: Equatable {
+        case idle
+        case confirming
+        case finished(confirmed: Int)
+        case failed(PulseError)
     }
 
     /// Initializes the model for a specific calendar day.
@@ -192,6 +204,47 @@ final class DayMacroModel {
     /// - Returns: Nothing.
     func resetDeleteState() {
         deleteState = .idle
+    }
+
+    /// Confirms pending entries in one atomic `POST /entries/confirm`, then
+    /// reloads the day so the now-confirmed entries fold into the totals.
+    ///
+    /// Used by the day view to confirm a single pending prep entry or all of a
+    /// day's pending entries at once. The server confirm is idempotent, so a
+    /// retry after a transient failure is safe. Routes a 401 through
+    /// `AuthSession`. A no-op (empty input) finishes immediately without a
+    /// request.
+    /// - Parameters:
+    ///   - entries: The pending entries to confirm.
+    /// - Returns: Nothing; updates `confirmState` and, on success, reloads `state`.
+    func confirmEntries(_ entries: [FoodEntry]) async {
+        guard let client = auth?.makeClient() else {
+            confirmState = .failed(.notSignedIn)
+            return
+        }
+        let ids = entries.map(\.id)
+        guard !ids.isEmpty else {
+            confirmState = .finished(confirmed: 0)
+            return
+        }
+        confirmState = .confirming
+        do {
+            let response = try await client.confirmEntries(ids: ids)
+            confirmState = .finished(confirmed: response.entries.count)
+            await load()
+        } catch let error as PulseError {
+            if error == .unauthorized { auth?.handleUnauthorized() }
+            confirmState = .failed(error)
+        } catch {
+            confirmState = .failed(.server(status: -1))
+        }
+    }
+
+    /// Resets the confirm action back to idle so stale success/failure state
+    /// doesn't leak across presentations (called before each run).
+    /// - Returns: Nothing.
+    func resetConfirmState() {
+        confirmState = .idle
     }
 
     /// Builds a `FoodEntryCreate` that reproduces an existing entry on a new day.

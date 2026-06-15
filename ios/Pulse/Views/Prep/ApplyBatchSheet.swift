@@ -28,9 +28,10 @@ struct ApplyBatchSheet: View {
     init(model: ApplyBatchModel, onApplied: @escaping (Set<String>) -> Void) {
         self.model = model
         self.onApplied = onApplied
-        let start = model.calendar.startOfDay(for: Date())
+        // Anchor the quick-pick chips on the model's canonical "today" so the
+        // chip days and the model's confirmed/pending split share one reference.
         self.chipChoices = (1...7)
-            .compactMap { model.calendar.date(byAdding: .day, value: $0, to: start) }
+            .compactMap { model.calendar.date(byAdding: .day, value: $0, to: model.referenceDay) }
             .map { (date: $0, key: DateOnly.string(from: $0)) }
     }
 

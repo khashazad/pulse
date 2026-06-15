@@ -52,8 +52,12 @@ class LogsRepository:
         **Exceptions:**
         - sqlalchemy.exc.SQLAlchemyError: Raised when SQL execution fails.
         """
+        # Confirmed-only filter lives in the JOIN condition (not WHERE) so days
+        # with zero confirmed entries — including pending-only future days —
+        # still appear with zero totals instead of dropping out of the range.
         join_stmt = daily_logs.outerjoin(
-            food_entries, food_entries.c.daily_log_id == daily_logs.c.id
+            food_entries,
+            (food_entries.c.daily_log_id == daily_logs.c.id) & (food_entries.c.confirmed.is_(True)),
         )
         stmt = (
             select(

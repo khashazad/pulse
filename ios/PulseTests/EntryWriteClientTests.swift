@@ -131,6 +131,51 @@ final class EntryWriteClientTests: XCTestCase {
         XCTAssertNil(items[0]["consumed_at"], "nil consumedAt must omit the key")
     }
 
+    func test_createEntries_encodesConfirmedFlag() async throws {
+        let json = try fixture("entries_create")
+        let (client, stub) = makeClient { req in
+            (HTTPURLResponse(url: req.url!, statusCode: 201, httpVersion: nil, headerFields: nil)!, json)
+        }
+        let confirmedItem = FoodEntryCreate.usda(
+            displayName: "rice", quantityText: "1 cup", fdcId: 1, usdaDescription: "Rice",
+            calories: 200, proteinG: 4, carbsG: 44, fatG: 0
+        )
+        let pendingItem = FoodEntryCreate.usda(
+            displayName: "prep bowl", quantityText: "1 portion", fdcId: 2, usdaDescription: "Bowl",
+            calories: 600, proteinG: 50, carbsG: 40, fatG: 20, confirmed: false
+        )
+        _ = try await client.createEntries([confirmedItem, pendingItem])
+
+        let obj = try bodyObject(stub)
+        let items = try XCTUnwrap(obj["items"] as? [[String: Any]])
+        XCTAssertEqual(items[0]["confirmed"] as? Bool, true, "default factory entry is confirmed")
+        XCTAssertEqual(items[1]["confirmed"] as? Bool, false, "future prep entry is pending")
+    }
+
+    func test_confirmEntries_postsIdsAndDecodes() async throws {
+        let json = try fixture("entries_create")
+        var captured: URLRequest?
+        let (client, stub) = makeClient { req in
+            captured = req
+            return (HTTPURLResponse(url: req.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, json)
+        }
+        let id1 = UUID(uuidString: "11111111-1111-1111-1111-111111111111")!
+        let id2 = UUID(uuidString: "22222222-2222-2222-2222-222222222222")!
+        let resp = try await client.confirmEntries(ids: [id1, id2])
+
+        // Request: POST /entries/confirm with bearer auth and the id list.
+        XCTAssertEqual(captured?.httpMethod, "POST")
+        XCTAssertEqual(captured?.url?.path, "/entries/confirm")
+        XCTAssertEqual(captured?.value(forHTTPHeaderField: "Authorization"), "Bearer session-k")
+        let obj = try bodyObject(stub)
+        let ids = try XCTUnwrap(obj["ids"] as? [String])
+        XCTAssertEqual(ids.map { $0.uppercased() }, [id1.uuidString, id2.uuidString])
+
+        // Response decodes into the shared write envelope.
+        XCTAssertEqual(resp.entries.count, 1)
+        XCTAssertEqual(resp.dailyTotals.calories, 205)
+    }
+
     func test_logMeal_postsConsumedAtAndDecodes() async throws {
         let json = try fixture("meal_log")
         var captured: URLRequest?

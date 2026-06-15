@@ -10,9 +10,14 @@ struct EntryRow: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(entry.displayName)
-                        .font(.system(size: 15, weight: .medium))
-                        .foregroundStyle(Theme.FG.primary)
+                    HStack(spacing: 6) {
+                        Text(entry.displayName)
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundStyle(Theme.FG.primary)
+                        if !entry.isConfirmed {
+                            PendingBadge()
+                        }
+                    }
                     Text(entry.quantityText)
                         .font(.system(size: 12))
                         .foregroundStyle(Theme.FG.secondary)
@@ -37,6 +42,9 @@ struct EntryRow: View {
             .font(.system(size: 11, design: .monospaced))
         }
         .padding(.vertical, 10)
+        // Pending (unconfirmed) entries read as faint — they're planned, not
+        // yet counted toward the day's totals until the user confirms them.
+        .opacity(entry.isConfirmed ? 1 : 0.55)
     }
 }
 

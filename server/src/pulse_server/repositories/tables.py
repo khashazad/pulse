@@ -36,6 +36,7 @@ from __future__ import annotations
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     CheckConstraint,
     Column,
     Date,
@@ -228,6 +229,7 @@ food_entries = Table(
         nullable=True,
     ),
     Column("meal_name", Text, nullable=True),
+    Column("confirmed", Boolean, nullable=False, server_default=text("true")),
     CheckConstraint(
         "(usda_fdc_id is not null and custom_food_id is null) or "
         "(usda_fdc_id is null and custom_food_id is not null)",

@@ -52,6 +52,21 @@ extension PulseClient {
         return try await sendJSON(url: url, method: "POST", body: body)
     }
 
+    /// Confirms one or more pending food entries (`POST /entries/confirm`).
+    /// Pending future prep portions don't count toward any total until confirmed;
+    /// this flips them to counted. Pass a single id to confirm one entry, or a
+    /// day's pending ids to confirm them all at once. Idempotent on the server.
+    /// Inputs:
+    ///   - ids: the pending `FoodEntry` UUIDs to confirm (at least one).
+    /// Outputs: an `EntryWriteResponse` with the confirmed entries and the
+    /// affected day's recomputed (confirmed-only) macro totals.
+    /// Exceptions: `PulseError` on transport, status, or decoding failure.
+    func confirmEntries(ids: [UUID]) async throws -> EntryWriteResponse {
+        let url = try http.makeURL(path: "/entries/confirm", query: [])
+        let body = try JSONEncoder.pulseDefault().encode(EntriesConfirmRequest(ids: ids))
+        return try await sendJSON(url: url, method: "POST", body: body)
+    }
+
     /// Deletes a single food entry (`DELETE /entries/{id}`).
     /// Inputs:
     ///   - id: the `FoodEntry` UUID to delete.

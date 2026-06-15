@@ -8,6 +8,13 @@ struct MealGroupRow: View {
     let group: MealGroup
     @State private var isExpanded = false
 
+    /// A group is pending when any of its entries is unconfirmed. Prep batches
+    /// applied to a future day share one entry group, so all their items land
+    /// pending together and the whole group reads as planned-not-counted.
+    private var isPending: Bool {
+        group.items.contains { !$0.isConfirmed }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             header
@@ -16,6 +23,7 @@ struct MealGroupRow: View {
                     .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
+        .opacity(isPending ? 0.55 : 1)
     }
 
     // MARK: - header
@@ -26,9 +34,14 @@ struct MealGroupRow: View {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     chevron
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(group.displayName)
-                            .font(.system(size: 15, weight: .medium))
-                            .foregroundStyle(Theme.FG.primary)
+                        HStack(spacing: 6) {
+                            Text(group.displayName)
+                                .font(.system(size: 15, weight: .medium))
+                                .foregroundStyle(Theme.FG.primary)
+                            if isPending {
+                                PendingBadge()
+                            }
+                        }
                         subtitle
                     }
                     Spacer(minLength: 8)

@@ -17,7 +17,11 @@ from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pulse_server.log_ids import daily_log_id
-from pulse_server.macro_aggregates import remaining_macros, sum_food_entry_macros
+from pulse_server.macro_aggregates import (
+    confirmed_entries,
+    remaining_macros,
+    sum_food_entry_macros,
+)
 from pulse_server.models import DailySummaryResponse, FoodEntryResponse, MacroTargets
 from pulse_server.models.adapters import macro_targets_from_row
 from pulse_server.models.daily import CaloriesDailyRow
@@ -44,8 +48,13 @@ def _assemble_daily_summary(
 
     **Outputs:**
     - DailySummaryResponse: Target / consumed / remaining triplet plus entries.
+
+    The returned ``entries`` list keeps every row (pending included, each
+    carrying its ``confirmed`` flag) so clients can render and confirm them, but
+    ``consumed`` sums only confirmed entries so unconfirmed future portions never
+    inflate the day's totals.
     """
-    consumed = sum_food_entry_macros(entries)
+    consumed = sum_food_entry_macros(confirmed_entries(entries))
     return DailySummaryResponse(
         date=summary_date,
         target=target,

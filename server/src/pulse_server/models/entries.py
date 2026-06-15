@@ -15,7 +15,7 @@ from datetime import date as DateValue
 from datetime import datetime as DateTimeValue
 from uuid import UUID
 
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, Field, model_validator
 
 from pulse_server.models.common import MacroFields, MacroTotals
 
@@ -46,6 +46,7 @@ class FoodEntryCreate(MacroFields):
     usda_description: str | None = None
     custom_food_id: UUID | None = None
     consumed_at: DateTimeValue | None = None
+    confirmed: bool = True
 
     @model_validator(mode="after")
     def _exactly_one_source(self) -> FoodEntryCreate:
@@ -96,6 +97,7 @@ class FoodEntryResponse(BaseModel):
     meal_name: str | None = None
     consumed_at: DateTimeValue
     created_at: DateTimeValue
+    confirmed: bool = True
 
 
 class EntriesCreateResponse(BaseModel):
@@ -111,3 +113,24 @@ class EntriesListResponse(BaseModel):
     date: DateValue
     entries: list[FoodEntryResponse]
     totals: MacroTotals
+
+
+class EntriesConfirmRequest(BaseModel):
+    """Request body for ``POST /entries/confirm`` — the entry ids to confirm.
+
+    Sent both for a single-entry confirm (one id) and a confirm-all-for-a-day
+    action (the day's pending entry ids). At least one id is required.
+    """
+
+    ids: list[UUID] = Field(min_length=1)
+
+
+class EntriesConfirmResponse(BaseModel):
+    """Response body for ``POST /entries/confirm`` — confirmed rows plus the day total.
+
+    ``daily_totals`` is the affected day's confirmed total recomputed after the
+    confirm, so the client can update the day view without a second request.
+    """
+
+    entries: list[FoodEntryResponse]
+    daily_totals: MacroTotals
