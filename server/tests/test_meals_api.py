@@ -424,12 +424,16 @@ def test_delete_meal_item_item_not_found_returns_404(rest_client: TestClient) ->
     assert resp.status_code == 404
 
 
-def _entry_row(meal_id: uuid.UUID, meal_name: str) -> dict:
+def _entry_row(
+    meal_id: uuid.UUID, meal_name: str, calories: int = 140, confirmed: bool = True
+) -> dict:
     """Build a fake `food_entries` row dict stamped with a meal link.
 
     **Inputs:**
     - meal_id (UUID): Stamped meal id.
     - meal_name (str): Stamped meal name.
+    - calories (int): Entry calorie value.
+    - confirmed (bool): Whether the entry counts toward totals (default ``True``).
 
     **Outputs:**
     - dict: Column→value mapping mirroring the ``food_entries`` table shape.
@@ -446,7 +450,7 @@ def _entry_row(meal_id: uuid.UUID, meal_name: str) -> dict:
         "usda_fdc_id": 123,
         "usda_description": "Egg, whole",
         "custom_food_id": None,
-        "calories": 140,
+        "calories": calories,
         "protein_g": 12.0,
         "carbs_g": 1.0,
         "fat_g": 10.0,
@@ -454,6 +458,7 @@ def _entry_row(meal_id: uuid.UUID, meal_name: str) -> dict:
         "meal_name": meal_name,
         "consumed_at": _now(),
         "created_at": _now(),
+        "confirmed": confirmed,
     }
 
 
@@ -471,6 +476,22 @@ def test_log_meal_happy_path(rest_client: TestClient) -> None:
     body = resp.json()
     assert len(body["entries"]) == 1
     assert body["daily_totals"]["calories"] == 140
+
+
+def test_log_meal_excludes_pending_from_daily_totals(rest_client: TestClient) -> None:
+    """`POST /meals/{id}/log` daily totals exclude pending entries already on the day."""
+    meal_id = uuid.uuid4()
+    created = [_entry_row(meal_id, "Breakfast", calories=140)]
+    # The day already holds a pending future-prep entry; it must not inflate totals.
+    day_rows = [*created, _entry_row(meal_id, "Breakfast", calories=900, confirmed=False)]
+    with patch(
+        "pulse_server.routers.meals.log_meal",
+        new_callable=AsyncMock,
+    ) as log:
+        log.return_value = (created, day_rows)
+        resp = rest_client.post(f"/meals/{meal_id}/log", headers=AUTH_HEADERS, json={})
+    assert resp.status_code == 200
+    assert resp.json()["daily_totals"]["calories"] == 140
 
 
 def test_log_meal_normalizes_naive_consumed_at(rest_client: TestClient) -> None:

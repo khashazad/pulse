@@ -29,11 +29,12 @@ def _now() -> DateTimeValue:
     return DateTimeValue.now(tz=UTC)
 
 
-def _entry_row(calories: int = 140) -> dict:
+def _entry_row(calories: int = 140, confirmed: bool = True) -> dict:
     """Build a fake `food_entries` row dict for repository/service return values.
 
     **Inputs:**
     - calories (int): Entry calorie value.
+    - confirmed (bool): Whether the entry counts toward totals (default ``True``).
 
     **Outputs:**
     - dict: Column→value mapping mirroring the ``food_entries`` table shape.
@@ -58,6 +59,7 @@ def _entry_row(calories: int = 140) -> dict:
         "meal_name": None,
         "consumed_at": _now(),
         "created_at": _now(),
+        "confirmed": confirmed,
     }
 
 
@@ -140,6 +142,95 @@ def test_list_entries_200(rest_client: TestClient) -> None:
     body = resp.json()
     assert len(body["entries"]) == 2
     assert body["totals"]["calories"] == 200
+
+
+def test_list_entries_excludes_pending_from_totals(rest_client: TestClient) -> None:
+    """`GET /entries` returns pending rows (flagged) but omits them from totals."""
+    rows = [_entry_row(140, confirmed=True), _entry_row(999, confirmed=False)]
+    with patch("pulse_server.routers.entries.EntriesRepository") as MockRepo:
+        instance = MockRepo.return_value
+        instance.list_entries_by_daily_log_id = AsyncMock(return_value=rows)
+        resp = rest_client.get(
+            f"/entries?date={DateValue.today().isoformat()}", headers=AUTH_HEADERS
+        )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert len(body["entries"]) == 2
+    assert {entry["confirmed"] for entry in body["entries"]} == {True, False}
+    assert body["totals"]["calories"] == 140
+
+
+def test_create_entries_excludes_pending_from_daily_totals(rest_client: TestClient) -> None:
+    """`POST /entries` daily totals exclude unconfirmed (future) rows in the batch."""
+    created = [_entry_row(140, confirmed=True), _entry_row(620, confirmed=False)]
+    with patch(
+        "pulse_server.routers.entries.create_entries_with_side_effects",
+        new_callable=AsyncMock,
+    ) as create:
+        create.return_value = (created, created)
+        resp = rest_client.post(
+            "/entries",
+            headers=AUTH_HEADERS,
+            json={
+                "items": [
+                    {
+                        "display_name": "Eggs",
+                        "quantity_text": "2 large",
+                        "usda_fdc_id": 123,
+                        "usda_description": "Egg, whole",
+                        "calories": 140,
+                        "protein_g": 12.0,
+                        "carbs_g": 1.0,
+                        "fat_g": 10.0,
+                    }
+                ]
+            },
+        )
+    assert resp.status_code == 201
+    body = resp.json()
+    assert len(body["entries"]) == 2
+    assert body["daily_totals"]["calories"] == 140
+
+
+def test_confirm_entries_200(rest_client: TestClient) -> None:
+    """`POST /entries/confirm` returns the confirmed entries plus the refreshed day total."""
+    confirmed = [_entry_row(700, confirmed=True)]
+    day_rows = [_entry_row(300, confirmed=True), _entry_row(700, confirmed=True)]
+    with patch(
+        "pulse_server.routers.entries.confirm_pending_entries",
+        new_callable=AsyncMock,
+    ) as confirm:
+        confirm.return_value = (confirmed, day_rows)
+        resp = rest_client.post(
+            "/entries/confirm",
+            headers=AUTH_HEADERS,
+            json={"ids": [str(uuid.uuid4())]},
+        )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert len(body["entries"]) == 1
+    assert body["daily_totals"]["calories"] == 1000
+
+
+def test_confirm_entries_requires_ids(rest_client: TestClient) -> None:
+    """`POST /entries/confirm` with no ids is a 422 validation error."""
+    resp = rest_client.post("/entries/confirm", headers=AUTH_HEADERS, json={})
+    assert resp.status_code == 422
+
+
+def test_confirm_entries_cross_day_returns_422(rest_client: TestClient) -> None:
+    """A cross-day confirm (service raises `ValueError`) surfaces as 422."""
+    with patch(
+        "pulse_server.routers.entries.confirm_pending_entries",
+        new_callable=AsyncMock,
+    ) as confirm:
+        confirm.side_effect = ValueError("Confirm ids must all belong to the same day")
+        resp = rest_client.post(
+            "/entries/confirm",
+            headers=AUTH_HEADERS,
+            json={"ids": [str(uuid.uuid4()), str(uuid.uuid4())]},
+        )
+    assert resp.status_code == 422
 
 
 def test_delete_entry_204(rest_client: TestClient) -> None:

@@ -16,7 +16,7 @@ from fastmcp.exceptions import ToolError
 from pydantic import Field
 
 from pulse_server.db import get_session, transaction
-from pulse_server.macro_aggregates import sum_food_entry_macros
+from pulse_server.macro_aggregates import confirmed_entries, sum_food_entry_macros
 from pulse_server.mcp.context import ToolContext, basis_for, parse_consumed_at, target_and_remaining
 from pulse_server.mcp.models import FoodCandidate, LogFoodResponse, SearchFoodResponse
 from pulse_server.models import FoodEntryCreate, FoodEntryResponse, ResolvedFood
@@ -153,7 +153,7 @@ def register(mcp: FastMCP, ctx: ToolContext) -> None:
             except CrossTenantReferenceError as exc:
                 raise ToolError(str(exc)) from exc
             day_entries = [FoodEntryResponse(**row) for row in day_rows]
-            daily_totals = sum_food_entry_macros(day_entries)
+            daily_totals = sum_food_entry_macros(confirmed_entries(day_entries))
 
             targets_repo = TargetsRepository(session)
             target_row = await targets_repo.get_target_profile(user_key)

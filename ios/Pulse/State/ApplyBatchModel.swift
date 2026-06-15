@@ -44,6 +44,10 @@ final class ApplyBatchModel {
     private weak var auth: AuthSession?
     /// Calendar used for day math throughout the model and bound views.
     let calendar: Calendar
+    /// Local midnight of "today" — the boundary between confirmed (today/past)
+    /// and pending (strictly future) applied entries. Captured at init so the
+    /// confirmed/pending split is deterministic and injectable for tests.
+    let referenceDay: Date
 
     /// Creates an apply model for one batch.
     /// Inputs:
@@ -52,15 +56,27 @@ final class ApplyBatchModel {
     ///   - appliedDayKeys: day keys already applied, for conflict flagging.
     ///   - auth: session used to build the API client at submit time.
     ///   - calendar: calendar for day math (injectable for tests).
+    ///   - now: reference instant for "today"; injectable for deterministic tests.
     /// Outputs: an `ApplyBatchModel`.
     init(items: [BatchFoodItem], portions: Int, appliedDayKeys: Set<String>,
-         auth: AuthSession?, calendar: Calendar = .current) {
+         auth: AuthSession?, calendar: Calendar = .current, now: Date = Date()) {
         self.items = items
         self.portions = max(1, portions)
         self.appliedDayKeys = appliedDayKeys
         self.applicableItems = items.filter(\.hasSource)
         self.auth = auth
         self.calendar = calendar
+        self.referenceDay = calendar.startOfDay(for: now)
+    }
+
+    /// Whether entries applied to the given selection should land pending
+    /// (unconfirmed). True only for days strictly after `referenceDay`; today
+    /// and past days are confirmed immediately.
+    /// Inputs:
+    ///   - selection: the day selection to classify.
+    /// Outputs: `true` when the day is in the future and entries should be pending.
+    func isPending(_ selection: DaySelection) -> Bool {
+        selection.date > referenceDay
     }
 
     /// Adds the day to the selection at count 1, or removes it when already
@@ -137,21 +153,30 @@ final class ApplyBatchModel {
     ///   - sel: the day selection to build entries for.
     /// Outputs: the day's payload entries (empty only for an all-sourceless batch).
     private func entries(for sel: DaySelection) -> [FoodEntryCreate] {
-        let noon = DateOnly.noon(on: sel.date, calendar: calendar)
         let qty = "\(sel.count)/\(portions) of prep batch"
+        // Future days land pending; today/past are confirmed immediately.
+        let confirmed = !isPending(sel)
+        // Pending portions anchor at end-of-day so they sort to the end of the
+        // day's list once confirmed; confirmed (today/past) portions keep the
+        // canonical mid-day anchor.
+        let anchor = confirmed
+            ? DateOnly.noon(on: sel.date, calendar: calendar)
+            : DateOnly.endOfDay(on: sel.date, calendar: calendar)
         return applicableItems.compactMap { item in
             let m = scaledMacros(for: item, in: sel)
             if let fdc = item.usdaFdcId {
                 return .usda(displayName: item.displayName, quantityText: qty,
                              fdcId: fdc, usdaDescription: item.usdaDescription ?? item.displayName,
                              calories: m.calories, proteinG: m.proteinG,
-                             carbsG: m.carbsG, fatG: m.fatG, consumedAt: noon)
+                             carbsG: m.carbsG, fatG: m.fatG, consumedAt: anchor,
+                             confirmed: confirmed)
             }
             if let customId = item.customFoodId {
                 return .custom(displayName: item.displayName, quantityText: qty,
                                customFoodId: customId,
                                calories: m.calories, proteinG: m.proteinG,
-                               carbsG: m.carbsG, fatG: m.fatG, consumedAt: noon)
+                               carbsG: m.carbsG, fatG: m.fatG, consumedAt: anchor,
+                               confirmed: confirmed)
             }
             return nil
         }

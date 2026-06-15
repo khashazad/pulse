@@ -32,6 +32,24 @@ def remaining_macros(target: MacroTargets, consumed: MacroTotals) -> MacroTotals
     )
 
 
+def confirmed_entries(entries: Sequence[FoodEntryResponse]) -> list[FoodEntryResponse]:
+    """Filter a sequence of food entries down to the confirmed ones.
+
+    Pending (unconfirmed) entries — future prep portions awaiting confirmation —
+    are dropped so callers can sum only the entries that should count toward a
+    day's totals.
+
+    **Inputs:**
+    - entries (Sequence[FoodEntryResponse]): Food entry records, possibly
+      including unconfirmed rows.
+
+    **Outputs:**
+    - list[FoodEntryResponse]: Only the entries whose ``confirmed`` flag is
+      ``True``, preserving input order.
+    """
+    return [entry for entry in entries if entry.confirmed]
+
+
 def sum_food_entry_macros(entries: Sequence[FoodEntryResponse]) -> MacroTotals:
     """Aggregate a sequence of food entries into total macro values.
 

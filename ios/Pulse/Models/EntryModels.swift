@@ -33,6 +33,10 @@ struct FoodEntryCreate: Encodable, Equatable {
     let carbsG: Double
     let fatG: Double
     let consumedAt: Date?
+    /// Whether the entry counts toward totals immediately. `true` for normal
+    /// logging; `false` marks a future prep portion as pending until the user
+    /// confirms it. Encoded as `confirmed`; the server defaults it to `true`.
+    let confirmed: Bool
 
     enum CodingKeys: String, CodingKey {
         case displayName = "display_name"
@@ -47,6 +51,7 @@ struct FoodEntryCreate: Encodable, Equatable {
         case carbsG = "carbs_g"
         case fatG = "fat_g"
         case consumedAt = "consumed_at"
+        case confirmed
     }
 
     /// Designated initializer. Private so callers go through the `usda`/`custom`
@@ -66,7 +71,8 @@ struct FoodEntryCreate: Encodable, Equatable {
         proteinG: Double,
         carbsG: Double,
         fatG: Double,
-        consumedAt: Date?
+        consumedAt: Date?,
+        confirmed: Bool
     ) {
         self.displayName = displayName
         self.quantityText = quantityText
@@ -80,6 +86,7 @@ struct FoodEntryCreate: Encodable, Equatable {
         self.carbsG = carbsG
         self.fatG = fatG
         self.consumedAt = consumedAt
+        self.confirmed = confirmed
     }
 
     /// Builds an entry backed by a USDA FoodData Central food.
@@ -107,7 +114,8 @@ struct FoodEntryCreate: Encodable, Equatable {
         fatG: Double,
         normalizedQuantityValue: Double? = nil,
         normalizedQuantityUnit: String? = nil,
-        consumedAt: Date? = nil
+        consumedAt: Date? = nil,
+        confirmed: Bool = true
     ) -> FoodEntryCreate {
         FoodEntryCreate(
             displayName: displayName,
@@ -121,7 +129,8 @@ struct FoodEntryCreate: Encodable, Equatable {
             proteinG: proteinG,
             carbsG: carbsG,
             fatG: fatG,
-            consumedAt: consumedAt
+            consumedAt: consumedAt,
+            confirmed: confirmed
         )
     }
 
@@ -148,7 +157,8 @@ struct FoodEntryCreate: Encodable, Equatable {
         fatG: Double,
         normalizedQuantityValue: Double? = nil,
         normalizedQuantityUnit: String? = nil,
-        consumedAt: Date? = nil
+        consumedAt: Date? = nil,
+        confirmed: Bool = true
     ) -> FoodEntryCreate {
         FoodEntryCreate(
             displayName: displayName,
@@ -162,7 +172,8 @@ struct FoodEntryCreate: Encodable, Equatable {
             proteinG: proteinG,
             carbsG: carbsG,
             fatG: fatG,
-            consumedAt: consumedAt
+            consumedAt: consumedAt,
+            confirmed: confirmed
         )
     }
 }
@@ -184,4 +195,12 @@ struct EntryWriteResponse: Decodable, Equatable {
         case entries
         case dailyTotals = "daily_totals"
     }
+}
+
+/// Request body for `POST /entries/confirm` — the pending entry ids to confirm.
+/// One id confirms a single pending entry; the day's pending ids confirm all of
+/// that day at once. The server response reuses `EntryWriteResponse` (the
+/// confirmed entries plus the affected day's recomputed totals).
+struct EntriesConfirmRequest: Encodable, Equatable {
+    let ids: [UUID]
 }

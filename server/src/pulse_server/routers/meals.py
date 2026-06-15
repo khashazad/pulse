@@ -21,7 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from pulse_server.auth import require_session
 from pulse_server.config import get_settings
 from pulse_server.db import get_session_dependency, transaction
-from pulse_server.macro_aggregates import sum_food_entry_macros
+from pulse_server.macro_aggregates import confirmed_entries, sum_food_entry_macros
 from pulse_server.models import (
     FoodEntryResponse,
     MacroTotals,
@@ -342,4 +342,7 @@ async def log_meal_endpoint(
     )
     entries = [FoodEntryResponse(**row) for row in created_rows]
     day_entries = [FoodEntryResponse(**row) for row in day_rows]
-    return LogMealResponse(entries=entries, daily_totals=sum_food_entry_macros(day_entries))
+    return LogMealResponse(
+        entries=entries,
+        daily_totals=sum_food_entry_macros(confirmed_entries(day_entries)),
+    )

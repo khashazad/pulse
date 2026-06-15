@@ -167,6 +167,24 @@ final class DateOnlyCodingTests: XCTestCase {
         XCTAssertEqual(DateOnly.string(from: date), "2026-05-29")
     }
 
+    /// `DateOnly.endOfDay` lands at 23:59 on the same calendar day (no midnight
+    /// rollover) and sorts strictly after noon of that day.
+    func test_dateOnly_endOfDayStaysOnSameDayAfterNoon() {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "America/Toronto")!
+        let day = cal.date(from: DateComponents(year: 2026, month: 6, day: 20))!
+
+        let eod = DateOnly.endOfDay(on: day, calendar: cal)
+        let parts = cal.dateComponents([.year, .month, .day, .hour, .minute], from: eod)
+
+        XCTAssertEqual(parts.year, 2026)
+        XCTAssertEqual(parts.month, 6)
+        XCTAssertEqual(parts.day, 20)
+        XCTAssertEqual(parts.hour, 23)
+        XCTAssertEqual(parts.minute, 59)
+        XCTAssertGreaterThan(eod, DateOnly.noon(on: day, calendar: cal))
+    }
+
     /// Verifies the decoder accepts a bare `YYYY-MM-DD` string (first tier).
     func test_pulseDefaultDecoder_acceptsDateOnly() throws {
         let date = try decodeAt("\"2026-05-29\"")

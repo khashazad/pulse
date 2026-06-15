@@ -140,6 +140,7 @@ async def _create_entries(
                     consumed_at=consumed_at,
                     meal_id=meal_id,
                     meal_name=meal_name,
+                    confirmed=item.confirmed,
                 )
             )
         )
@@ -156,6 +157,48 @@ async def _create_entries(
         all_rows = list(created_rows)
 
     return created_rows, all_rows
+
+
+async def confirm_pending_entries(
+    session: AsyncSession,
+    user_key: str,
+    entry_ids: Sequence[UUID],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Confirm pending food entries and return them plus their day's full rows.
+
+    Flips ``confirmed`` to ``True`` for the owned, still-pending ids inside a
+    transaction, then re-reads every entry on each affected daily log so the
+    caller can recompute that day's confirmed totals. Already-confirmed or
+    non-matching ids are silently skipped (idempotent).
+
+    **Inputs:**
+    - session (AsyncSession): Active SQLAlchemy session used for the
+      transaction.
+    - user_key (str): User identifier owning the entries.
+    - entry_ids (Sequence[UUID]): Food-entry ids to confirm.
+
+    **Outputs:**
+    - tuple[list[dict[str, Any]], list[dict[str, Any]]]: ``(confirmed_rows,
+      day_rows)`` — the rows actually confirmed, and all entries on the affected
+      daily log for recomputing the day's confirmed total.
+
+    **Exceptions:**
+    - ValueError: Raised when the confirmed entries span more than one daily log;
+      the single ``daily_totals`` field in the response can only represent one
+      day, so a cross-day confirm is rejected (and rolled back).
+    - sqlalchemy.exc.SQLAlchemyError: Raised when any SQL operation fails; the
+      transaction is rolled back.
+    """
+    entries_repo = EntriesRepository(session)
+    async with transaction(session):
+        confirmed_rows = await entries_repo.confirm_entries(entry_ids, user_key)
+        affected_logs = {row["daily_log_id"] for row in confirmed_rows}
+        if len(affected_logs) > 1:
+            raise ValueError("Confirm ids must all belong to the same day")
+        day_rows: list[dict[str, Any]] = []
+        for log_id in affected_logs:
+            day_rows.extend(await entries_repo.list_entries_by_daily_log_id(str(log_id)))
+    return confirmed_rows, day_rows
 
 
 def _effective_log_date(

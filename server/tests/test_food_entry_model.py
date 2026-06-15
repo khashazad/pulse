@@ -129,6 +129,85 @@ def test_food_entry_create_ignores_client_supplied_meal_link() -> None:
     assert not hasattr(entry, "meal_name")
 
 
+def test_food_entry_create_confirmed_defaults_true() -> None:
+    """`FoodEntryCreate.confirmed` defaults to ``True`` when the client omits it."""
+    entry = FoodEntryCreate(
+        display_name="eggs",
+        quantity_text="2 eggs",
+        usda_fdc_id=171287,
+        usda_description="Egg",
+        calories=140,
+        protein_g=12,
+        carbs_g=1,
+        fat_g=10,
+    )
+    assert entry.confirmed is True
+
+
+def test_food_entry_create_accepts_unconfirmed() -> None:
+    """`FoodEntryCreate.confirmed` can be set ``False`` for a pending future entry."""
+    entry = FoodEntryCreate(
+        display_name="meal prep bowl",
+        quantity_text="1 portion",
+        usda_fdc_id=171287,
+        usda_description="Chicken",
+        calories=620,
+        protein_g=55,
+        carbs_g=40,
+        fat_g=20,
+        confirmed=False,
+    )
+    assert entry.confirmed is False
+
+
+def test_food_entry_response_confirmed_defaults_true() -> None:
+    """`FoodEntryResponse.confirmed` defaults to ``True`` when unset."""
+    response = FoodEntryResponse(
+        id=UUID("11111111-1111-1111-1111-111111111111"),
+        daily_log_id=UUID("22222222-2222-2222-2222-222222222222"),
+        user_key="khash",
+        entry_group_id=UUID("33333333-3333-3333-3333-333333333333"),
+        display_name="oats",
+        quantity_text="80 g",
+        normalized_quantity_value=None,
+        normalized_quantity_unit=None,
+        usda_fdc_id=173904,
+        usda_description="Oats, raw",
+        calories=320,
+        protein_g=10,
+        carbs_g=54,
+        fat_g=6,
+        consumed_at=datetime(2026, 5, 6, 8, 30, tzinfo=UTC),
+        created_at=datetime(2026, 5, 6, 8, 31, tzinfo=UTC),
+    )
+    assert response.confirmed is True
+
+
+def test_food_entry_response_serializes_confirmed_false() -> None:
+    """`FoodEntryResponse` carries and serializes ``confirmed=False``."""
+    response = FoodEntryResponse(
+        id=UUID("11111111-1111-1111-1111-111111111111"),
+        daily_log_id=UUID("22222222-2222-2222-2222-222222222222"),
+        user_key="khash",
+        entry_group_id=UUID("33333333-3333-3333-3333-333333333333"),
+        display_name="oats",
+        quantity_text="80 g",
+        normalized_quantity_value=None,
+        normalized_quantity_unit=None,
+        usda_fdc_id=173904,
+        usda_description="Oats, raw",
+        calories=320,
+        protein_g=10,
+        carbs_g=54,
+        fat_g=6,
+        consumed_at=datetime(2026, 5, 6, 8, 30, tzinfo=UTC),
+        created_at=datetime(2026, 5, 6, 8, 31, tzinfo=UTC),
+        confirmed=False,
+    )
+    assert response.confirmed is False
+    assert response.model_dump()["confirmed"] is False
+
+
 def test_food_entry_response_serializes_meal_link() -> None:
     """`FoodEntryResponse` serializes `meal_id` and `meal_name` when set."""
     meal_id = UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")

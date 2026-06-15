@@ -20,8 +20,10 @@ from pulse_server.auth import require_session
 from pulse_server.config import get_settings
 from pulse_server.db import get_session_dependency, transaction
 from pulse_server.log_ids import daily_log_id
-from pulse_server.macro_aggregates import sum_food_entry_macros
+from pulse_server.macro_aggregates import confirmed_entries, sum_food_entry_macros
 from pulse_server.models import (
+    EntriesConfirmRequest,
+    EntriesConfirmResponse,
     EntriesCreateRequest,
     EntriesCreateResponse,
     EntriesListResponse,
@@ -29,7 +31,10 @@ from pulse_server.models import (
 )
 from pulse_server.repositories.entries import EntriesRepository
 from pulse_server.services.custom_foods_service import CrossTenantReferenceError
-from pulse_server.services.entries_service import create_entries_with_side_effects
+from pulse_server.services.entries_service import (
+    confirm_pending_entries,
+    create_entries_with_side_effects,
+)
 
 settings = get_settings()
 router = APIRouter(dependencies=[Depends(require_session)])
@@ -78,7 +83,53 @@ async def create_entries(
     created = [FoodEntryResponse(**row) for row in created_rows]
     all_entries = [FoodEntryResponse(**row) for row in all_rows]
 
-    return EntriesCreateResponse(entries=created, daily_totals=sum_food_entry_macros(all_entries))
+    return EntriesCreateResponse(
+        entries=created,
+        daily_totals=sum_food_entry_macros(confirmed_entries(all_entries)),
+    )
+
+
+@router.post("/entries/confirm", response_model=EntriesConfirmResponse)
+async def confirm_entries(
+    request: Request,
+    body: EntriesConfirmRequest,
+    session: AsyncSession = Depends(get_session_dependency),
+) -> EntriesConfirmResponse:
+    """Confirm pending food entries so they start counting toward day totals.
+
+    Used by the iOS day view to confirm a single pending prep entry or all of a
+    day's pending entries at once. Confirming is idempotent — ids that are
+    already confirmed or not owned by the user are ignored.
+
+    **Inputs:**
+    - request (Request): Active request providing ``user_key``.
+    - body (EntriesConfirmRequest): The entry ids to confirm (at least one).
+    - session (AsyncSession): DB session dependency.
+
+    **Outputs:**
+    - EntriesConfirmResponse: The newly confirmed entries plus the affected
+      day's recomputed confirmed totals.
+
+    **Exceptions:**
+    - HTTPException(422): Raised when the ids span more than one day (the single
+      ``daily_totals`` field can only represent one day).
+    - RuntimeError: Raised when the database pool is not initialized.
+    - sqlalchemy.exc.SQLAlchemyError: Raised when SQL execution fails.
+    """
+    try:
+        confirmed_rows, day_rows = await confirm_pending_entries(
+            session=session,
+            user_key=request.state.user_key,
+            entry_ids=body.ids,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    confirmed = [FoodEntryResponse(**row) for row in confirmed_rows]
+    day_entries = [FoodEntryResponse(**row) for row in day_rows]
+    return EntriesConfirmResponse(
+        entries=confirmed,
+        daily_totals=sum_food_entry_macros(confirmed_entries(day_entries)),
+    )
 
 
 @router.get("/entries", response_model=EntriesListResponse)
@@ -108,7 +159,9 @@ async def list_entries(
 
     entries = [FoodEntryResponse(**row) for row in rows]
     return EntriesListResponse(
-        date=log_date, entries=entries, totals=sum_food_entry_macros(entries)
+        date=log_date,
+        entries=entries,
+        totals=sum_food_entry_macros(confirmed_entries(entries)),
     )
 
 

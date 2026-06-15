@@ -157,12 +157,16 @@ create table if not exists food_entries (
   created_at timestamptz not null default now(),
   meal_id uuid,
   meal_name text,
+  confirmed boolean not null default true,
   constraint food_entries_one_source check (
     (usda_fdc_id is not null and custom_food_id is null) or
     (usda_fdc_id is null and custom_food_id is not null)
   ),
   constraint fk_food_entries_meal_id foreign key (meal_id) references meals(id) on delete set null
 );
+-- Future-dated prep portions land unconfirmed; excluded from all totals until
+-- the user confirms them. Guarded for databases created before this column.
+alter table food_entries add column if not exists confirmed boolean not null default true;
 create index if not exists idx_food_entries_user_key on food_entries(user_key);
 create index if not exists idx_food_entries_daily_log_id_consumed_at on food_entries(daily_log_id, consumed_at);
 create index if not exists idx_food_entries_custom_food_id on food_entries(custom_food_id);
