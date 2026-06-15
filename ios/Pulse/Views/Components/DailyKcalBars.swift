@@ -1,12 +1,18 @@
 /// Vertical bar chart of per-day kcal totals (used by Week view).
-/// Highlights the most-recent day, labels columns with very-short weekday letters,
-/// and draws an optional daily-target threshold line.
+/// Tapping a day reveals that day's kcal + macro grams in a caption below the
+/// chart; tapping the same bar again collapses it. With nothing selected the
+/// most-recent day is highlighted and the caption shows a tap hint. Columns are
+/// labeled with very-short weekday letters and an optional daily-target line is drawn.
 import SwiftUI
 
-/// Bar chart of `DailyLog.totalCalories` values with last-day highlight + target line.
+/// Bar chart of `DailyLog.totalCalories` with tap-to-reveal day detail + target line.
 struct DailyKcalBars: View {
     let logs: [DailyLog]
     let targetCalories: Int?
+
+    // Store the selected day's id (its date), not the `DailyLog`, so the caption
+    // always reflects fresh data after a reload and auto-deselects a vanished day.
+    @State private var selectedDate: Date?
 
     /// Y-axis ceiling: the larger of the max day kcal and the target, floored at 1.
     /// Outputs: positive integer used as the chart's vertical scale.
@@ -28,7 +34,7 @@ struct DailyKcalBars: View {
                 if let target = targetCalories {
                     HStack(spacing: 6) {
                         Rectangle()
-                            .fill(Theme.CTP.yellow)
+                            .fill(Theme.targetLine)
                             .frame(width: 14, height: 1)
                         Text("target \(target)")
                             .monospacedDigit()
@@ -44,7 +50,7 @@ struct DailyKcalBars: View {
                 ZStack(alignment: .bottomLeading) {
                     if targetCalories != nil {
                         Rectangle()
-                            .fill(Theme.CTP.yellow.opacity(0.7))
+                            .fill(Theme.targetLine.opacity(0.7))
                             .frame(height: 1)
                             .offset(y: -targetY - 20)
                             .opacity(0.7)
@@ -61,32 +67,69 @@ struct DailyKcalBars: View {
                 }
             }
             .frame(height: 160)
+
+            caption
         }
     }
 
     /// One bar column for a single day's log.
     /// Inputs:
     ///   - log: the day to render.
-    ///   - isLast: whether this is the most-recent day (triggers highlight styling).
+    ///   - isLast: whether this is the most-recent day (highlighted when nothing is selected).
     ///   - plotHeight: vertical space available for the bar.
-    /// Outputs: composed column view.
+    /// Outputs: composed tappable column view.
     private func barColumn(log: DailyLog, isLast: Bool, plotHeight: CGFloat) -> some View {
         let h = max(2, CGFloat(log.totalCalories) / CGFloat(ceiling) * plotHeight)
+        let isSelected = selectedDate == log.id
+        // The last day stays emphasized only while no explicit selection is active.
+        let emphasized = isSelected || (selectedDate == nil && isLast)
+        let dimmed = selectedDate != nil && !isSelected
         return VStack(spacing: 6) {
             Spacer(minLength: 0)
             StackedMacroBar(fractions: log.macroFractions)
                 .frame(height: h)
                 .clipShape(RoundedRectangle(cornerRadius: Theme.Layout.barRadius, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: Theme.Layout.barRadius, style: .continuous)
-                        .strokeBorder(Theme.FG.primary.opacity(isLast ? 0.8 : 0), lineWidth: 1.5)
-                )
-                .shadow(color: isLast ? Theme.CTP.mauve.opacity(0.45) : .clear, radius: 6)
+                .barEmphasis(emphasized: emphasized, dimmed: dimmed)
             Text(Self.cal.veryShortWeekdaySymbol(for: log.date))
                 .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(isLast ? Theme.CTP.mauve : Theme.FG.secondary)
+                .foregroundStyle(emphasized ? Theme.CTP.mauve : Theme.FG.secondary)
         }
         .frame(maxWidth: .infinity)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            withAnimation(.easeOut(duration: 0.15)) {
+                selectedDate = isSelected ? nil : log.id
+            }
+        }
+    }
+
+    /// Below-chart readout: the selected day's kcal + macro grams, or a tap hint
+    /// when nothing is selected.
+    private var caption: some View {
+        // Resolve the selected day from the current `logs` each render so the readout
+        // follows fresh data and falls back to the hint if the day vanished.
+        let day = selectedDate.flatMap { date in logs.first { $0.id == date } }
+        return HStack(spacing: 10) {
+            if let day {
+                Text(Self.cal.shortWeekdaySymbol(for: day.date) + " · \(day.totalCalories) cal")
+                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    .foregroundStyle(Theme.FG.secondary)
+                Spacer(minLength: 8)
+                if day.totalProteinG + day.totalCarbsG + day.totalFatG > 0 {
+                    MacroGramChips(proteinG: day.totalProteinG, carbsG: day.totalCarbsG, fatG: day.totalFatG)
+                } else {
+                    Text("no macros")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.FG.tertiary)
+                }
+            } else {
+                Text("Tap a day for its macros")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.FG.tertiary)
+                Spacer(minLength: 0)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

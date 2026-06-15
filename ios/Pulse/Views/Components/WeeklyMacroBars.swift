@@ -72,7 +72,7 @@ struct WeeklyMacroBars: View {
             }
             if targetCalories != nil {
                 HStack(spacing: 5) {
-                    Rectangle().fill(Theme.CTP.yellow).frame(width: 14, height: 1.5)
+                    Rectangle().fill(Theme.targetLine).frame(width: 14, height: 1.5)
                     Text("target")
                 }
             }
@@ -91,7 +91,7 @@ struct WeeklyMacroBars: View {
             ZStack(alignment: .bottomLeading) {
                 if let target = targetCalories, target > 0 {
                     Rectangle()
-                        .fill(Theme.CTP.yellow.opacity(0.75))
+                        .fill(Theme.targetLine.opacity(0.75))
                         .frame(maxWidth: .infinity)
                         .frame(height: 1.5)
                         .offset(y: referenceOffset(value: target, plotHeight: plotHeight, labelSpace: labelSpace))
@@ -138,12 +138,7 @@ struct WeeklyMacroBars: View {
             StackedMacroBar(fractions: day.macroFractions)
                 .frame(height: barHeight)
                 .clipShape(RoundedRectangle(cornerRadius: Theme.Layout.barRadius, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: Theme.Layout.barRadius, style: .continuous)
-                        .strokeBorder(Theme.FG.primary.opacity(isSelected ? 0.8 : 0), lineWidth: 1.5)
-                )
-                .opacity(dimmed ? 0.45 : 1)
-                .shadow(color: isSelected ? Theme.CTP.mauve.opacity(0.4) : .clear, radius: 6)
+                .barEmphasis(emphasized: isSelected, dimmed: dimmed)
             Text(Self.cal.veryShortWeekdaySymbol(for: day.date))
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(isSelected ? Theme.CTP.mauve : Theme.FG.secondary)
@@ -159,21 +154,21 @@ struct WeeklyMacroBars: View {
 
     // MARK: - Caption
 
-    /// Below-chart readout: the selected day's split, or the week-average split when
-    /// nothing is selected.
+    /// Below-chart readout: the selected day's macro grams, or the week-average
+    /// grams when nothing is selected.
     private var caption: some View {
         // Resolve the selected day from the current `group.days` each render so the
         // readout follows fresh data and falls back to the week average if it vanished.
         let day = selectedDate.flatMap { date in group.days.first { $0.id == date } }
         let title = day.map { Self.cal.shortWeekdaySymbol(for: $0.date) + " · \($0.totalCalories) cal" } ?? "Week avg"
-        let split = day?.macroSplit ?? group.avgMacroSplit
+        let grams = selectedGrams(day: day)
         return HStack(spacing: 10) {
             Text(title)
                 .font(.system(size: 11, weight: .medium, design: .monospaced))
                 .foregroundStyle(Theme.FG.secondary)
             Spacer(minLength: 8)
-            if let split {
-                MacroPercentChips(split: split)
+            if let grams {
+                MacroGramChips(proteinG: grams.protein, carbsG: grams.carbs, fatG: grams.fat)
             } else {
                 Text("no macros")
                     .font(.system(size: 11))
@@ -183,34 +178,21 @@ struct WeeklyMacroBars: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-}
-
-/// Three small colored "P 30%" / "C 45%" / "F 25%" chips for a macro split.
-struct MacroPercentChips: View {
-    let split: MacroSplit
-
-    var body: some View {
-        HStack(spacing: 8) {
-            chip(.protein, split.proteinPct)
-            chip(.carbs, split.carbsPct)
-            chip(.fat, split.fatPct)
-        }
-    }
-
-    /// One macro percentage chip.
+    /// Macro grams to show in the caption: the selected day's totals, or the
+    /// week's per-logged-day averages when nothing is selected.
     /// Inputs:
-    ///   - macro: which macro channel (drives color + letter).
-    ///   - pct: the whole-number percentage to show.
-    /// Outputs: a colored "X NN%" label.
-    private func chip(_ macro: Theme.Macro, _ pct: Int) -> some View {
-        HStack(spacing: 3) {
-            Text(macro.short)
-                .font(.system(size: 10, weight: .bold))
-            Text("\(pct)%")
-                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+    ///   - day: the currently selected day's log, or nil when none is selected.
+    /// Outputs: a (protein, carbs, fat) gram tuple, or nil when there are no macros.
+    private func selectedGrams(day: DailyLog?) -> (protein: Double, carbs: Double, fat: Double)? {
+        if let day {
+            guard day.totalProteinG + day.totalCarbsG + day.totalFatG > 0 else { return nil }
+            return (day.totalProteinG, day.totalCarbsG, day.totalFatG)
         }
-        .foregroundStyle(macro.color)
+        let avg = (group.days.avgProtein, group.days.avgCarbs, group.days.avgFat)
+        guard avg.0 + avg.1 + avg.2 > 0 else { return nil }
+        return (avg.0, avg.1, avg.2)
     }
+
 }
 
 /// Reusable dashed horizontal line (1pt) drawn with the current foreground style.

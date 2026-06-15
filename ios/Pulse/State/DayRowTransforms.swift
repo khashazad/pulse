@@ -27,6 +27,18 @@ enum DayRow: Identifiable {
         case .meal(let g):   return g.sortDate
         }
     }
+
+    /// Whether this row contains any unconfirmed (pending) entry. A meal row counts
+    /// as pending when any of its items is unconfirmed, so a partially-pending meal
+    /// stays a single row routed to the day view's Pending section rather than being
+    /// split across two sections.
+    /// Outputs: `true` when at least one underlying entry is unconfirmed.
+    var hasPendingItems: Bool {
+        switch self {
+        case .single(let e): return !e.isConfirmed
+        case .meal(let g):   return g.items.contains { !$0.isConfirmed }
+        }
+    }
 }
 
 /// Aggregated representation of one or more saved-meal instances grouped under a shared mealId.

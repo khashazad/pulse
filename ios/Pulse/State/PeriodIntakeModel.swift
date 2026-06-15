@@ -122,9 +122,9 @@ final class PeriodIntakeModel {
     }
 
     /// One week's worth of daily logs within the displayed month, used by the
-    /// Month view's per-week stacked-macro bar rows. Display aggregates (`avgKcal`,
-    /// `avgMacroSplit`) are precomputed once at construction so the render path
-    /// doesn't recompute them on every `body` evaluation.
+    /// Month view's per-week stacked-macro bar rows. The `avgKcal` display
+    /// aggregate is precomputed once at construction so the render path doesn't
+    /// recompute it on every `body` evaluation.
     struct WeekLogGroup: Identifiable {
         let id: String
         let label: String
@@ -132,8 +132,6 @@ final class PeriodIntakeModel {
         let isCurrent: Bool
         /// Average kcal per logged day in this week (skips empty days).
         let avgKcal: Int
-        /// Aggregate protein/carbs/fat split for the week (nil when no macros).
-        let avgMacroSplit: MacroSplit?
     }
 
     /// Calendar for the Month view's week rows: the user's current calendar pinned to a
@@ -164,8 +162,7 @@ final class PeriodIntakeModel {
                 label: "Week \(idx + 1)",
                 days: days,
                 isCurrent: key == currentKey,
-                avgKcal: days.avgCalories,
-                avgMacroSplit: days.macroSplit
+                avgKcal: days.avgCalories
             )
         }
     }

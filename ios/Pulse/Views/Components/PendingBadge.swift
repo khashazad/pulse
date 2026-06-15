@@ -3,18 +3,19 @@
 /// the day's totals. Shared by `EntryRow` and `MealGroupRow`.
 import SwiftUI
 
-/// A peach "pending" capsule label.
+/// A sky "pending" capsule label. Sky (not peach) keeps the badge distinct from
+/// the Fat macro color, which is now peach.
 struct PendingBadge: View {
     var body: some View {
         Text("pending")
             .font(.system(size: 9, weight: .semibold))
             .tracking(0.5)
             .textCase(.uppercase)
-            .foregroundStyle(Theme.CTP.peach)
+            .foregroundStyle(Theme.pending)
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
             .background(
-                Capsule().fill(Theme.CTP.peach.opacity(0.16))
+                Capsule().fill(Theme.pending.opacity(0.16))
             )
     }
 }

@@ -208,27 +208,37 @@ struct DayMacroView: View {
     /// Outputs: composed scrollable view for the day.
     @ViewBuilder
     private func loadedBody(_ summary: DailySummary) -> some View {
-        // Group once: reused by the header count and the (non-select) entries card.
-        let rows = groupDayEntries(summary.entries)
+        // Group ALL entries once so multi-instance meals stay merged (grouping the
+        // confirmed and pending slices separately would split a same-meal pair into
+        // two rows), then partition the rows: any row with a pending item is pinned
+        // to the Pending section at the top, the rest fall to the entries list below.
+        let allRows = groupDayEntries(summary.entries)
+        let pendingRows = allRows.filter(\.hasPendingItems)
+        let confirmedRows = allRows.filter { !$0.hasPendingItems }
         let pending = summary.entries.filter { !$0.isConfirmed }
+        // What the totals would read if every pending entry were confirmed.
+        let projected = projectedTotals(consumed: summary.consumed, pending: pending)
         ScrollView {
             VStack(spacing: Theme.Layout.sectionSpacing) {
-                heroRing(consumed: summary.consumed.calories, target: summary.target.calories)
+                heroRing(
+                    consumed: summary.consumed.calories,
+                    target: summary.target.calories,
+                    projected: projected?.calories
+                )
+                .padding(.horizontal, 16)
+
+                MacroTotalsRow(totals: summary.consumed, targets: summary.target, projected: projected)
                     .padding(.horizontal, 16)
 
-                MacroTotalsRow(totals: summary.consumed, targets: summary.target)
-                    .padding(.horizontal, 16)
-
-                if !isSelecting, !pending.isEmpty {
-                    confirmAllBar(pending)
+                if !isSelecting, !pendingRows.isEmpty {
+                    pendingSection(pendingRows, allPending: pending)
                         .padding(.horizontal, 16)
                 }
 
-                entriesHeader(count: rows.count, kcal: summary.consumed.calories)
-                    .padding(.horizontal, 20)
-                    .padding(.top, 4)
-
                 if summary.entries.isEmpty {
+                    entriesHeader(count: 0, kcal: 0)
+                        .padding(.horizontal, 20)
+                        .padding(.top, 4)
                     EmptyStateView(
                         icon: "fork.knife",
                         title: "No entries logged",
@@ -236,19 +246,68 @@ struct DayMacroView: View {
                     )
                     .padding(.top, 8)
                 } else if isSelecting {
+                    entriesHeader(count: allRows.count, kcal: summary.consumed.calories)
+                        .padding(.horizontal, 20)
+                        .padding(.top, 4)
                     selectableEntriesCard(summary.entries)
                         .padding(.horizontal, 16)
                     selectionActionBar
                         .padding(.horizontal, 16)
                         .padding(.top, 4)
-                } else {
-                    clusteredEntries(rows)
+                } else if !confirmedRows.isEmpty {
+                    // Confirmed-only rows; pending rows render in the section above.
+                    entriesHeader(count: confirmedRows.count, kcal: summary.consumed.calories)
+                        .padding(.horizontal, 20)
+                        .padding(.top, 4)
+                    clusteredEntries(confirmedRows)
                         .padding(.horizontal, 16)
                 }
 
                 Spacer(minLength: Theme.Layout.dockClearance)
             }
             .padding(.top, 4)
+        }
+    }
+
+    /// Pinned "Pending" section shown at the top of the day when unconfirmed
+    /// entries exist. Lists each pending row (single food or meal group) with an
+    /// inline confirm control, followed by a "Confirm all" action.
+    /// Inputs:
+    ///   - rows: the pending entries already folded into `DayRow`s.
+    ///   - allPending: the flat list of pending entries (for "Confirm all").
+    /// Outputs: composed section view.
+    private func pendingSection(_ rows: [DayRow], allPending: [FoodEntry]) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("Pending")
+                    .font(.system(size: 11, weight: .semibold))
+                    .tracking(0.8)
+                    .textCase(.uppercase)
+                    .foregroundStyle(Theme.pending)
+                Spacer()
+                Text("\(allPending.count) awaiting confirm")
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(Theme.FG.tertiary)
+            }
+            .padding(.horizontal, 4)
+
+            VStack(spacing: 0) {
+                ForEach(Array(rows.enumerated()), id: \.element.id) { idx, row in
+                    Group {
+                        switch row {
+                        case .single(let entry): pendingSingleRow(entry)
+                        case .meal(let group):   pendingMealRow(group)
+                        }
+                    }
+                    if idx < rows.count - 1 {
+                        Rectangle().fill(Theme.separator).frame(height: 0.5)
+                    }
+                }
+            }
+            .padding(.horizontal, 14)
+            .ctpCard(tint: Theme.pending.opacity(0.08))
+
+            confirmAllBar(allPending)
         }
     }
 
@@ -323,10 +382,12 @@ struct DayMacroView: View {
 
     /// Backdrop + centered `MacroRing` used at the top of the day view.
     /// Inputs:
-    ///   - consumed: kcal consumed today.
+    ///   - consumed: kcal consumed today (confirmed only).
     ///   - target: daily kcal target.
+    ///   - projected: kcal if pending entries were confirmed; drives the ring's
+    ///     ghost arc. `nil` when there are no pending entries.
     /// Outputs: composed hero ring view.
-    private func heroRing(consumed: Int, target: Int) -> some View {
+    private func heroRing(consumed: Int, target: Int, projected: Int?) -> some View {
         ZStack {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .fill(
@@ -337,7 +398,7 @@ struct DayMacroView: View {
                         endRadius: 240
                     )
                 )
-            MacroRing(consumed: consumed, target: target)
+            MacroRing(consumed: consumed, target: target, projected: projected)
                 .padding(.vertical, 22)
         }
     }
@@ -388,19 +449,11 @@ struct DayMacroView: View {
         VStack(spacing: 0) {
             ForEach(Array(cluster.rows.enumerated()), id: \.element.id) { idx, row in
                 Group {
+                    // Rows here are confirmed-only; pending entries render in the
+                    // pinned "Pending" section above.
                     switch row {
-                    case .single(let entry):
-                        if entry.isConfirmed {
-                            EntryRow(entry: entry)
-                        } else {
-                            pendingSingleRow(entry)
-                        }
-                    case .meal(let group):
-                        if group.items.contains(where: { !$0.isConfirmed }) {
-                            pendingMealRow(group)
-                        } else {
-                            MealGroupRow(group: group)
-                        }
+                    case .single(let entry): EntryRow(entry: entry)
+                    case .meal(let group):   MealGroupRow(group: group)
                     }
                 }
                 if idx < cluster.rows.count - 1 {
