@@ -17,9 +17,16 @@
 #                             folder URL after /folders/).
 #
 # Layout in Drive:  <folder>/db/pulse-<UTC timestamp>.dump   (custom-format pg_dump)
-#                   <folder>/photos/...                      (incremental bucket mirror)
+#                   <folder>/photos/<YYYY-MM-DD>/<tag>/<variant>.jpg
+#                       e.g. photos/2026-06-14/front/display.jpg
+#                       (two photos sharing a day+tag get an extra /<photo_id>/ level)
+# A photo's day and tag live ONLY in Postgres — the bucket key is date-less
+# (progress/<user>/<photo_id>/<variant>.jpg) — so the photo backup queries the DB
+# via BACKUP_DATABASE_URL to file each object under its date/tag folder.
 # DB dumps older than 30 days are pruned; photos are copied (never deleted) so a
-# bucket-side deletion cannot propagate into the backup.
+# bucket-side deletion cannot propagate into the backup. The pre-date-keyed legacy
+# photos/progress/ tree (from before this job was date-keyed) is left for manual
+# deletion — this job never deletes from Drive; see the backup-photos step.
 #
 # Restore drill (do this once, and after schema overhauls):
 #   rclone copy gdrive:db/<latest>.dump . && pg_restore --list <latest>.dump
@@ -107,23 +114,92 @@ jobs:
       RCLONE_CONFIG_GDRIVE_ROOT_FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID }}
       S3_BUCKET: ${{ secrets.S3_BUCKET }}
     steps:
-      - name: Install rclone
+      - name: Install rclone and postgres client
         run: |
           set -euo pipefail
           sudo apt-get update -qq
-          sudo apt-get install -y -qq rclone
+          # psql here only runs a SELECT, so the runner's default client is fine
+          # (the server-newer-than-client check only blocks pg_dump, not queries).
+          sudo apt-get install -y -qq rclone postgresql-client
 
-      - name: Mirror bucket to Drive (copy, never delete) and verify
+      - name: Mirror bucket to Drive under date/tag folders, verify, prune legacy tree
+        env:
+          DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
         run: |
           set -euo pipefail
           [ -n "$S3_BUCKET" ] || { echo "S3_BUCKET secret is not set" >&2; exit 1; }
-          # `copy` (not `sync`): a deletion in the bucket must never propagate
-          # into the backup — deleted objects accumulate in Drive by design.
-          rclone copy "PULSE:$S3_BUCKET" "gdrive:photos" --transfers 8 \
-            --stats-one-line --stats 30s
-          # Every bucket object must exist in Drive. Drive does not expose MD5s
-          # for all uploads, so fall back to size comparison explicitly rather
-          # than letting the check silently degrade.
-          rclone check "PULSE:$S3_BUCKET" "gdrive:photos" --one-way --size-only
-          echo "Bucket:  $(rclone size "PULSE:$S3_BUCKET")"
-          echo "Mirror:  $(rclone size gdrive:photos)"
+          [ -n "$DATABASE_URL" ] || { echo "BACKUP_DATABASE_URL secret is not set" >&2; exit 1; }
+
+          # Each photo's day + tag live ONLY in Postgres (the bucket key is
+          # progress/<user>/<photo_id>/ — date-less). Pull a TSV mapping of
+          # source prefix -> destination folder. The destination is
+          # photos/<YYYY-MM-DD>/<tag>/, where tag is normalized_name slugified to a
+          # safe [a-z0-9-] folder name (any run of other chars -> '-', then trimmed;
+          # empty -> 'untagged'). Collision rule: if >1 photo shares the same
+          # day AND tag, every member of that group gets an extra /<photo_id>/
+          # level so no object is ever overwritten in the backup.
+          mapping="$(psql "$DATABASE_URL" -At -F $'\t' -c "
+          with f as (
+            select p.storage_key_prefix as src,
+                   to_char(p.log_date, 'YYYY-MM-DD') as d,
+                   coalesce(nullif(trim(both '-' from regexp_replace(t.normalized_name, '[^a-z0-9]+', '-', 'g')), ''), 'untagged') as tag,
+                   p.id::text as pid
+            from progress_photos p
+            join progress_photo_tags t on t.id = p.tag_id
+          )
+          select src,
+                 'photos/' || d || '/' || tag ||
+                 case when count(*) over (partition by d, tag) > 1 then '/' || pid else '' end
+          from f
+          order by d, tag, pid;
+          ")"
+
+          if [ -z "$mapping" ]; then
+            echo "No progress photos in the database; nothing to back up."
+            exit 0
+          fi
+
+          # Copy + verify each photo's objects into its date/tag folder. `copy`
+          # (not `sync`) never deletes, so a bucket-side deletion cannot propagate
+          # into the backup. The --one-way --size-only check fails loudly if any
+          # source object is missing from (or differs in size from) the dest;
+          # Drive does not expose MD5s for all uploads, so size is the comparison.
+          count=0
+          while IFS=$'\t' read -r src dest; do
+            [ -n "$src" ] || continue
+            rclone copy "PULSE:$S3_BUCKET/$src" "gdrive:$dest" \
+              --transfers 8 --stats-one-line --stats 30s
+            rclone check "PULSE:$S3_BUCKET/$src" "gdrive:$dest" --one-way --size-only \
+              || { echo "verify failed for $src -> $dest" >&2; exit 1; }
+            count=$((count + 1))
+          done <<< "$mapping"
+          echo "Copied and verified $count photo prefixes."
+
+          # Informational coverage tripwire — NOT a delete gate. The loop above
+          # already verified every DB-mapped photo is present (it aborts otherwise),
+          # so a shortfall here means the bucket holds objects with no DB row:
+          # orphans left when a best-effort delete removed the row but not the
+          # bytes. Those are not copied by the DB-driven mirror, so they live only
+          # in B2 (and the legacy photos/progress tree, if it still exists). Warn so
+          # a human investigates; never act on this count automatically.
+          bucket_objs=$(rclone lsf --files-only -R "PULSE:$S3_BUCKET/progress" | wc -l | tr -d ' ')
+          new_objs=$(rclone lsf --files-only -R "gdrive:photos" --exclude "/progress/**" | wc -l | tr -d ' ')
+          echo "Bucket objects: $bucket_objs   New-layout (date-keyed) objects: $new_objs"
+          if [ "$new_objs" -lt "$bucket_objs" ]; then
+            echo "WARNING: $((bucket_objs - new_objs)) bucket object(s) have no date-keyed" \
+                 "copy — likely orphans (bytes whose DB row was deleted). They are NOT" \
+                 "backed up by this job; investigate before relying on this mirror." >&2
+          fi
+
+          # Legacy cleanup is MANUAL by design — this job does NOT delete anything.
+          # The old date-less photos/progress tree (from before this job was
+          # date-keyed) is a stale duplicate of the date folders above. It is not
+          # auto-purged: the gdrive remote's least-privilege drive.file scope can't
+          # delete files it didn't create (403 appNotAuthorizedToChild), and a
+          # count-gated purge would be unsound against an append-only backup (the
+          # destination keeps copies of deleted/renamed photos, so object counts
+          # cannot prove per-object coverage). Once the date-keyed tree looks right,
+          # delete photos/progress by hand in Drive.
+
+          echo "Bucket:  $(rclone size "PULSE:$S3_BUCKET/progress")"
+          echo "Mirror:  $(rclone size gdrive:photos --exclude "/progress/**")"
