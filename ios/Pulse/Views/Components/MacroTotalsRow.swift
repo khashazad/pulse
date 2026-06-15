@@ -10,7 +10,7 @@ struct MacroTotalsRow: View {
     /// each chip shows a faint `+Ng` and a ghost segment on its progress capsule
     /// extending from the confirmed fill out to the projected fill. `nil` (no
     /// pending) leaves the chips unchanged.
-    var projected: MacroTotals? = nil
+    var projected: MacroTotals?
 
     var body: some View {
         HStack(spacing: 8) {

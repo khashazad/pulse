@@ -37,7 +37,7 @@ final class PendingProjectionTests: XCTestCase {
     func test_sumMacroTotals_addsEachChannel() {
         let total = sumMacroTotals([
             entry(calories: 600, protein: 50, carbs: 40, fat: 20),
-            entry(calories: 200, protein: 10, carbs: 15, fat: 5),
+            entry(calories: 200, protein: 10, carbs: 15, fat: 5)
         ])
         XCTAssertEqual(total.calories, 800)
         XCTAssertEqual(total.proteinG, 60, accuracy: 0.0001)

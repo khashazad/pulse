@@ -10,7 +10,7 @@ struct MacroRing: View {
     /// Projected kcal if the day's pending entries were confirmed. When set and
     /// greater than `consumed`, a dimmed "ghost" arc extends from the confirmed
     /// fill out to this value. `nil` (no pending) hides the ghost entirely.
-    var projected: Int? = nil
+    var projected: Int?
 
     /// Fill fraction in 0...1. Returns 0 when target is non-positive to avoid division.
     /// Outputs: clamped progress value used to trim the ring.
