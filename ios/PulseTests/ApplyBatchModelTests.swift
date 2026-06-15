@@ -87,7 +87,8 @@ final class ApplyBatchModelTests: XCTestCase {
         XCTAssertEqual(first.calories, 200)
         XCTAssertEqual(first.proteinG, 20)
         XCTAssertEqual(first.quantityText, "1/5 of prep batch")
-        XCTAssertEqual(first.consumedAt, DateOnly.noon(on: day(1)))
+        // day(1) is in the future → pending → anchored at end-of-day.
+        XCTAssertEqual(first.consumedAt, DateOnly.endOfDay(on: day(1)))
 
         // Day 2, custom item at count 2: 2/5 of 500 kcal.
         let last = entries[3]
@@ -117,6 +118,21 @@ final class ApplyBatchModelTests: XCTestCase {
         XCTAssertFalse(m.isPending(m.selections[0]))
         XCTAssertFalse(m.isPending(m.selections[1]))
         XCTAssertTrue(m.buildEntries().allSatisfy(\.confirmed))
+    }
+
+    /// Pending (future) entries anchor `consumedAt` at end-of-day so they sort to
+    /// the end of the day's list; confirmed (today) entries keep the noon anchor.
+    func test_pendingEntriesAnchorAtEndOfDay() {
+        let m = ApplyBatchModel(items: [item(fdc: 1, cal: 500, p: 50, c: 40, f: 10)],
+                                portions: 5, appliedDayKeys: [], auth: nil,
+                                calendar: cal, now: day(0))
+        m.toggle(day(0)); m.toggle(day(1))
+        let entries = m.buildEntries()
+        // day(0) = today → confirmed → noon; day(1) = future → pending → end-of-day.
+        XCTAssertEqual(entries[0].consumedAt, DateOnly.noon(on: day(0)))
+        XCTAssertEqual(entries[1].consumedAt, DateOnly.endOfDay(on: day(1)))
+        // End-of-day sorts strictly after noon, so confirmed pending items land last.
+        XCTAssertGreaterThan(entries[1].consumedAt!, DateOnly.noon(on: day(1)))
     }
 
     /// The future/confirmed split is computed against the injected `now`, not the

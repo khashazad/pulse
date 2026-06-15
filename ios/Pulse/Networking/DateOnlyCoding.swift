@@ -55,6 +55,21 @@ enum DateOnly {
         return calendar.date(byAdding: .hour, value: 12, to: start) ?? start
     }
 
+    /// Anchors the calendar day containing `day` at one minute before midnight
+    /// (local 23:59). Used for `consumed_at` on pending future prep portions so
+    /// that, once confirmed, they sort to the END of that day's entry list
+    /// (entries are ordered by `consumed_at`). Set via `bySettingHour` so the
+    /// wall-clock time lands on the same day with no midnight rollover; 23:59
+    /// always exists (DST gaps fall near 02:00-03:00, never at end of day).
+    /// Inputs:
+    ///   - day: any instant on the target day.
+    ///   - calendar: calendar for day math (defaults to `.current`).
+    /// Outputs: a `Date` at 23:59 local on the target day.
+    static func endOfDay(on day: Date, calendar: Calendar = .current) -> Date {
+        calendar.date(bySettingHour: 23, minute: 59, second: 0, of: day)
+            ?? noon(on: day, calendar: calendar)
+    }
+
     /// Formatter for naive wall-clock datetimes (`yyyy-MM-dd'T'HH:mm:ss`, no
     /// timezone designator) in the device's current time zone. Used when
     /// encoding `consumed_at` for write requests: the server reads the literal

@@ -153,24 +153,29 @@ final class ApplyBatchModel {
     ///   - sel: the day selection to build entries for.
     /// Outputs: the day's payload entries (empty only for an all-sourceless batch).
     private func entries(for sel: DaySelection) -> [FoodEntryCreate] {
-        let noon = DateOnly.noon(on: sel.date, calendar: calendar)
         let qty = "\(sel.count)/\(portions) of prep batch"
         // Future days land pending; today/past are confirmed immediately.
         let confirmed = !isPending(sel)
+        // Pending portions anchor at end-of-day so they sort to the end of the
+        // day's list once confirmed; confirmed (today/past) portions keep the
+        // canonical mid-day anchor.
+        let anchor = confirmed
+            ? DateOnly.noon(on: sel.date, calendar: calendar)
+            : DateOnly.endOfDay(on: sel.date, calendar: calendar)
         return applicableItems.compactMap { item in
             let m = scaledMacros(for: item, in: sel)
             if let fdc = item.usdaFdcId {
                 return .usda(displayName: item.displayName, quantityText: qty,
                              fdcId: fdc, usdaDescription: item.usdaDescription ?? item.displayName,
                              calories: m.calories, proteinG: m.proteinG,
-                             carbsG: m.carbsG, fatG: m.fatG, consumedAt: noon,
+                             carbsG: m.carbsG, fatG: m.fatG, consumedAt: anchor,
                              confirmed: confirmed)
             }
             if let customId = item.customFoodId {
                 return .custom(displayName: item.displayName, quantityText: qty,
                                customFoodId: customId,
                                calories: m.calories, proteinG: m.proteinG,
-                               carbsG: m.carbsG, fatG: m.fatG, consumedAt: noon,
+                               carbsG: m.carbsG, fatG: m.fatG, consumedAt: anchor,
                                confirmed: confirmed)
             }
             return nil
