@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 This is a single git repo (monorepo) containing two subprojects for one product (the **Pulse** app — nutrition + weight + progress photos, single user today). Each was previously its own repo and was merged in with full history preserved under its subdirectory:
 
 - `server/` — FastAPI + Postgres backend. Google-OAuth session/Bearer auth for the app; MCP endpoint at `/mcp` with GitHub-OAuth + service-token paths. Feature surface: food entries, meals, prep containers, custom foods, food memory, weight, progress photos (+ tags), USDA proxy. See **Server** below.
-- `ios/` — SwiftUI iOS 17+ client (four tabs: Intake, Meals, Prep, Measures). Auth is Google sign-in → opaque Bearer session token (stored in Keychain); base URL is configured in Settings. The Login/AuthSession flow is the live and only client auth path. See **iOS** below.
+- `ios/` — SwiftUI iOS 17+ client (four tabs: Intake, Food, Prep, Measures). Auth is Google sign-in → opaque Bearer session token (stored in Keychain); base URL is configured in Settings. The Login/AuthSession flow is the live and only client auth path. See **iOS** below.
 
 There is no shared tooling or build at this level — `cd` into the relevant subdirectory before running anything. Each subproject keeps its own `.gitignore`; documentation lives at the root (`README.md` + `CLAUDE.md` + the `AGENTS.md` pointer) and in `docs/` (`docs/ci-cd.md` — high-level guide to the GitHub Actions pipeline) — there are no nested per-subproject READMEs.
 
@@ -120,13 +120,13 @@ The `ios/build/` directory is the local DerivedData (gitignored).
 - `Models/` — Codable wire DTOs mirroring the backend: `DailySummary`, `DailyLog`, `FoodEntry`, `Meal`, `Container`, `MacroTotals`/`MacroTargets`, `CaloriesDailyRow`, `WeightEntry`, `ProgressPhoto`, `WhoAmI`. `snake_case` JSON ↔ camelCase Swift via explicit `CodingKeys`. (Non-wire helper types live elsewhere: `PeriodBucket` and `FoodSearchResult` are in `State/`; `WeightFormatter` is in `Utilities/`.)
 - `State/` — `@Observable` view models (no Combine). Pattern: each model holds a `weak var auth: AuthSession?`, calls `auth.makeClient()` on demand, and exposes a `LoadState<T>` (`.idle | .loading | .loaded(T) | .failed(PulseError)`). Models:
   - **Intake:** `DayMacroModel`, `PeriodIntakeModel(range:)` (one model for `.week`/`.month`/`.year`), `UserTargetsStore`. Day-row shaping lives in `DayRowTransforms.swift` (`groupDayEntries` + `clusterByProximity`); period `avg*` helpers are a `[DailyLog]` extension in `DailyLogAverages.swift`.
-  - **Meals:** `MealsModel`.
+  - **Food:** `MealsModel` (saved meals), `CustomFoodsModel` (saved custom foods list, with local `applyRename`/`applyRemoval`), `CustomFoodDetailModel` (one food's rename/delete/log-to-today action states). `FoodTabFilter` is the pure name-filter helper backing the shared search field.
   - **Prep:** `ContainersListModel`, `ContainerEditModel`, `PrepModel`.
   - **Measures:** `WeightLogModel`, `WeightTrendsModel`, `WeightAnalytics`, `ProgressPhotoStore`, `ProgressPhotoCache`, `ProgressPhotoTagStore`, `PhotoUploadQueue`.
   - **App-wide:** `AuthSession` (signed-in lifecycle, Keychain token, `makeClient()`), `LoadState`, `TargetsDraft` (plain value type holding the Settings sheet's pending macro-target/weight-goal edits — dirty/validation/DTO logic, saved via `UserTargetsStore.save`).
 - `Views/` — SwiftUI. `RootView` owns four `NavigationStack`s (one per tab) and a `FloatingDock` overlay; the dock auto-hides when the active stack has pushed views. Tabs (`DockTab` enum):
   - **Intake** (`.intake`) — day/week/month/year macro views (`DayMacroView`, `WeekView`, `MonthView`, `YearView`, `LogView`).
-  - **Meals** (`.meals`) — saved meal templates (`MealsView`, `MealDetailView`).
+  - **Food** (`.food`) — saved meal templates **and** saved custom foods behind a segmented section toggle, with a single shared `.searchable` field filtering the active section by name (`FoodTabView`). Meals open `MealDetailView`; custom foods open `CustomFoodDetailView` (rename / delete / log-to-today, the latter reusing Prep's `QuantityEntryView`). Rows: `MealRow`, `CustomFoodRow`. In-tab navigation routes through the `FoodRoute` enum. (Replaced the former standalone `MealsView`.)
   - **Prep** (`.prep`) — tare-based portion calculator + container CRUD with photos (`Views/Prep/`).
   - **Measures** (`.measures`) — weight log + trends + progress photos with tags + side-by-side comparison + in-app camera (`Views/Measures/`).
   - Subfolders: `Components/` (shared view components reused across tabs — rings/bars/rows plus `EmptyStateView`, `MacroLineView`, `PrimaryActionButton`, `SectionCard`, `PeriodSummaryCard`), `Auth/` (`LoginView`).
