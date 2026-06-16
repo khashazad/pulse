@@ -1,0 +1,27 @@
+{
+  "foods": [
+    {
+      "id": "11111111-1111-1111-1111-111111111111", "user_key": "khash",
+      "name": "Apple", "normalized_name": "apple", "notes": null,
+      "default_portion_id": "33333333-3333-3333-3333-333333333333",
+      "aliases": ["apple", "apples"],
+      "portions": [
+        { "custom_food_id": "33333333-3333-3333-3333-333333333333", "label": "medium",
+          "basis": "per_unit", "serving_size": 1.0, "serving_size_unit": "apple",
+          "calories": 95, "protein_g": 0.5, "carbs_g": 25.0, "fat_g": 0.3 },
+        { "custom_food_id": "44444444-4444-4444-4444-444444444444", "label": "per 100g",
+          "basis": "per_100g", "serving_size": null, "serving_size_unit": null,
+          "calories": 52, "protein_g": 0.3, "carbs_g": 14.0, "fat_g": 0.2 }
+      ],
+      "created_at": "2026-06-16T00:00:00Z", "updated_at": "2026-06-16T00:00:00Z"
+    }
+  ],
+  "standalones": [
+    { "id": "22222222-2222-2222-2222-222222222222", "user_key": "khash",
+      "name": "Protein Shake", "normalized_name": "protein shake",
+      "basis": "per_serving", "serving_size": 1.0, "serving_size_unit": "scoop",
+      "calories": 130, "protein_g": 25.0, "carbs_g": 3.0, "fat_g": 1.5,
+      "source": "manual", "notes": null, "food_id": null, "portion_label": null,
+      "created_at": "2026-05-01T00:00:00Z", "updated_at": "2026-05-01T00:00:00Z" }
+  ]
+}

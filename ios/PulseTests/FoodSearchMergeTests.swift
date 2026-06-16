@@ -7,7 +7,7 @@ final class FoodSearchMergeTests: XCTestCase {
     private func customFood(_ id: String, _ name: String) -> CustomFood {
         CustomFood(id: UUID(uuidString: id)!, name: name, basis: .perServing,
                    servingSize: 1, servingSizeUnit: "scoop",
-                   calories: 130, proteinG: 25, carbsG: 3, fatG: 1.5)
+                   calories: 130, proteinG: 25, carbsG: 3, fatG: 1.5, foodId: nil, portionLabel: nil)
     }
     private func memoryUSDA(_ id: String, _ name: String, fdc: Int, aliases: [String]) -> FoodMemoryEntry {
         FoodMemoryEntry(id: UUID(uuidString: id)!, name: name, usdaFdcId: fdc, usdaDescription: "d",

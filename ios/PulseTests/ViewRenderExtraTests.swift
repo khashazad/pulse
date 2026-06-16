@@ -186,12 +186,14 @@ final class ViewRenderExtraTests: XCTestCase {
 
     private func per100gResult() -> FoodSearchResult {
         FoodSearchResult(customFood: CustomFood(id: UUID(), name: "Rice", basis: .per100g, servingSize: nil,
-                                                servingSizeUnit: nil, calories: 130, proteinG: 2.7, carbsG: 28, fatG: 0.3))
+                                                servingSizeUnit: nil, calories: 130, proteinG: 2.7, carbsG: 28, fatG: 0.3,
+                                                foodId: nil, portionLabel: nil))
     }
 
     private func perUnitResult() -> FoodSearchResult {
         FoodSearchResult(customFood: CustomFood(id: UUID(), name: "Egg", basis: .perUnit, servingSize: 1,
-                                                servingSizeUnit: "unit", calories: 70, proteinG: 6, carbsG: 0.5, fatG: 5))
+                                                servingSizeUnit: "unit", calories: 70, proteinG: 6, carbsG: 0.5, fatG: 5,
+                                                foodId: nil, portionLabel: nil))
     }
 
     // MARK: - copy / backdate flow

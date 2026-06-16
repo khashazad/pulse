@@ -132,7 +132,8 @@ final class ViewRenderTests: XCTestCase {
     }
     private func sampleResult() -> FoodSearchResult {
         FoodSearchResult(customFood: CustomFood(id: UUID(), name: "Rice", basis: .per100g, servingSize: nil,
-                                                servingSizeUnit: nil, calories: 130, proteinG: 2.7, carbsG: 28, fatG: 0.3))
+                                                servingSizeUnit: nil, calories: 130, proteinG: 2.7, carbsG: 28, fatG: 0.3,
+                                                foodId: nil, portionLabel: nil))
     }
 
     // MARK: - renders (grouped so one crash doesn't lose the others)
