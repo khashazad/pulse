@@ -195,7 +195,10 @@ struct FoodTabView: View {
                                description: query.isEmpty ? "Custom foods you save will appear here." : "No foods match \"\(query)\".")
             } else {
                 ScrollView {
-                    if !browse.standalones.isEmpty {
+                    // Show the controls only when there's something to act on — while
+                    // selecting, or when standalones survive the current query — so a
+                    // query that filters all standalones away leaves no phantom gap.
+                    if isSelecting || !standalones.isEmpty {
                         foodsControls(allStandalones: browse.standalones, visibleStandalones: standalones)
                     }
                     VStack(spacing: 0) {
