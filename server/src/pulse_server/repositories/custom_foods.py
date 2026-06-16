@@ -61,6 +61,8 @@ def _row_columns() -> tuple[Any, ...]:
         custom_foods.c.fat_g,
         custom_foods.c.source,
         custom_foods.c.notes,
+        custom_foods.c.food_id,
+        custom_foods.c.portion_label,
         custom_foods.c.created_at,
         custom_foods.c.updated_at,
     )
@@ -401,3 +403,92 @@ class CustomFoodsRepository:
         except IntegrityError:
             raise
         return result.scalar_one_or_none() is not None
+
+    async def set_food_link(
+        self,
+        custom_food_id: UUID,
+        user_key: str,
+        food_id: UUID,
+        portion_label: str | None,
+        now: DateTimeValue,
+    ) -> dict[str, Any] | None:
+        """Attach a custom food to a Food as a portion.
+
+        **Inputs:**
+        - custom_food_id (UUID): Portion row primary key.
+        - user_key (str): Owner restriction.
+        - food_id (UUID): Parent Food id to link to.
+        - portion_label (str | None): Label within the Food (e.g. "medium").
+        - now (DateTimeValue): Timestamp for ``updated_at``.
+
+        **Outputs:**
+        - dict[str, Any] | None: Updated row, or ``None`` when not found.
+        """
+        stmt = (
+            update(custom_foods)
+            .where(custom_foods.c.id == custom_food_id)
+            .where(custom_foods.c.user_key == user_key)
+            .values(food_id=food_id, portion_label=portion_label, updated_at=now)
+            .returning(*_row_columns())
+        )
+        result = await self._session.execute(stmt)
+        row = result.mappings().first()
+        return dict(row) if row else None
+
+    async def clear_food_link_for_food(
+        self, food_id: UUID, user_key: str, now: DateTimeValue
+    ) -> list[dict[str, Any]]:
+        """Detach every portion of a Food (ungroup), returning the freed rows.
+
+        **Inputs:**
+        - food_id (UUID): Parent Food id whose portions are released.
+        - user_key (str): Owner restriction.
+        - now (DateTimeValue): Timestamp for ``updated_at``.
+
+        **Outputs:**
+        - list[dict[str, Any]]: The custom-food rows that were detached.
+        """
+        stmt = (
+            update(custom_foods)
+            .where(custom_foods.c.food_id == food_id)
+            .where(custom_foods.c.user_key == user_key)
+            .values(food_id=None, portion_label=None, updated_at=now)
+            .returning(*_row_columns())
+        )
+        result = await self._session.execute(stmt)
+        return [dict(row) for row in result.mappings().all()]
+
+    async def list_by_food(self, food_id: UUID) -> list[dict[str, Any]]:
+        """List a Food's portions ordered by label then name.
+
+        **Inputs:**
+        - food_id (UUID): Parent Food id.
+
+        **Outputs:**
+        - list[dict[str, Any]]: Portion rows.
+        """
+        stmt = (
+            select(*_row_columns())
+            .where(custom_foods.c.food_id == food_id)
+            .order_by(custom_foods.c.portion_label, custom_foods.c.normalized_name)
+        )
+        result = await self._session.execute(stmt)
+        return [dict(row) for row in result.mappings().all()]
+
+    async def list_standalone(self, user_key: str) -> list[dict[str, Any]]:
+        """List ungrouped custom foods (``food_id`` null) for a user.
+
+        **Inputs:**
+        - user_key (str): Owner restriction.
+
+        **Outputs:**
+        - list[dict[str, Any]]: Standalone rows ordered by name.
+        """
+        stmt = (
+            select(*_row_columns())
+            .where(custom_foods.c.user_key == user_key)
+            .where(custom_foods.c.food_id.is_(None))
+            .order_by(custom_foods.c.normalized_name)
+        )
+        result = await self._session.execute(stmt)
+        return [dict(row) for row in result.mappings().all()]
