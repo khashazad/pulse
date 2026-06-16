@@ -19,6 +19,7 @@ struct CustomFoodDetailView: View {
     @State private var model: CustomFoodDetailModel?
     @State private var showRename = false
     @State private var renameText = ""
+    @State private var renameError: String?
     @State private var showDeleteConfirm = false
     @State private var showLogSheet = false
 
@@ -69,11 +70,19 @@ struct CustomFoodDetailView: View {
                 guard !trimmed.isEmpty else { return }
                 Task {
                     await model.rename(to: trimmed)
-                    if case .saved = model.renameState { onRenamed(model.food) }
+                    switch model.renameState {
+                    case .saved:
+                        renameError = nil
+                        onRenamed(model.food)
+                    case .failed:
+                        renameError = model.renameErrorMessage
+                    default:
+                        break
+                    }
                 }
             }
         } message: {
-            if case .failed = model.renameState { Text(model.renameErrorMessage) }
+            Text("Choose a new name for this food.")
         }
         .confirmationDialog("Delete this food?", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
             Button("Delete", role: .destructive) {
@@ -150,6 +159,7 @@ struct CustomFoodDetailView: View {
             }
             Button {
                 renameText = model.food.name
+                renameError = nil
                 showRename = true
             } label: {
                 Label("Rename", systemImage: "pencil")
@@ -160,6 +170,7 @@ struct CustomFoodDetailView: View {
                     .ctpCard()
             }
             .buttonStyle(.plain)
+            renameStatusRow
             Button(role: .destructive) {
                 showDeleteConfirm = true
             } label: {
@@ -173,6 +184,18 @@ struct CustomFoodDetailView: View {
             .buttonStyle(.plain)
 
             logStatusRow(model: model)
+        }
+    }
+
+    /// Inline error row for a failed rename (the alert can't show it because it
+    /// dismisses before the async rename resolves).
+    /// Outputs: a red error label when a rename error is set, else empty.
+    @ViewBuilder
+    private var renameStatusRow: some View {
+        if let renameError {
+            Label(renameError, systemImage: "exclamationmark.triangle")
+                .font(.system(size: 12))
+                .foregroundStyle(Theme.CTP.red)
         }
     }
 
@@ -191,7 +214,7 @@ struct CustomFoodDetailView: View {
             Label(error.userMessage, systemImage: "exclamationmark.triangle")
                 .font(.system(size: 12))
                 .foregroundStyle(Theme.CTP.red)
-        default:
+        case .idle, .logging:
             EmptyView()
         }
     }
