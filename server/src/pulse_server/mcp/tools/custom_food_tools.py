@@ -24,12 +24,14 @@ from pulse_server.models import (
     CustomFoodCreate,
     CustomFoodResponse,
     CustomFoodUpdate,
+    FoodListResponse,
     custom_food_response,
+    food_response,
 )
 from pulse_server.repositories.custom_foods import CustomFoodsRepository
 from pulse_server.repositories.foods import FoodsRepository
 from pulse_server.services.custom_foods_service import upsert_custom_food_and_remember
-from pulse_server.services.foods_service import attach_portion
+from pulse_server.services.foods_service import attach_portion, list_foods_with_portions
 from pulse_server.services.normalize import normalize_name
 
 
@@ -190,9 +192,15 @@ def register(mcp: FastMCP, ctx: ToolContext) -> None:
         return {"deleted": deleted}
 
     @mcp.tool
-    async def list_custom_foods() -> list[CustomFoodResponse]:
-        """List all custom foods for this user."""
+    async def list_custom_foods() -> FoodListResponse:
+        """List this user's foods. Grouped foods appear under `foods` (each with its
+        nested `portions`); ungrouped custom foods appear under `standalones`. Resolve
+        a name with `resolve_food` before logging — a grouped food's portions carry the
+        `custom_food_id` you log with.
+        """
         async with get_session() as session:
-            repo = CustomFoodsRepository(session)
-            rows = await repo.list_for_user(user_key)
-        return [custom_food_response(r) for r in rows]
+            foods, standalones = await list_foods_with_portions(session, user_key)
+        return FoodListResponse(
+            foods=[food_response(f, p, a) for (f, p, a) in foods],
+            standalones=[custom_food_response(r) for r in standalones],
+        )
