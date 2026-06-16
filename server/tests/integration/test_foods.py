@@ -198,17 +198,9 @@ async def test_remove_portion_restores_standalone_memory(maker):
         # After grouping, "small apple" has no standalone memory row (folded into Apple).
         mem_repo = FoodMemoryRepository(session)
         cf_repo = CustomFoodsRepository(session)
-        # Simulate the remove_portion service steps: detach + strip alias + restore memory.
+        from pulse_server.services.foods_service import detach_portion
         async with transaction(session):
-            cf = await cf_repo.get_by_id(small, USER)
-            await cf_repo.set_food_link(small, USER, None, None, DateTimeValue.now(tz=UTC))
-            # Remove the portion's name from the Food's aliases before restoring
-            # the standalone memory row, so the alias-uniqueness trigger doesn't fire.
-            await mem_repo.remove_alias(USER, food["normalized_name"], cf["normalized_name"], DateTimeValue.now(tz=UTC))
-            await mem_repo.upsert_custom(
-                user_key=USER, name=cf["name"], normalized_name=cf["normalized_name"],
-                custom_food_id=small, now=DateTimeValue.now(tz=UTC),
-            )
+            await detach_portion(session, USER, food["id"], small, DateTimeValue.now(tz=UTC))
         # The detached portion is standalone and resolvable again.
         assert (await cf_repo.get_by_id(small, USER))["food_id"] is None
         hit = await mem_repo.get_by_name(USER, "small apple")
@@ -237,3 +229,55 @@ async def test_upsert_custom_reclaims_food_targeted_name(maker):
             )
         assert row["custom_food_id"] == medium
         assert row["food_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_update_food_rename_moves_memory_and_preserves_aliases(maker):
+    from pulse_server.services.foods_service import update_food as update_food_service
+
+    async with maker() as session:
+        async with transaction(session):
+            small = await _make_custom_food(session, "small apple", 70)
+            medium = await _make_custom_food(session, "medium apple", 95)
+        async with transaction(session):
+            food, _, _ = await group_foods(
+                session, USER,
+                FoodCreate(name="Apple", portion_ids=[small, medium],
+                           default_portion_id=medium, aliases=["apples"]),
+                DateTimeValue.now(tz=UTC),
+            )
+        async with transaction(session):
+            await update_food_service(
+                session, USER, food["id"], {"name": "Green Apple"}, None, DateTimeValue.now(tz=UTC)
+            )
+
+        mem_repo = FoodMemoryRepository(session)
+        green = await mem_repo.get_by_name(USER, "green apple")
+        assert green is not None and green["food_id"] == food["id"]
+        assert "apples" in (green.get("aliases") or [])
+        # The old canonical name no longer has its own memory row.
+        old = await mem_repo.get_by_name(USER, "apple")
+        assert old is None or old["food_id"] == food["id"]
+
+
+@pytest.mark.asyncio
+async def test_attach_portion_links_and_derives_label(maker):
+    from pulse_server.services.foods_service import attach_portion
+
+    async with maker() as session:
+        async with transaction(session):
+            small = await _make_custom_food(session, "small apple", 70)
+            huge = await _make_custom_food(session, "huge apple", 130)
+        async with transaction(session):
+            food, _, _ = await group_foods(
+                session, USER,
+                FoodCreate(name="Apple", portion_ids=[small], default_portion_id=small),
+                DateTimeValue.now(tz=UTC),
+            )
+        async with transaction(session):
+            await attach_portion(session, USER, food["id"], huge, None, DateTimeValue.now(tz=UTC))
+
+        cf_repo = CustomFoodsRepository(session)
+        attached = await cf_repo.get_by_id(huge, USER)
+        assert attached["food_id"] == food["id"]
+        assert attached["portion_label"] == "huge"

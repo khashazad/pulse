@@ -115,9 +115,11 @@ async def group_foods(
 
     # Default portion: explicit, else the first portion.
     default_portion_id = payload.default_portion_id or payload.portion_ids[0]
-    await foods_repo.update_fields(
+    updated = await foods_repo.update_fields(
         food_id, user_key, {"default_portion_id": default_portion_id}, now
     )
+    if updated is not None:
+        food_row = updated
 
     # Delete portion memory rows BEFORE writing the Food memory row.
     for normalized_portion_name in {
@@ -139,7 +141,6 @@ async def group_foods(
         aliases=rolled_list,
     )
 
-    food_row = await foods_repo.get_by_id(food_id, user_key) or food_row
     portion_rows = await cf_repo.list_by_food(food_id)
     return food_row, portion_rows, rolled_list
 
@@ -194,10 +195,57 @@ async def ungroup_food(
                 normalized_name=food["normalized_name"],
                 custom_food_id=target_portion,
                 now=now,
+                aliases=list((mem.get("aliases") if mem else None) or []) or None,
             )
-            for alias in (mem.get("aliases") if mem else None) or []:
-                await mem_repo.add_alias(user_key, food["normalized_name"], alias, now)
     return True
+
+
+async def _portions_and_aliases(
+    session: AsyncSession,
+    user_key: str,
+    food_id: UUID,
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """Fetch a Food's portion rows and its memory aliases.
+
+    **Inputs:**
+    - session (AsyncSession): Active session.
+    - user_key (str): Owning user.
+    - food_id (UUID): Food id.
+
+    **Outputs:**
+    - tuple[list[dict[str, Any]], list[str]]: The Food's portion rows and the
+      aliases from its ``food_memory`` row (empty when it has none).
+    """
+    cf_repo = CustomFoodsRepository(session)
+    mem_repo = FoodMemoryRepository(session)
+    portions = await cf_repo.list_by_food(food_id)
+    mem = await mem_repo.get_by_food_id(user_key, food_id)
+    aliases = list((mem.get("aliases") if mem else None) or [])
+    return portions, aliases
+
+
+async def fetch_food_with_portions(
+    session: AsyncSession,
+    user_key: str,
+    food_id: UUID,
+) -> tuple[dict[str, Any], list[dict[str, Any]], list[str]] | None:
+    """Fetch one Food with its portions + aliases, or ``None`` when not owned.
+
+    **Inputs:**
+    - session (AsyncSession): Active session.
+    - user_key (str): Owning user.
+    - food_id (UUID): Food id.
+
+    **Outputs:**
+    - tuple[dict, list[dict], list[str]] | None: ``(food_row, portion_rows,
+      aliases)``, or ``None`` when the Food is not owned by the user.
+    """
+    foods_repo = FoodsRepository(session)
+    food = await foods_repo.get_by_id(food_id, user_key)
+    if food is None:
+        return None
+    portions, aliases = await _portions_and_aliases(session, user_key, food_id)
+    return food, portions, aliases
 
 
 async def list_foods_with_portions(
@@ -216,14 +264,162 @@ async def list_foods_with_portions(
     """
     foods_repo = FoodsRepository(session)
     cf_repo = CustomFoodsRepository(session)
-    mem_repo = FoodMemoryRepository(session)
-
     food_rows = await foods_repo.list_for_user(user_key)
     out: list[tuple[dict[str, Any], list[dict[str, Any]], list[str]]] = []
     for food in food_rows:
-        portions = await cf_repo.list_by_food(food["id"])
-        mem = await mem_repo.get_by_food_id(user_key, food["id"])
-        aliases = list((mem.get("aliases") if mem else None) or [])
+        portions, aliases = await _portions_and_aliases(session, user_key, food["id"])
         out.append((food, portions, aliases))
     standalones = await cf_repo.list_standalone(user_key)
     return out, standalones
+
+
+async def attach_portion(
+    session: AsyncSession,
+    user_key: str,
+    food_id: UUID,
+    custom_food_id: UUID,
+    label: str | None,
+    now: DateTimeValue,
+) -> None:
+    """Attach an existing custom food to a Food as a portion.
+
+    Derives the portion label when not given, links the custom food, and folds
+    away its standalone memory row (the Food is now the resolution target).
+
+    **Inputs:**
+    - session (AsyncSession): Active session; caller owns the transaction.
+    - user_key (str): Owning user.
+    - food_id (UUID): Parent Food id.
+    - custom_food_id (UUID): Custom food to attach.
+    - label (str | None): Explicit portion label; derived when ``None``.
+    - now (DateTimeValue): Timestamp.
+
+    **Outputs:**
+    - None.
+
+    **Raises:**
+    - HTTPException(404): The Food or the custom food is not owned by the user.
+    """
+    foods_repo = FoodsRepository(session)
+    cf_repo = CustomFoodsRepository(session)
+    mem_repo = FoodMemoryRepository(session)
+    food = await foods_repo.get_by_id(food_id, user_key)
+    if food is None:
+        raise HTTPException(status_code=404, detail="Food not found")
+    cf = await cf_repo.get_by_id(custom_food_id, user_key)
+    if cf is None:
+        raise HTTPException(status_code=404, detail="Custom food not found")
+    portion_label = label or derive_portion_label(food["name"], cf["name"])
+    await cf_repo.set_food_link(custom_food_id, user_key, food_id, portion_label, now)
+    await mem_repo.delete_by_name(user_key, cf["normalized_name"])
+
+
+async def detach_portion(
+    session: AsyncSession,
+    user_key: str,
+    food_id: UUID,
+    custom_food_id: UUID,
+    now: DateTimeValue,
+) -> None:
+    """Detach a portion from a Food, restoring it as a standalone custom food.
+
+    Strips the portion's name from the Food's aliases (the alias-uniqueness
+    trigger rejects a standalone row whose name is still an alias elsewhere),
+    then recreates the portion's own memory row so it resolves again.
+
+    **Inputs:**
+    - session (AsyncSession): Active session; caller owns the transaction.
+    - user_key (str): Owning user.
+    - food_id (UUID): Parent Food id.
+    - custom_food_id (UUID): Portion to detach.
+    - now (DateTimeValue): Timestamp.
+
+    **Outputs:**
+    - None.
+
+    **Raises:**
+    - HTTPException(404): The Food is not owned by the user.
+    """
+    foods_repo = FoodsRepository(session)
+    cf_repo = CustomFoodsRepository(session)
+    mem_repo = FoodMemoryRepository(session)
+    food = await foods_repo.get_by_id(food_id, user_key)
+    if food is None:
+        raise HTTPException(status_code=404, detail="Food not found")
+    cf = await cf_repo.get_by_id(custom_food_id, user_key)
+    await cf_repo.set_food_link(custom_food_id, user_key, None, None, now)
+    if cf is not None:
+        await mem_repo.remove_alias(user_key, food["normalized_name"], cf["normalized_name"], now)
+        await mem_repo.upsert_custom(
+            user_key=user_key,
+            name=cf["name"],
+            normalized_name=cf["normalized_name"],
+            custom_food_id=custom_food_id,
+            now=now,
+        )
+
+
+async def update_food(
+    session: AsyncSession,
+    user_key: str,
+    food_id: UUID,
+    fields: dict[str, Any],
+    aliases: list[str] | None,
+    now: DateTimeValue,
+) -> None:
+    """Update a Food's fields and reconcile its memory row.
+
+    Computes ``normalized_name`` when the name changes, moves the memory row off
+    the old name (deleting it) and onto the new name preserving aliases, and
+    strips the new normalized name from its own alias list.
+
+    **Inputs:**
+    - session (AsyncSession): Active session; caller owns the transaction.
+    - user_key (str): Owning user.
+    - food_id (UUID): Food id.
+    - fields (dict[str, Any]): Column→value updates (e.g. ``name``,
+      ``default_portion_id``); ``aliases`` is passed separately.
+    - aliases (list[str] | None): New alias list, or ``None`` to leave aliases
+      unchanged (preserved across a rename).
+    - now (DateTimeValue): Timestamp.
+
+    **Outputs:**
+    - None.
+
+    **Raises:**
+    - HTTPException(404): The Food is not owned by the user.
+    """
+    foods_repo = FoodsRepository(session)
+    mem_repo = FoodMemoryRepository(session)
+    food = await foods_repo.get_by_id(food_id, user_key)
+    if food is None:
+        raise HTTPException(status_code=404, detail="Food not found")
+    if "name" in fields and fields["name"] is not None:
+        fields = {**fields, "normalized_name": normalize_name(fields["name"])}
+    old_norm = food["normalized_name"]
+    existing_mem = await mem_repo.get_by_food_id(user_key, food_id)
+    existing_aliases = list((existing_mem.get("aliases") if existing_mem else None) or [])
+    if fields:
+        await foods_repo.update_fields(food_id, user_key, fields, now)
+    new_name = fields.get("name", food["name"])
+    new_norm = fields.get("normalized_name", old_norm)
+    renaming = new_norm != old_norm
+    if renaming:
+        await mem_repo.delete_by_name(user_key, old_norm)
+    if aliases is not None:
+        new_aliases: list[str] | None = [normalize_name(a) for a in aliases]
+    elif renaming:
+        new_aliases = existing_aliases
+    else:
+        new_aliases = None
+    if new_aliases is not None:
+        new_aliases = [a for a in new_aliases if a != new_norm]
+    if new_aliases is not None or renaming:
+        await mem_repo.upsert_food(
+            user_key=user_key,
+            name=new_name,
+            normalized_name=new_norm,
+            food_id=food_id,
+            now=now,
+            aliases=new_aliases,
+        )

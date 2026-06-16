@@ -165,8 +165,12 @@ class FoodMemoryRepository:
         normalized_name: str,
         custom_food_id: UUID,
         now: DateTimeValue,
+        aliases: list[str] | None = None,
     ) -> dict[str, Any]:
         """Upsert a custom-food-pointer memory entry; macros stay on the linked custom food.
+
+        The ``aliases`` argument is only written when explicitly supplied, so
+        callers that don't touch aliases will not clobber an existing list.
 
         **Inputs:**
         - user_key (str): Owning user.
@@ -174,11 +178,13 @@ class FoodMemoryRepository:
         - normalized_name (str): Lookup key.
         - custom_food_id (UUID): Linked custom food.
         - now (DateTimeValue): Timestamp for ``created_at``/``updated_at``.
+        - aliases (list[str] | None): Optional alias array to overwrite; leaves
+          aliases untouched when ``None``.
 
         **Outputs:**
         - dict[str, Any]: The upserted row.
         """
-        insert_stmt = pg_insert(food_memory).values(
+        values: dict[str, Any] = dict(
             user_key=user_key,
             name=name,
             normalized_name=normalized_name,
@@ -195,23 +201,29 @@ class FoodMemoryRepository:
             created_at=now,
             updated_at=now,
         )
+        if aliases is not None:
+            values["aliases"] = aliases
+        insert_stmt = pg_insert(food_memory).values(**values)
+        set_: dict[str, Any] = {
+            "name": insert_stmt.excluded.name,
+            "usda_fdc_id": None,
+            "usda_description": None,
+            "custom_food_id": insert_stmt.excluded.custom_food_id,
+            "food_id": None,
+            "basis": None,
+            "serving_size": None,
+            "serving_size_unit": None,
+            "calories": None,
+            "protein_g": None,
+            "carbs_g": None,
+            "fat_g": None,
+            "updated_at": now,
+        }
+        if aliases is not None:
+            set_["aliases"] = insert_stmt.excluded.aliases
         stmt = insert_stmt.on_conflict_do_update(
             index_elements=[food_memory.c.user_key, food_memory.c.normalized_name],
-            set_={
-                "name": insert_stmt.excluded.name,
-                "usda_fdc_id": None,
-                "usda_description": None,
-                "custom_food_id": insert_stmt.excluded.custom_food_id,
-                "food_id": None,
-                "basis": None,
-                "serving_size": None,
-                "serving_size_unit": None,
-                "calories": None,
-                "protein_g": None,
-                "carbs_g": None,
-                "fat_g": None,
-                "updated_at": now,
-            },
+            set_=set_,
         ).returning(*_row_columns())
         result = await self._session.execute(stmt)
         return dict(result.mappings().one())
