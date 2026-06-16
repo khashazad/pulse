@@ -13,6 +13,12 @@ private enum FoodSection: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+/// Identifiable payload that drives the grouping sheet (the selected standalones).
+private struct GroupingRequest: Identifiable {
+    let id = UUID()
+    let foods: [CustomFood]
+}
+
 /// Food-tab root: section toggle + shared search over meals and custom foods.
 struct FoodTabView: View {
     let mealsModel: MealsModel
@@ -24,12 +30,18 @@ struct FoodTabView: View {
     /// Forwards a tapped portion's custom-food id to the host, which resolves it
     /// back to a full `CustomFood` and pushes the detail screen.
     let onOpenPortion: (UUID) -> Void
+    /// Auth session used to build the create client for the grouping sheet.
+    let auth: AuthSession
 
     @State private var section: FoodSection = .meals
     @State private var query = ""
     // Expansion persists across query changes by design: a row the user expanded
     // reappears still-expanded after a filtering query is cleared.
     @State private var expanded: Set<UUID> = []
+    // Grouping-selection mode over standalone foods.
+    @State private var isSelecting = false
+    @State private var selected: Set<UUID> = []
+    @State private var grouping: GroupingRequest?
 
     /// Toggles a grouped food's expansion in the browse list.
     /// Inputs:
@@ -37,6 +49,14 @@ struct FoodTabView: View {
     /// Outputs: nothing; mutates `expanded`.
     private func toggle(_ id: UUID) {
         if expanded.contains(id) { expanded.remove(id) } else { expanded.insert(id) }
+    }
+
+    /// Toggles selection of a standalone food during grouping-selection mode.
+    /// Inputs:
+    ///   - id: the standalone custom food's UUID.
+    /// Outputs: nothing; mutates `selected`.
+    private func toggleSelect(_ id: UUID) {
+        if selected.contains(id) { selected.remove(id) } else { selected.insert(id) }
     }
 
     /// The screen body: section picker, the active section's content, and the
@@ -69,6 +89,13 @@ struct FoodTabView: View {
                     prompt: section == .meals ? "Search meals" : "Search foods")
         .task { await loadBoth() }
         .refreshable { await loadBoth() }
+        .sheet(item: $grouping) { request in
+            GroupFoodSheet(foods: request.foods, auth: auth) { newFood, ids in
+                foodsModel.applyGrouped(newFood, groupedIds: ids)
+                isSelecting = false
+                selected = []
+            }
+        }
     }
 
     /// Loads both sections concurrently so a cold tab open (or pull-to-refresh)
@@ -128,21 +155,32 @@ struct FoodTabView: View {
                                title: query.isEmpty ? "No saved foods" : "No matches",
                                description: query.isEmpty ? "Custom foods you save will appear here." : "No foods match \"\(query)\".")
             } else {
-                listCard {
-                    ForEach(Array(foods.enumerated()), id: \.element.id) { idx, food in
-                        FoodGroupRow(
-                            food: food,
-                            isExpanded: expanded.contains(food.id),
-                            onToggle: { toggle(food.id) },
-                            onSelectPortion: { onOpenPortion($0) }
-                        )
-                        if idx < foods.count - 1 || !standalones.isEmpty { divider }
+                ScrollView {
+                    if !browse.standalones.isEmpty {
+                        foodsControls(allStandalones: browse.standalones, visibleStandalones: standalones)
                     }
-                    ForEach(Array(standalones.enumerated()), id: \.element.id) { idx, food in
-                        Button { onOpenFood(food) } label: { CustomFoodRow(food: food) }
-                            .buttonStyle(.plain)
-                        if idx < standalones.count - 1 { divider }
+                    VStack(spacing: 0) {
+                        ForEach(Array(foods.enumerated()), id: \.element.id) { idx, food in
+                            FoodGroupRow(
+                                food: food,
+                                isExpanded: expanded.contains(food.id),
+                                onToggle: { toggle(food.id) },
+                                onSelectPortion: { onOpenPortion($0) }
+                            )
+                            .opacity(isSelecting ? 0.4 : 1)
+                            .disabled(isSelecting)
+                            if idx < foods.count - 1 || !standalones.isEmpty { divider }
+                        }
+                        ForEach(Array(standalones.enumerated()), id: \.element.id) { idx, food in
+                            standaloneRow(food)
+                            if idx < standalones.count - 1 { divider }
+                        }
                     }
+                    .padding(.horizontal, 14)
+                    .ctpCard()
+                    .padding(.horizontal, 16)
+                    .padding(.top, 8)
+                    Spacer(minLength: Theme.Layout.dockClearance)
                 }
             }
         case .failed(let error):
@@ -150,6 +188,91 @@ struct FoodTabView: View {
                            description: error.userMessage,
                            action: { Task { await foodsModel.load() } }, actionLabel: "Retry")
         }
+    }
+
+    /// The controls above the foods list: the Select/Done toggle, the
+    /// "group N into food" action while selecting, and the duplicates hint.
+    /// Inputs:
+    ///   - allStandalones: the full standalone list (selection resolves against it).
+    ///   - visibleStandalones: the name-filtered standalones currently shown.
+    /// Outputs: the composed controls view.
+    @ViewBuilder
+    private func foodsControls(allStandalones: [CustomFood], visibleStandalones: [CustomFood]) -> some View {
+        VStack(spacing: 10) {
+            HStack {
+                Spacer()
+                if isSelecting || !visibleStandalones.isEmpty {
+                    Button(isSelecting ? "Done" : "Select") {
+                        isSelecting.toggle()
+                        if !isSelecting { selected = [] }
+                    }
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(Theme.CTP.mauve)
+                }
+            }
+            if isSelecting, selected.count >= 2 {
+                let chosen = allStandalones.filter { selected.contains($0.id) }
+                PrimaryActionButton(title: "Group \(chosen.count) into food",
+                                    leading: .icon("rectangle.3.group"), disabled: false) {
+                    grouping = GroupingRequest(foods: chosen)
+                }
+            }
+            if !isSelecting {
+                let clusters = FoodDuplicateGrouper.clusters(from: allStandalones)
+                if !clusters.isEmpty { duplicateHint(clusters: clusters) }
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
+    }
+
+    /// A tappable hint surfacing likely grouping candidates; tapping enters
+    /// selection mode with the first cluster pre-selected.
+    /// Inputs:
+    ///   - clusters: the duplicate clusters found among standalones (non-empty).
+    /// Outputs: the composed hint banner.
+    private func duplicateHint(clusters: [[CustomFood]]) -> some View {
+        Button {
+            isSelecting = true
+            selected = Set(clusters[0].map(\.id))
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "wand.and.stars")
+                Text("\(clusters.count) possible \(clusters.count == 1 ? "group" : "groups") to merge")
+                    .font(.system(size: 13, weight: .medium))
+                Spacer()
+                Image(systemName: "chevron.right").font(.system(size: 11, weight: .semibold))
+            }
+            .foregroundStyle(Theme.CTP.mauve)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(
+                RoundedRectangle(cornerRadius: Theme.Layout.cardRadius, style: .continuous)
+                    .fill(Theme.CTP.mauve.opacity(0.12))
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// One standalone food row: a selection toggle while selecting, otherwise a
+    /// tap that opens its detail screen.
+    /// Inputs:
+    ///   - food: the standalone custom food to render.
+    /// Outputs: the composed row view.
+    private func standaloneRow(_ food: CustomFood) -> some View {
+        Button {
+            if isSelecting { toggleSelect(food.id) } else { onOpenFood(food) }
+        } label: {
+            HStack(spacing: 10) {
+                if isSelecting {
+                    Image(systemName: selected.contains(food.id) ? "checkmark.circle.fill" : "circle")
+                        .font(.system(size: 20))
+                        .foregroundStyle(selected.contains(food.id) ? Theme.CTP.mauve : Theme.FG.tertiary)
+                }
+                CustomFoodRow(food: food)
+            }
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Shared pieces

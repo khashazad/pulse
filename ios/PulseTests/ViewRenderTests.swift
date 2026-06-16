@@ -157,7 +157,8 @@ final class ViewRenderTests: XCTestCase {
             foodsModel: FoodsModel(auth: auth),
             onOpenMeal: { _ in },
             onOpenFood: { _ in },
-            onOpenPortion: { _ in }
+            onOpenPortion: { _ in },
+            auth: auth
         ))
         render(MealDetailView(summary: sampleSummary()))
     }

@@ -48,7 +48,8 @@ struct RootView: View {
                                         if let cf = foodsModel.customFood(for: portionId) {
                                             foodPath.append(FoodRoute.food(cf))
                                         }
-                                    }
+                                    },
+                                    auth: auth
                                 )
                             } else {
                                 ProgressView()
