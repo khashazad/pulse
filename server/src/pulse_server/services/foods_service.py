@@ -144,7 +144,7 @@ async def group_foods(
         aliases=rolled_list,
     )
 
-    portion_rows = await cf_repo.list_by_food(food_id)
+    portion_rows = await cf_repo.list_by_food(food_id, user_key)
     return food_row, portion_rows, rolled_list
 
 
@@ -178,7 +178,7 @@ async def ungroup_food(
 
     mem = await mem_repo.get_by_food_id(user_key, food_id)
     target_portion = food.get("default_portion_id")
-    portions = await cf_repo.list_by_food(food_id)
+    portions = await cf_repo.list_by_food(food_id, user_key)
     if target_portion is None and portions:
         target_portion = portions[0]["id"]
 
@@ -221,7 +221,7 @@ async def _portions_and_aliases(
     """
     cf_repo = CustomFoodsRepository(session)
     mem_repo = FoodMemoryRepository(session)
-    portions = await cf_repo.list_by_food(food_id)
+    portions = await cf_repo.list_by_food(food_id, user_key)
     mem = await mem_repo.get_by_food_id(user_key, food_id)
     aliases = list((mem.get("aliases") if mem else None) or [])
     return portions, aliases
@@ -283,7 +283,7 @@ async def attach_portion(
     custom_food_id: UUID,
     label: str | None,
     now: DateTimeValue,
-) -> None:
+) -> dict[str, Any] | None:
     """Attach an existing custom food to a Food as a portion.
 
     Derives the portion label when not given, links the custom food, harvests
@@ -302,7 +302,8 @@ async def attach_portion(
     - now (DateTimeValue): Timestamp.
 
     **Outputs:**
-    - None.
+    - dict[str, Any] | None: The linked custom-food (portion) row with
+      ``food_id``/``portion_label`` set, as returned by ``set_food_link``.
 
     **Raises:**
     - HTTPException(404): The Food or the custom food is not owned by the user.
@@ -322,7 +323,7 @@ async def attach_portion(
     if mem is not None:
         harvested.update(mem.get("aliases") or [])
     portion_label = label or derive_portion_label(food["name"], cf["name"])
-    await cf_repo.set_food_link(custom_food_id, user_key, food_id, portion_label, now)
+    linked = await cf_repo.set_food_link(custom_food_id, user_key, food_id, portion_label, now)
     # Remove the standalone memory row BEFORE folding its names into the Food's
     # aliases (alias-uniqueness trigger rejects a name that is also a live row).
     await mem_repo.delete_by_name(user_key, cf["normalized_name"])
@@ -335,6 +336,7 @@ async def attach_portion(
     # different id, yielding a false collision on already-held aliases).
     for alias in sorted(new_aliases - existing):
         await mem_repo.add_alias(user_key, food["normalized_name"], alias, now)
+    return linked
 
 
 async def detach_portion(
@@ -376,7 +378,7 @@ async def detach_portion(
     await cf_repo.set_food_link(custom_food_id, user_key, None, None, now)
     # If the detached portion was the Food's default, repoint to a remaining one.
     if food.get("default_portion_id") == custom_food_id:
-        remaining = await cf_repo.list_by_food(food_id)
+        remaining = await cf_repo.list_by_food(food_id, user_key)
         new_default = remaining[0]["id"] if remaining else None
         await foods_repo.update_fields(food_id, user_key, {"default_portion_id": new_default}, now)
     # Strip the portion's name from the Food's aliases (the alias-uniqueness

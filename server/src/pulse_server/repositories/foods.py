@@ -101,6 +101,25 @@ class FoodsRepository:
         row = result.mappings().first()
         return dict(row) if row else None
 
+    async def get_by_name(self, user_key: str, normalized_name: str) -> dict[str, Any] | None:
+        """Fetch a Food by normalized name for a user.
+
+        **Inputs:**
+        - user_key (str): Owner restriction.
+        - normalized_name (str): Lookup key.
+
+        **Outputs:**
+        - dict[str, Any] | None: Row when found, else ``None``.
+        """
+        stmt = (
+            select(*_row_columns())
+            .where(foods.c.user_key == user_key)
+            .where(foods.c.normalized_name == normalized_name)
+        )
+        result = await self._session.execute(stmt)
+        row = result.mappings().first()
+        return dict(row) if row else None
+
     async def list_for_user(self, user_key: str) -> list[dict[str, Any]]:
         """List all Foods for a user, ordered by name.
 

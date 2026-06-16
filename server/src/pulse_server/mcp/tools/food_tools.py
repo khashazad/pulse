@@ -74,9 +74,17 @@ def register(mcp: FastMCP, ctx: ToolContext) -> None:
     async def resolve_food(name: str) -> ResolvedFood:
         """Look up a food name in this user's memory before searching USDA.
 
-        Returns `type="memory_usda"` (with cached fdc_id, basis, and per-basis macros),
-        `type="custom_food"` (with the linked custom food's basis and macros), or
-        `type="none"` when no memory exists. Always call this before `search_food`.
+        Returns one of:
+        - `type="memory_usda"` — cached fdc_id, basis, and per-basis macros.
+        - `type="custom_food"` — the linked custom food's basis and macros.
+        - `type="food"` — a grouped food with multiple `portions` (each carries
+          its own `custom_food_id`, `label`, basis, and macros) plus a
+          `default_portion_id`. Pick the portion matching the user's size cue
+          (or the default when none is given), scale that portion's macros, and
+          call `log_food` with the chosen portion's `custom_food_id`.
+        - `type="none"` — no memory; fall through to `search_food`.
+
+        Always call this before `search_food`.
         """
         async with get_session() as session:
             return await resolve_food_by_name(session=session, user_key=user_key, name=name)

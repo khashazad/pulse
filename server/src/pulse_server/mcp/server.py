@@ -45,9 +45,16 @@ Diet tracking workflow. Follow this order on every food-related interaction:
    quantities; do not scale.
 
 2) MEMORY NEXT. For each individual food the user mentions, call `resolve_food(name)`
-   FIRST. If it returns `type != "none"`, use the returned macros and basis to scale to
-   the user's quantity, then call `log_food` (passing `fdc_id` for memory_usda hits or
-   `custom_food_id` for custom_food hits). Skip `search_food`.
+   FIRST, then act on its `type`:
+   - `memory_usda` / `custom_food`: scale the returned macros/basis to the user's
+     quantity, then `log_food` (pass `fdc_id` for memory_usda, `custom_food_id` for
+     custom_food). Skip `search_food`.
+   - `food`: this name is a grouped food with several portions. Choose the portion whose
+     `label` matches the user's size cue (e.g. "large apple" -> the "large" portion);
+     when the user gives no size, use `default_portion_id`. Scale THAT portion's macros
+     to the quantity and `log_food` with the chosen portion's `custom_food_id`. Skip
+     `search_food`.
+   - `none`: fall through to USDA search (step 3).
 
 3) USDA SEARCH FALLBACK. Only when memory misses, call `search_food` and pick a candidate.
 

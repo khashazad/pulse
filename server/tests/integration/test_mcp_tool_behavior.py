@@ -80,7 +80,7 @@ async def mcp_server():
         await session.execute(
             text(
                 "truncate table food_entries, meal_items, meals, food_memory, "
-                "custom_foods, daily_logs, daily_target_profile, containers, weight_entries "
+                "foods, custom_foods, daily_logs, daily_target_profile, containers, weight_entries "
                 "restart identity cascade"
             )
         )
@@ -512,8 +512,9 @@ async def test_save_and_list_custom_food(mcp_server) -> None:
         assert saved.structured_content["name"] == "Protein Bar"
 
         listed = await client.call_tool("list_custom_foods", {})
-    rows = listed.structured_content["result"]
-    assert any(r["name"] == "Protein Bar" for r in rows)
+    payload = listed.structured_content
+    # Protein Bar has no food_id, so it is an ungrouped standalone.
+    assert any(r["name"] == "Protein Bar" for r in payload["standalones"])
 
 
 @pytest.mark.asyncio
@@ -645,6 +646,69 @@ async def test_delete_custom_food_referenced_raises_tool_error(mcp_server) -> No
             await client.call_tool("delete_custom_food", {"custom_food_id": cf_id})
     assert _raised_tool_error(exc_info)
     assert "referenced" in str(exc_info.value).lower()
+
+
+@pytest.mark.asyncio
+async def test_save_custom_food_attaches_portion(mcp_server) -> None:
+    """``save_custom_food`` with ``food_id`` attaches the new food as a portion of an existing Food."""
+    from datetime import datetime as DateTimeValue
+    from zoneinfo import ZoneInfo
+
+    from pulse_server.config import get_settings
+    from pulse_server.models import CustomFoodCreate
+    from pulse_server.models.foods import FoodCreate
+    from pulse_server.services.custom_foods_service import upsert_custom_food_and_remember
+    from pulse_server.services.foods_service import group_foods
+
+    settings = get_settings()
+    user_key = settings.legacy_user_key
+
+    tz = ZoneInfo(settings.timezone)
+    now = DateTimeValue.now(tz=tz)
+
+    # Seed an initial portion and create a grouped Food that contains it.
+    async with db.get_session() as session:
+        async with session.begin():
+            seed_cf = await upsert_custom_food_and_remember(
+                session=session,
+                user_key=user_key,
+                payload=CustomFoodCreate(
+                    name="small apple",
+                    basis="per_unit",
+                    calories=80,
+                    protein_g=0.4,
+                    carbs_g=21.0,
+                    fat_g=0.3,
+                ),
+                now=now,
+            )
+            food_row, _portions, _aliases = await group_foods(
+                session=session,
+                user_key=user_key,
+                payload=FoodCreate(name="Apple", portion_ids=[seed_cf["id"]]),
+                now=now,
+            )
+    food_id_str = str(food_row["id"])
+
+    # Via the MCP tool, create a new portion and attach it to the Food.
+    async with Client(mcp_server) as client:
+        result = await client.call_tool(
+            "save_custom_food",
+            {
+                "name": "huge apple",
+                "basis": "per_unit",
+                "calories": 130,
+                "protein_g": 0.7,
+                "carbs_g": 34.0,
+                "fat_g": 0.4,
+                "food_id": food_id_str,
+                "portion_label": "huge",
+            },
+        )
+
+    payload = result.structured_content
+    assert str(payload["food_id"]) == food_id_str
+    assert payload["portion_label"] == "huge"
 
 
 # --------------------------------------------------------------------------- #
@@ -1653,3 +1717,98 @@ async def test_get_weight_present_and_absent_date(mcp_server) -> None:
     assert present.structured_content["result"]["weight_lb"] == 178.5
     assert present.structured_content["result"]["source_unit"] == "lb"
     assert absent.structured_content.get("result") is None
+
+
+# --------------------------------------------------------------------------- #
+# list_custom_foods nested shape (Task 5).
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.asyncio
+async def test_list_custom_foods_returns_nested_foods(mcp_server) -> None:
+    """``list_custom_foods`` returns grouped Foods under ``foods`` and ungrouped
+    custom foods under ``standalones``.
+
+    Seeds one grouped Food "Apple" with two portions and one standalone custom
+    food "protein bar", then asserts the nested shape via the in-memory Client.
+    """
+    from datetime import datetime as DateTimeValue
+    from zoneinfo import ZoneInfo
+
+    from pulse_server.config import get_settings
+    from pulse_server.models import CustomFoodCreate
+    from pulse_server.models.foods import FoodCreate
+    from pulse_server.services.custom_foods_service import upsert_custom_food_and_remember
+    from pulse_server.services.foods_service import group_foods
+
+    settings = get_settings()
+    user_key = settings.legacy_user_key
+    tz = ZoneInfo(settings.timezone)
+    now = DateTimeValue.now(tz=tz)
+
+    async with db.get_session() as session:
+        async with session.begin():
+            # Seed two portions for the grouped Food "Apple".
+            small_apple = await upsert_custom_food_and_remember(
+                session=session,
+                user_key=user_key,
+                payload=CustomFoodCreate(
+                    name="small apple",
+                    basis="per_unit",
+                    calories=80,
+                    protein_g=0.4,
+                    carbs_g=21.0,
+                    fat_g=0.3,
+                ),
+                now=now,
+            )
+            large_apple = await upsert_custom_food_and_remember(
+                session=session,
+                user_key=user_key,
+                payload=CustomFoodCreate(
+                    name="large apple",
+                    basis="per_unit",
+                    calories=120,
+                    protein_g=0.6,
+                    carbs_g=30.0,
+                    fat_g=0.4,
+                ),
+                now=now,
+            )
+            # Group both portions under a single Food named "Apple".
+            await group_foods(
+                session=session,
+                user_key=user_key,
+                payload=FoodCreate(
+                    name="Apple",
+                    portion_ids=[small_apple["id"], large_apple["id"]],
+                ),
+                now=now,
+            )
+            # Seed one standalone (ungrouped) custom food.
+            await upsert_custom_food_and_remember(
+                session=session,
+                user_key=user_key,
+                payload=CustomFoodCreate(
+                    name="protein bar",
+                    basis="per_serving",
+                    calories=210,
+                    protein_g=20.0,
+                    carbs_g=22.0,
+                    fat_g=7.0,
+                ),
+                now=now,
+            )
+
+    async with Client(mcp_server) as client:
+        result = await client.call_tool("list_custom_foods", {})
+
+    payload = result.structured_content
+    # Exactly one grouped Food entry with two nested portions.
+    assert len(payload["foods"]) == 1
+    apple = payload["foods"][0]
+    assert apple["name"] == "Apple"
+    assert len(apple["portions"]) == 2
+    # Exactly one ungrouped standalone custom food.
+    assert len(payload["standalones"]) == 1
+    assert payload["standalones"][0]["name"] == "protein bar"

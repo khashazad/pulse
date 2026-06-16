@@ -458,11 +458,13 @@ class CustomFoodsRepository:
         result = await self._session.execute(stmt)
         return [dict(row) for row in result.mappings().all()]
 
-    async def list_by_food(self, food_id: UUID) -> list[dict[str, Any]]:
-        """List a Food's portions ordered by label then name.
+    async def list_by_food(self, food_id: UUID, user_key: str) -> list[dict[str, Any]]:
+        """List a Food's portions ordered by label then name, scoped to the owner.
 
         **Inputs:**
         - food_id (UUID): Parent Food id.
+        - user_key (str): Owner restriction; makes tenant scoping explicit rather
+          than relying on the caller having pre-checked Food ownership.
 
         **Outputs:**
         - list[dict[str, Any]]: Portion rows.
@@ -470,6 +472,7 @@ class CustomFoodsRepository:
         stmt = (
             select(*_row_columns())
             .where(custom_foods.c.food_id == food_id)
+            .where(custom_foods.c.user_key == user_key)
             .order_by(custom_foods.c.portion_label, custom_foods.c.normalized_name)
         )
         result = await self._session.execute(stmt)
