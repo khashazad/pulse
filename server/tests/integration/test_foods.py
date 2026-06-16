@@ -491,3 +491,26 @@ async def test_resolve_food_by_name_returns_food_with_portions(maker):
         assert labels == ["large", "small"]
         ids = {p.custom_food_id for p in resolved.portions}
         assert ids == {small, large}
+
+
+@pytest.mark.asyncio
+async def test_resolve_food_by_name_empty_food_is_graceful_miss(maker):
+    # A Food whose only portion was detached has nothing loggable; resolving its
+    # name must be a graceful miss (type="none"), not an unactionable type="food".
+    from pulse_server.services.food_memory_service import resolve_food_by_name
+    from pulse_server.services.foods_service import detach_portion
+
+    async with maker() as session:
+        async with transaction(session):
+            only = await _make_custom_food(session, "small apple", 70)
+        async with transaction(session):
+            food, _, _ = await group_foods(
+                session,
+                USER,
+                FoodCreate(name="Apple", portion_ids=[only], default_portion_id=only),
+                DateTimeValue.now(tz=UTC),
+            )
+        async with transaction(session):
+            await detach_portion(session, USER, food["id"], only, DateTimeValue.now(tz=UTC))
+        resolved = await resolve_food_by_name(session, USER, "apple")
+        assert resolved.type == "none"

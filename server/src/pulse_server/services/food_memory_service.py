@@ -79,6 +79,11 @@ async def resolve_food_by_name(
         if food is None:
             return ResolvedFood(type="none")
         portion_rows = await cf_repo.list_by_food(row["food_id"], user_key)
+        if not portion_rows:
+            # A Food whose portions were all detached has nothing loggable;
+            # resolve to a graceful miss so the caller falls through to search
+            # rather than receiving a type="food" result it cannot act on.
+            return ResolvedFood(type="none")
         return ResolvedFood(
             type="food",
             name=row["name"],
