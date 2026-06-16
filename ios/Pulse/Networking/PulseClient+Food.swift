@@ -11,6 +11,47 @@ private struct UpdateCustomFoodRequest: Encodable {
     let name: String
 }
 
+/// Request body for `POST /foods` (group existing custom foods into a Food).
+private struct CreateFoodRequest: Encodable {
+    let name: String
+    let portionIds: [UUID]
+    let defaultPortionId: UUID?
+    let portionLabels: [String: String]   // keyed by lowercased portion UUID
+    let aliases: [String]
+
+    enum CodingKeys: String, CodingKey {
+        case name
+        case portionIds = "portion_ids"
+        case defaultPortionId = "default_portion_id"
+        case portionLabels = "portion_labels"
+        case aliases
+    }
+}
+
+/// Request body for `PATCH /foods/{id}`.
+private struct UpdateFoodRequest: Encodable {
+    let name: String?
+    let defaultPortionId: UUID?
+    let aliases: [String]?
+
+    enum CodingKeys: String, CodingKey {
+        case name
+        case defaultPortionId = "default_portion_id"
+        case aliases
+    }
+}
+
+/// Request body for `POST /foods/{id}/portions`.
+private struct AddPortionRequestBody: Encodable {
+    let customFoodId: UUID
+    let portionLabel: String?
+
+    enum CodingKeys: String, CodingKey {
+        case customFoodId = "custom_food_id"
+        case portionLabel = "portion_label"
+    }
+}
+
 extension PulseClient {
     // MARK: - read
 
@@ -153,6 +194,113 @@ extension PulseClient {
     /// owned; other `PulseError` on transport or auth failure.
     func deleteCustomFood(id: UUID) async throws {
         let url = try http.makeURL(path: "/custom-foods/\(id.uuidString.lowercased())", query: [])
+        var req = URLRequest(url: url)
+        req.httpMethod = "DELETE"
+        http.applyAuth(&req)
+        try await sendNoBody(request: req)
+    }
+
+    // MARK: - grouping / ungrouping
+
+    /// Groups one or more existing custom foods into a new Food (`POST /foods`).
+    /// Each referenced custom food becomes a portion of the Food; the portion-label
+    /// map lets callers name each portion (e.g. "small", "medium"). Portion-label
+    /// keys are lowercased portion UUID strings to match the server contract.
+    /// Inputs:
+    ///   - name: the display name for the new Food.
+    ///   - portionIds: custom-food UUIDs to attach as portions (at least one).
+    ///   - defaultPortionId: the portion to represent the Food when collapsed, or
+    ///     nil to let the server fall back to the first portion.
+    ///   - portionLabels: per-portion labels keyed by portion UUID; the keys are
+    ///     lowercased before sending.
+    ///   - aliases: alternate names that should resolve to this Food.
+    /// Outputs: the created `Food` decoded from the 201 response.
+    /// Exceptions: `PulseError.server(status: 409)` when the name collides with an
+    /// existing Food; `.notFound` when a referenced custom food is not owned;
+    /// other `PulseError` on transport, auth, or decoding failure.
+    func createFood(
+        name: String, portionIds: [UUID], defaultPortionId: UUID?,
+        portionLabels: [UUID: String], aliases: [String]
+    ) async throws -> Food {
+        let url = try http.makeURL(path: "/foods", query: [])
+        // UUID strings are globally unique, so lowercasing cannot collide two
+        // distinct keys — the uniqueKeysWithValues init is safe here.
+        let labels = Dictionary(uniqueKeysWithValues:
+            portionLabels.map { ($0.key.uuidString.lowercased(), $0.value) })
+        let body = try JSONEncoder.pulseDefault().encode(CreateFoodRequest(
+            name: name, portionIds: portionIds, defaultPortionId: defaultPortionId,
+            portionLabels: labels, aliases: aliases))
+        return try await sendJSON(url: url, method: "POST", body: body)
+    }
+
+    /// Patches a Food's name, default portion, or aliases (`PATCH /foods/{id}`).
+    /// Any `nil` field is omitted from the request and left unchanged server-side.
+    /// Inputs:
+    ///   - id: the Food's UUID.
+    ///   - name: the new display name, or nil to leave unchanged.
+    ///   - defaultPortionId: the new default portion, or nil to leave unchanged.
+    ///   - aliases: the replacement alias list, or nil to leave unchanged.
+    /// Outputs: the updated `Food` decoded from the 200 response.
+    /// Exceptions: `PulseError.server(status: 409)` when the new name collides with
+    /// another Food; `.notFound` when the id is not owned; other `PulseError` on
+    /// transport, auth, or decoding failure.
+    func updateFood(id: UUID, name: String?, defaultPortionId: UUID?, aliases: [String]?) async throws -> Food {
+        let url = try http.makeURL(path: "/foods/\(id.uuidString.lowercased())", query: [])
+        let body = try JSONEncoder.pulseDefault().encode(
+            UpdateFoodRequest(name: name, defaultPortionId: defaultPortionId, aliases: aliases))
+        return try await sendJSON(url: url, method: "PATCH", body: body)
+    }
+
+    /// Attaches one existing custom food to a Food as a new portion
+    /// (`POST /foods/{id}/portions`).
+    /// Inputs:
+    ///   - foodId: the Food's UUID.
+    ///   - customFoodId: the custom food to attach as a portion.
+    ///   - label: an optional portion label (e.g. "large"), or nil for none.
+    /// Outputs: the updated `Food` (with the added portion) decoded from the 201 response.
+    /// Exceptions: `PulseError.server(status: 409)` when the custom food is already
+    /// a portion of a Food; `.notFound` when either id is not owned; other
+    /// `PulseError` on transport, auth, or decoding failure.
+    func addPortion(foodId: UUID, customFoodId: UUID, label: String?) async throws -> Food {
+        let url = try http.makeURL(path: "/foods/\(foodId.uuidString.lowercased())/portions", query: [])
+        let body = try JSONEncoder.pulseDefault().encode(
+            AddPortionRequestBody(customFoodId: customFoodId, portionLabel: label))
+        return try await sendJSON(url: url, method: "POST", body: body)
+    }
+
+    /// Detaches one portion from a Food, leaving it a standalone custom food
+    /// (`DELETE /foods/{id}/portions/{custom_food_id}`). Unlike most DELETEs this
+    /// returns a JSON body — the updated `Food` — so it is sent through the
+    /// decoding transport rather than `sendNoBody`.
+    /// Inputs:
+    ///   - foodId: the Food's UUID.
+    ///   - customFoodId: the portion's custom-food UUID to detach.
+    /// Outputs: the updated `Food` (without the removed portion) decoded from the
+    /// 200 response.
+    /// Exceptions: `PulseError.notFound` when either id is not owned; other
+    /// `PulseError` on transport, auth, or decoding failure.
+    func removePortion(foodId: UUID, customFoodId: UUID) async throws -> Food {
+        let url = try http.makeURL(
+            path: "/foods/\(foodId.uuidString.lowercased())/portions/\(customFoodId.uuidString.lowercased())",
+            query: [])
+        var req = URLRequest(url: url)
+        req.httpMethod = "DELETE"
+        http.applyAuth(&req)
+        // This DELETE carries no request body (only a response body to decode),
+        // so it sets Accept but deliberately no Content-Type.
+        req.setValue("application/json", forHTTPHeaderField: "Accept")
+        return try await sendDecoded(request: req)
+    }
+
+    /// Dissolves a Food (`DELETE /foods/{id}`); its portions revert to standalone
+    /// custom foods. The server responds 204 with no body.
+    /// Inputs:
+    ///   - id: the Food's UUID.
+    /// Outputs: nothing.
+    /// Exceptions: `PulseError.notFound` when the id is not owned; other
+    /// `PulseError` on transport or auth failure.
+    func ungroupFood(id: UUID) async throws {
+        let url = try http.makeURL(path: "/foods/\(id.uuidString.lowercased())", query: [])
         var req = URLRequest(url: url)
         req.httpMethod = "DELETE"
         http.applyAuth(&req)
