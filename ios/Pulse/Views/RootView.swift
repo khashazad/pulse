@@ -65,9 +65,8 @@ struct RootView: View {
                             case .food(let food):
                                 CustomFoodDetailView(
                                     food: food,
-                                    // TODO(Task 8): replace refetch with FoodsModel local apply
-                                    onRenamed: { _ in Task { await foodsModel?.load() } },
-                                    onDeleted: { _ in Task { await foodsModel?.load() } }
+                                    onRenamed: { updated in foodsModel?.applyRenamedStandalone(updated) },
+                                    onDeleted: { id in foodsModel?.applyRemovedStandalone(id: id) }
                                 )
                                 .toolbar { settingsButton }
                             }
