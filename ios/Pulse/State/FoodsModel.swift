@@ -3,7 +3,7 @@
 /// be grouped. Loads the grouped browse (`GET /foods`) and the flat custom-food
 /// list (`GET /custom-foods`) concurrently — the flat list resolves a tapped
 /// portion back to its full editable `CustomFood` and seeds the grouping picker.
-/// Replaces `CustomFoodsModel` for this section. Local apply helpers reflect
+/// Backs the Foods section's grouped browse. Local apply helpers reflect
 /// detail-screen and grouping edits without a full refetch.
 import Foundation
 import Observation
