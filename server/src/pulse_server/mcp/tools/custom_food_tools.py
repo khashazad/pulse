@@ -110,14 +110,13 @@ def register(mcp: FastMCP, ctx: ToolContext) -> None:
                 # name into the parent Food's aliases. Order matters — the upsert
                 # must run first so attach_portion has the row to harvest.
                 try:
-                    await attach_portion(
+                    attached = await attach_portion(
                         session, user_key, target_food_id, row["id"], portion_label, now
                     )
                 except HTTPException as exc:
                     raise ToolError(str(exc.detail)) from exc
-                refreshed = await CustomFoodsRepository(session).get_by_id(row["id"], user_key)
-                if refreshed is not None:
-                    row = refreshed
+                if attached is not None:
+                    row = attached
         return custom_food_response(row)
 
     @mcp.tool
