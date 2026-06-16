@@ -99,6 +99,38 @@ create unique index if not exists idx_food_memory_user_key_name on food_memory(u
 create index if not exists idx_food_memory_user_key on food_memory(user_key);
 create index if not exists idx_food_memory_aliases on food_memory using gin (aliases);
 
+-- Foods: a thin parent grouping portion-variants of one food (e.g. "Apple"
+-- owning small/medium/large/per-100g). A custom_foods row IS a portion; a Food
+-- carries no macros. Aliases for a Food live in food_memory (food_id target),
+-- not here, so resolution has a single store.
+create table if not exists foods (
+  id uuid primary key default gen_random_uuid(),
+  user_key text not null,
+  name text not null,
+  normalized_name text not null,
+  notes text,
+  default_portion_id uuid references custom_foods(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create unique index if not exists idx_foods_user_key_name on foods(user_key, normalized_name);
+create index if not exists idx_foods_user_key on foods(user_key);
+
+-- A custom_foods row becomes a portion of a Food via food_id + portion_label.
+-- on delete set null: ungrouping a Food leaves its portions as standalones.
+alter table custom_foods add column if not exists food_id uuid references foods(id) on delete set null;
+alter table custom_foods add column if not exists portion_label text;
+create index if not exists idx_custom_foods_food_id on custom_foods(food_id);
+
+-- food_memory gains a Food target alongside USDA / custom-food targets.
+alter table food_memory add column if not exists food_id uuid references foods(id) on delete cascade;
+alter table food_memory drop constraint if exists food_memory_one_target;
+alter table food_memory add constraint food_memory_one_target check (
+  (usda_fdc_id is not null)::int
+  + (custom_food_id is not null)::int
+  + (food_id is not null)::int = 1
+);
+
 create table if not exists meals (
   id uuid primary key default gen_random_uuid(),
   user_key text not null,
