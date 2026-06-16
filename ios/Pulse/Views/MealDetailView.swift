@@ -1,6 +1,7 @@
 /// Saved-meal detail screen.
 /// Loads the full `Meal` via `MealDetailModel` from the summary the user tapped in
-/// `MealsView`, then renders totals (hero card + macro distribution + chips) plus
+/// the Food tab's Meals section (`FoodTabView`), then renders totals (hero card +
+/// macro distribution + chips) plus
 /// the ingredients list. Also defines the private `QuantityBadge` pill.
 import SwiftUI
 

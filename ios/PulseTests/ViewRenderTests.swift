@@ -150,7 +150,12 @@ final class ViewRenderTests: XCTestCase {
     }
 
     func test_render_meals() {
-        render(MealsView(onOpen: { _ in }))
+        render(FoodTabView(
+            mealsModel: MealsModel(auth: auth),
+            foodsModel: CustomFoodsModel(auth: auth),
+            onOpenMeal: { _ in },
+            onOpenFood: { _ in }
+        ))
         render(MealDetailView(summary: sampleSummary()))
     }
 

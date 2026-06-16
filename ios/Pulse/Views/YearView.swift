@@ -54,9 +54,6 @@ struct YearView: View {
 
         return ScrollView {
             VStack(spacing: Theme.Layout.sectionSpacing) {
-                MacroLegend()
-                    .padding(.horizontal, 16)
-
                 PeriodSummaryCard(
                     title: "Year avg / day",
                     avgKcal: avgKcal,

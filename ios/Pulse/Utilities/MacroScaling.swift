@@ -38,6 +38,17 @@ extension MacroTotals {
         "\(calories) kcal · P \(Int(proteinG.rounded())) · C \(Int(carbsG.rounded())) · F \(Int(fatG.rounded()))"
     }
 
+    /// Compact grams-only "P… · C… · F…" summary (rounded, no calories), shared by
+    /// list rows such as `MealRow` and `CustomFoodRow`.
+    /// Inputs:
+    ///   - proteinG: protein grams.
+    ///   - carbsG: carbohydrate grams.
+    ///   - fatG: fat grams.
+    /// Outputs: a string like "P25 · C3 · F1".
+    static func pcfSummary(proteinG: Double, carbsG: Double, fatG: Double) -> String {
+        "P\(Int(proteinG.rounded())) · C\(Int(carbsG.rounded())) · F\(Int(fatG.rounded()))"
+    }
+
     /// The additive identity, used as the seed when summing totals.
     static let zero = MacroTotals(calories: 0, proteinG: 0, carbsG: 0, fatG: 0)
 

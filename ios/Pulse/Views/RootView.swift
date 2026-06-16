@@ -11,10 +11,12 @@ struct RootView: View {
 
     @State private var tab: DockTab = .intake
     @State private var intakePath = NavigationPath()
-    @State private var mealsPath = NavigationPath()
+    @State private var foodPath = NavigationPath()
     @State private var prepPath = NavigationPath()
     @State private var measuresPath = NavigationPath()
     @State private var showSettings = false
+    @State private var mealsModel: MealsModel?
+    @State private var foodsModel: CustomFoodsModel?
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -33,15 +35,36 @@ struct RootView: View {
                                 .toolbar { settingsButton }
                         }
                     }
-                case .meals:
-                    NavigationStack(path: $mealsPath) {
-                        MealsView(onOpen: { summary in
-                            mealsPath.append(summary)
-                        })
+                case .food:
+                    NavigationStack(path: $foodPath) {
+                        Group {
+                            if let mealsModel, let foodsModel {
+                                FoodTabView(
+                                    mealsModel: mealsModel,
+                                    foodsModel: foodsModel,
+                                    onOpenMeal: { summary in foodPath.append(FoodRoute.meal(summary)) },
+                                    onOpenFood: { food in foodPath.append(FoodRoute.food(food)) }
+                                )
+                            } else {
+                                ProgressView()
+                                    .tint(Theme.CTP.mauve)
+                                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            }
+                        }
                         .toolbar { settingsButton }
-                        .navigationDestination(for: MealSummary.self) { summary in
-                            MealDetailView(summary: summary)
+                        .navigationDestination(for: FoodRoute.self) { route in
+                            switch route {
+                            case .meal(let summary):
+                                MealDetailView(summary: summary)
+                                    .toolbar { settingsButton }
+                            case .food(let food):
+                                CustomFoodDetailView(
+                                    food: food,
+                                    onRenamed: { updated in foodsModel?.applyRename(updated) },
+                                    onDeleted: { id in foodsModel?.applyRemoval(id: id) }
+                                )
                                 .toolbar { settingsButton }
+                            }
                         }
                     }
                 case .prep:
@@ -74,6 +97,8 @@ struct RootView: View {
         }
         .task {
             await auth.bootstrap()
+            if mealsModel == nil { mealsModel = MealsModel(auth: auth) }
+            if foodsModel == nil { foodsModel = CustomFoodsModel(auth: auth) }
         }
     }
 
@@ -84,7 +109,7 @@ struct RootView: View {
     private var dockVisible: Bool {
         switch tab {
         case .intake: intakePath.isEmpty
-        case .meals:  mealsPath.isEmpty
+        case .food:   foodPath.isEmpty
         case .prep:   prepPath.isEmpty
         case .measures: measuresPath.isEmpty
         }

@@ -71,9 +71,6 @@ struct MonthView: View {
                     )
                     .padding(.top, 40)
                 } else {
-                    MacroLegend()
-                        .padding(.horizontal, 16)
-
                     ForEach(weeks) { week in
                         WeeklyMacroBars(group: week, ceiling: ceiling, targetCalories: dailyTarget)
                             .padding(.horizontal, 16)

@@ -1,16 +1,17 @@
-/// List row for a saved meal shown in the Food tab's Meals section (`FoodTabView`).
-/// Displays the meal's name, an optional notes/ingredient-count subtitle, total kcal,
-/// summed macros, and a trailing chevron indicating drill-down.
+/// List row for a saved custom food shown in the Food tab's "Foods" section.
+/// Displays the food's name, a basis caption (e.g. "Per serving · 1 scoop"),
+/// per-basis kcal in mauve, a P/C/F summary, and a trailing chevron. Mirrors
+/// `MealRow`.
 import SwiftUI
 
-/// Variant A row — name + notes + ingredient count, kcal in mauve, P/C/F summary, chevron.
-struct MealRow: View {
-    let summary: MealSummary
+/// Row view for one custom food.
+struct CustomFoodRow: View {
+    let food: CustomFood
 
     var body: some View {
         HStack(alignment: .center, spacing: 10) {
             VStack(alignment: .leading, spacing: 3) {
-                Text(summary.name)
+                Text(food.name)
                     .font(.system(size: 15, weight: .medium))
                     .foregroundStyle(Theme.FG.primary)
                     .lineLimit(1)
@@ -22,7 +23,7 @@ struct MealRow: View {
             Spacer(minLength: 8)
             VStack(alignment: .trailing, spacing: 2) {
                 HStack(alignment: .firstTextBaseline, spacing: 3) {
-                    Text("\(summary.totalCalories)")
+                    Text("\(food.calories)")
                         .font(.system(size: 14, weight: .semibold, design: .rounded))
                         .monospacedDigit()
                         .foregroundStyle(Theme.CTP.mauve)
@@ -43,20 +44,26 @@ struct MealRow: View {
         .contentShape(Rectangle())
     }
 
-    /// Subtitle string: notes (if any) joined with the pluralized ingredient count.
-    /// Outputs: formatted subtitle text shown beneath the meal name.
+    /// Basis caption: a human basis label plus the serving descriptor when known
+    /// (e.g. "Per serving · 1 scoop", "Per 100 g").
+    /// Outputs: the subtitle string shown under the food name.
     private var subtitle: String {
-        let count = summary.itemCount
-        let countText = "\(count) \(count == 1 ? "ingredient" : "ingredients")"
-        if let notes = summary.notes, !notes.isEmpty {
-            return "\(notes) · \(countText)"
+        switch food.basis {
+        case .per100g:
+            return "Per 100 g"
+        case .perServing:
+            if let size = food.servingSize, let unit = food.servingSizeUnit {
+                return "Per serving · \(NumericInput.formatBare(size)) \(unit)"
+            }
+            return "Per serving"
+        case .perUnit:
+            return "Per unit"
         }
-        return countText
     }
 
     /// Compact `P… · C… · F…` macro summary string with rounded grams.
     /// Outputs: monospaced summary string for the trailing column.
     private var macroSummary: String {
-        MacroTotals.pcfSummary(proteinG: summary.totalProteinG, carbsG: summary.totalCarbsG, fatG: summary.totalFatG)
+        MacroTotals.pcfSummary(proteinG: food.proteinG, carbsG: food.carbsG, fatG: food.fatG)
     }
 }
