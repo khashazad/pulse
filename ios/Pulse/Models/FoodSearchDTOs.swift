@@ -40,7 +40,7 @@ struct USDASearchResponse: Codable, Equatable {
 }
 
 /// A user-defined custom food. Macros are quoted at `basis`.
-struct CustomFood: Codable, Equatable, Identifiable {
+struct CustomFood: Codable, Equatable, Hashable, Identifiable {
     let id: UUID
     let name: String
     let basis: FoodBasis

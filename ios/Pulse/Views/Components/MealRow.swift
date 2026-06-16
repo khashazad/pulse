@@ -1,4 +1,4 @@
-/// List row for a saved meal shown in `MealsView`.
+/// List row for a saved meal shown in the Food tab's Meals section (`FoodTabView`).
 /// Displays the meal's name, an optional notes/ingredient-count subtitle, total kcal,
 /// summed macros, and a trailing chevron indicating drill-down.
 import SwiftUI

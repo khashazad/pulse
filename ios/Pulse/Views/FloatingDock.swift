@@ -5,7 +5,7 @@ import SwiftUI
 
 /// Identifies one of the four top-level tabs hosted by `RootView`.
 enum DockTab: Hashable {
-    case intake, meals, prep, measures
+    case intake, food, prep, measures
 }
 
 /// Floating capsule tab bar shown at the bottom of `RootView`.
@@ -16,7 +16,7 @@ struct FloatingDock: View {
     var body: some View {
         HStack(spacing: 4) {
             tabButton(.intake, system: "circle.fill", label: "Intake")
-            tabButton(.meals, system: "fork.knife", label: "Meals")
+            tabButton(.food, system: "fork.knife", label: "Food")
             tabButton(.prep, system: "cube.box.fill", label: "Prep")
             tabButton(.measures, system: "figure.arms.open", label: "Measures")
         }
