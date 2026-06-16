@@ -662,7 +662,6 @@ async def test_save_custom_food_attaches_portion(mcp_server) -> None:
 
     settings = get_settings()
     user_key = settings.legacy_user_key
-    from zoneinfo import ZoneInfo
 
     tz = ZoneInfo(settings.timezone)
     now = DateTimeValue.now(tz=tz)

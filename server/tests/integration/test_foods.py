@@ -478,7 +478,8 @@ async def test_resolve_food_by_name_returns_food_with_portions(maker):
             large = await _make_custom_food(session, "large apple", 110)
         async with transaction(session):
             food, _, _ = await group_foods(
-                session, USER,
+                session,
+                USER,
                 FoodCreate(name="Apple", portion_ids=[small, large], default_portion_id=small),
                 DateTimeValue.now(tz=UTC),
             )
