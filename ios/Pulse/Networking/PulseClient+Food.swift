@@ -113,6 +113,14 @@ extension PulseClient {
         return list.customFoods
     }
 
+    /// Lists grouped foods (with nested portions) plus ungrouped standalones.
+    /// Outputs: the `FoodList` envelope from `GET /foods`.
+    /// Exceptions: `PulseError` on transport/auth/decoding failure.
+    func listFoods() async throws -> FoodList {
+        let url = try http.makeURL(path: "/foods", query: [])
+        return try await fetch(url: url)
+    }
+
     /// Lists the user's food-memory entries.
     /// Outputs: the array unwrapped from the `FoodMemoryList` envelope.
     /// Exceptions: `PulseError` on transport/auth/decoding failure.
