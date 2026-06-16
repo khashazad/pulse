@@ -27,6 +27,7 @@ from pulse_server.repositories.foods import FoodsRepository
 from pulse_server.repositories.tables import food_entries
 from pulse_server.services.custom_foods_service import upsert_custom_food_and_remember
 from pulse_server.services.foods_service import group_foods, ungroup_food, list_foods_with_portions
+from pulse_server.services.normalize import normalize_name
 
 pytestmark = pytest.mark.integration
 
@@ -90,7 +91,11 @@ async def test_group_links_portions_and_rolls_up_aliases(maker):
         assert food["default_portion_id"] == medium
         labels = sorted(p["portion_label"] for p in portions)
         assert labels == ["large", "medium", "small"]
-        assert {"small apple", "medium apple", "large apple"} <= set(aliases)
+        assert {
+            normalize_name("small apple"),
+            normalize_name("medium apple"),
+            normalize_name("large apple"),
+        } <= set(aliases)
 
         mem_repo = FoodMemoryRepository(session)
         assert await mem_repo.get_by_name(USER, "small apple") is not None
@@ -176,3 +181,59 @@ async def test_list_foods_with_portions_and_standalones(maker):
         _food, portions, _aliases = foods[0]
         assert len(portions) == 2
         assert [s["id"] for s in standalones] == [bar]
+
+
+@pytest.mark.asyncio
+async def test_remove_portion_restores_standalone_memory(maker):
+    async with maker() as session:
+        async with transaction(session):
+            small = await _make_custom_food(session, "small apple", 70)
+            medium = await _make_custom_food(session, "medium apple", 95)
+        async with transaction(session):
+            food, _, _ = await group_foods(
+                session, USER,
+                FoodCreate(name="Apple", portion_ids=[small, medium], default_portion_id=medium),
+                DateTimeValue.now(tz=UTC),
+            )
+        # After grouping, "small apple" has no standalone memory row (folded into Apple).
+        mem_repo = FoodMemoryRepository(session)
+        cf_repo = CustomFoodsRepository(session)
+        # Simulate the remove_portion service steps: detach + strip alias + restore memory.
+        async with transaction(session):
+            cf = await cf_repo.get_by_id(small, USER)
+            await cf_repo.set_food_link(small, USER, None, None, DateTimeValue.now(tz=UTC))
+            # Remove the portion's name from the Food's aliases before restoring
+            # the standalone memory row, so the alias-uniqueness trigger doesn't fire.
+            await mem_repo.remove_alias(USER, food["normalized_name"], cf["normalized_name"], DateTimeValue.now(tz=UTC))
+            await mem_repo.upsert_custom(
+                user_key=USER, name=cf["name"], normalized_name=cf["normalized_name"],
+                custom_food_id=small, now=DateTimeValue.now(tz=UTC),
+            )
+        # The detached portion is standalone and resolvable again.
+        assert (await cf_repo.get_by_id(small, USER))["food_id"] is None
+        hit = await mem_repo.get_by_name(USER, "small apple")
+        assert hit is not None and hit["custom_food_id"] == small and hit["food_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_upsert_custom_reclaims_food_targeted_name(maker):
+    # Directly exercises FIX 1: upserting a custom-target row over a name that
+    # currently has a Food target must null food_id (no constraint violation).
+    async with maker() as session:
+        async with transaction(session):
+            medium = await _make_custom_food(session, "medium apple", 95)
+        async with transaction(session):
+            food, _, _ = await group_foods(
+                session, USER,
+                FoodCreate(name="Apple", portion_ids=[medium], default_portion_id=medium),
+                DateTimeValue.now(tz=UTC),
+            )
+        mem_repo = FoodMemoryRepository(session)
+        # "apple" currently resolves to the Food (food_id set). Re-point it to a custom food.
+        async with transaction(session):
+            row = await mem_repo.upsert_custom(
+                user_key=USER, name="Apple", normalized_name="apple",
+                custom_food_id=medium, now=DateTimeValue.now(tz=UTC),
+            )
+        assert row["custom_food_id"] == medium
+        assert row["food_id"] is None

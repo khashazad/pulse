@@ -202,6 +202,7 @@ class FoodMemoryRepository:
                 "usda_fdc_id": None,
                 "usda_description": None,
                 "custom_food_id": insert_stmt.excluded.custom_food_id,
+                "food_id": None,
                 "basis": None,
                 "serving_size": None,
                 "serving_size_unit": None,

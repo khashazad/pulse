@@ -408,16 +408,16 @@ class CustomFoodsRepository:
         self,
         custom_food_id: UUID,
         user_key: str,
-        food_id: UUID,
+        food_id: UUID | None,
         portion_label: str | None,
         now: DateTimeValue,
     ) -> dict[str, Any] | None:
-        """Attach a custom food to a Food as a portion.
+        """Attach or detach a custom food from a Food portion.
 
         **Inputs:**
         - custom_food_id (UUID): Portion row primary key.
         - user_key (str): Owner restriction.
-        - food_id (UUID): Parent Food id to link to.
+        - food_id (UUID | None): Parent Food id to link to, or ``None`` to detach the portion.
         - portion_label (str | None): Label within the Food (e.g. "medium").
         - now (DateTimeValue): Timestamp for ``updated_at``.
 

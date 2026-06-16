@@ -32,6 +32,7 @@ from pulse_server.repositories.custom_foods import CustomFoodsRepository
 from pulse_server.repositories.food_memory import FoodMemoryRepository
 from pulse_server.repositories.foods import FoodsRepository
 from pulse_server.services.foods_service import (
+    derive_portion_label,
     group_foods,
     list_foods_with_portions,
     ungroup_food,
@@ -156,18 +157,32 @@ async def update_food(
             food = await foods_repo.get_by_id(food_id, user_key)
             if food is None:
                 raise HTTPException(status_code=404, detail="Food not found")
+            old_norm = food["normalized_name"]
+            existing_mem = await mem_repo.get_by_food_id(user_key, food_id)
+            existing_aliases = list((existing_mem.get("aliases") if existing_mem else None) or [])
             if fields:
                 await foods_repo.update_fields(food_id, user_key, fields, now)
             new_name = fields.get("name", food["name"])
-            new_norm = fields.get("normalized_name", food["normalized_name"])
-            if aliases is not None or "name" in fields:
+            new_norm = fields.get("normalized_name", old_norm)
+            renaming = new_norm != old_norm
+            if renaming:
+                await mem_repo.delete_by_name(user_key, old_norm)
+            if aliases is not None:
+                new_aliases: list[str] | None = [normalize_name(a) for a in aliases]
+            elif renaming:
+                new_aliases = existing_aliases
+            else:
+                new_aliases = None
+            if new_aliases is not None:
+                new_aliases = [a for a in new_aliases if a != new_norm]
+            if new_aliases is not None or renaming:
                 await mem_repo.upsert_food(
                     user_key=user_key,
                     name=new_name,
                     normalized_name=new_norm,
                     food_id=food_id,
                     now=now,
-                    aliases=[normalize_name(a) for a in aliases] if aliases is not None else None,
+                    aliases=new_aliases,
                 )
     except IntegrityError as exc:
         raise HTTPException(status_code=409, detail="A food with that name already exists") from exc
@@ -207,8 +222,6 @@ async def add_portion(
         cf = await cf_repo.get_by_id(body.custom_food_id, user_key)
         if cf is None:
             raise HTTPException(status_code=404, detail="Custom food not found")
-        from pulse_server.services.foods_service import derive_portion_label
-
         label = body.portion_label or derive_portion_label(food["name"], cf["name"])
         await cf_repo.set_food_link(body.custom_food_id, user_key, food_id, label, now)
         await mem_repo.delete_by_name(user_key, cf["normalized_name"])
@@ -240,11 +253,25 @@ async def remove_portion(
     now = DateTimeValue.now(tz=TZ)
     foods_repo = FoodsRepository(session)
     cf_repo = CustomFoodsRepository(session)
+    mem_repo = FoodMemoryRepository(session)
     async with transaction(session):
         food = await foods_repo.get_by_id(food_id, user_key)
         if food is None:
             raise HTTPException(status_code=404, detail="Food not found")
-        await cf_repo.set_food_link(custom_food_id, user_key, None, None, now)  # type: ignore[arg-type]
+        cf = await cf_repo.get_by_id(custom_food_id, user_key)
+        await cf_repo.set_food_link(custom_food_id, user_key, None, None, now)
+        if cf is not None:
+            # Remove the portion's name from the Food's memory aliases before
+            # restoring a standalone row; the alias-uniqueness trigger rejects
+            # a row whose normalized_name appears as an alias elsewhere.
+            await mem_repo.remove_alias(user_key, food["normalized_name"], cf["normalized_name"], now)
+            await mem_repo.upsert_custom(
+                user_key=user_key,
+                name=cf["name"],
+                normalized_name=cf["normalized_name"],
+                custom_food_id=custom_food_id,
+                now=now,
+            )
     return await _build_food_response(session, user_key, food_id)
 
 
