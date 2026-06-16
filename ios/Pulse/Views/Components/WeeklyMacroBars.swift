@@ -207,22 +207,3 @@ struct DashedLineSwatch: View {
         }
     }
 }
-
-/// Compact protein/carbs/fat color-key shown once above the Month view's week rows.
-struct MacroLegend: View {
-    var body: some View {
-        HStack(spacing: 16) {
-            ForEach([Theme.Macro.protein, .carbs, .fat], id: \.label) { macro in
-                HStack(spacing: 6) {
-                    RoundedRectangle(cornerRadius: 3, style: .continuous)
-                        .fill(macro.color)
-                        .frame(width: 10, height: 10)
-                    Text(macro.label)
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(Theme.FG.secondary)
-                }
-            }
-        }
-        .frame(maxWidth: .infinity)
-    }
-}

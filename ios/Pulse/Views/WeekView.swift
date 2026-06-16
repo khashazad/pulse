@@ -52,9 +52,6 @@ struct WeekView: View {
         let dailyTarget = model?.targets?.calories
         return ScrollView {
             VStack(spacing: Theme.Layout.sectionSpacing) {
-                MacroLegend()
-                    .padding(.horizontal, 16)
-
                 weekSummaryCard(logs: chronological, dailyTarget: dailyTarget)
                     .padding(.horizontal, 16)
 
