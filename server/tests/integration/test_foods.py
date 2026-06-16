@@ -281,3 +281,118 @@ async def test_attach_portion_links_and_derives_label(maker):
         attached = await cf_repo.get_by_id(huge, USER)
         assert attached["food_id"] == food["id"]
         assert attached["portion_label"] == "huge"
+
+
+@pytest.mark.asyncio
+async def test_upsert_usda_reclaims_food_targeted_name(maker):
+    # FIX F1: USDA upsert over a name that currently targets a Food must null food_id.
+    async with maker() as session:
+        async with transaction(session):
+            medium = await _make_custom_food(session, "medium apple", 95)
+        async with transaction(session):
+            await group_foods(
+                session, USER,
+                FoodCreate(name="Apple", portion_ids=[medium], default_portion_id=medium),
+                DateTimeValue.now(tz=UTC),
+            )
+        mem_repo = FoodMemoryRepository(session)
+        async with transaction(session):
+            row = await mem_repo.upsert_usda(
+                user_key=USER, name="Apple", normalized_name="apple",
+                usda_fdc_id=171688, usda_description="Apples, raw",
+                basis="per_100g", serving_size=None, serving_size_unit=None,
+                calories=52, protein_g=0.3, carbs_g=14.0, fat_g=0.2,
+                now=DateTimeValue.now(tz=UTC),
+            )
+        assert row["usda_fdc_id"] == 171688
+        assert row["food_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_resolve_food_by_name_grouped_food_is_graceful_miss(maker):
+    # FIX F2: resolving a grouped Food name must not crash; returns type 'none' for now.
+    from pulse_server.services.food_memory_service import resolve_food_by_name
+
+    async with maker() as session:
+        async with transaction(session):
+            medium = await _make_custom_food(session, "medium apple", 95)
+        async with transaction(session):
+            await group_foods(
+                session, USER,
+                FoodCreate(name="Apple", portion_ids=[medium], default_portion_id=medium),
+                DateTimeValue.now(tz=UTC),
+            )
+        resolved = await resolve_food_by_name(session, USER, "apple")
+        assert resolved.type == "none"
+
+
+@pytest.mark.asyncio
+async def test_detach_portion_rejects_portion_from_other_food(maker):
+    # FIX F3: detaching a portion that belongs to a different Food 404s, no corruption.
+    from pulse_server.services.foods_service import detach_portion
+
+    async with maker() as session:
+        async with transaction(session):
+            a = await _make_custom_food(session, "small apple", 70)
+            b = await _make_custom_food(session, "small banana", 90)
+        async with transaction(session):
+            apple, _, _ = await group_foods(
+                session, USER, FoodCreate(name="Apple", portion_ids=[a], default_portion_id=a),
+                DateTimeValue.now(tz=UTC),
+            )
+            banana, _, _ = await group_foods(
+                session, USER, FoodCreate(name="Banana", portion_ids=[b], default_portion_id=b),
+                DateTimeValue.now(tz=UTC),
+            )
+        import pytest as _pytest
+        from fastapi import HTTPException
+        with _pytest.raises(HTTPException) as exc:
+            async with transaction(session):
+                await detach_portion(session, USER, apple["id"], b, DateTimeValue.now(tz=UTC))
+        assert exc.value.status_code == 404
+        # Banana's portion is untouched.
+        cf_repo = CustomFoodsRepository(session)
+        assert (await cf_repo.get_by_id(b, USER))["food_id"] == banana["id"]
+
+
+@pytest.mark.asyncio
+async def test_detach_default_portion_repoints_default(maker):
+    # FIX F4: detaching the default portion repoints default_portion_id to a remaining one.
+    from pulse_server.services.foods_service import detach_portion
+
+    async with maker() as session:
+        async with transaction(session):
+            small = await _make_custom_food(session, "small apple", 70)
+            medium = await _make_custom_food(session, "medium apple", 95)
+        async with transaction(session):
+            food, _, _ = await group_foods(
+                session, USER,
+                FoodCreate(name="Apple", portion_ids=[small, medium], default_portion_id=small),
+                DateTimeValue.now(tz=UTC),
+            )
+        async with transaction(session):
+            await detach_portion(session, USER, food["id"], small, DateTimeValue.now(tz=UTC))
+        foods_repo = FoodsRepository(session)
+        refreshed = await foods_repo.get_by_id(food["id"], USER)
+        assert refreshed["default_portion_id"] == medium
+
+
+@pytest.mark.asyncio
+async def test_attach_portion_rolls_name_into_food_aliases(maker):
+    # FIX F5: attaching a portion folds its name into the Food's aliases.
+    from pulse_server.services.foods_service import attach_portion
+
+    async with maker() as session:
+        async with transaction(session):
+            small = await _make_custom_food(session, "small apple", 70)
+            huge = await _make_custom_food(session, "huge apple", 130)
+        async with transaction(session):
+            food, _, _ = await group_foods(
+                session, USER, FoodCreate(name="Apple", portion_ids=[small], default_portion_id=small),
+                DateTimeValue.now(tz=UTC),
+            )
+        async with transaction(session):
+            await attach_portion(session, USER, food["id"], huge, None, DateTimeValue.now(tz=UTC))
+        mem_repo = FoodMemoryRepository(session)
+        food_mem = await mem_repo.get_by_food_id(USER, food["id"])
+        assert "huge apple" in (food_mem.get("aliases") or [])

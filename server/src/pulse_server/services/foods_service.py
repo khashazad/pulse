@@ -283,8 +283,12 @@ async def attach_portion(
 ) -> None:
     """Attach an existing custom food to a Food as a portion.
 
-    Derives the portion label when not given, links the custom food, and folds
-    away its standalone memory row (the Food is now the resolution target).
+    Derives the portion label when not given, links the custom food, harvests
+    the portion's standalone name and any aliases it already had, and folds
+    them into the Food's alias list (mirroring the roll-up done by
+    ``group_foods``). The standalone memory row is deleted before the Food
+    memory row is updated so the alias-uniqueness constraint does not reject
+    a name that is both a live row and an alias on another row.
 
     **Inputs:**
     - session (AsyncSession): Active session; caller owns the transaction.
@@ -309,9 +313,25 @@ async def attach_portion(
     cf = await cf_repo.get_by_id(custom_food_id, user_key)
     if cf is None:
         raise HTTPException(status_code=404, detail="Custom food not found")
+    # Harvest the portion's own name + its standalone aliases to fold into the Food.
+    harvested = {cf["normalized_name"]}
+    mem = await mem_repo.get_by_name(user_key, cf["normalized_name"])
+    if mem is not None:
+        harvested.update(mem.get("aliases") or [])
     portion_label = label or derive_portion_label(food["name"], cf["name"])
     await cf_repo.set_food_link(custom_food_id, user_key, food_id, portion_label, now)
+    # Remove the standalone memory row BEFORE folding its names into the Food's
+    # aliases (alias-uniqueness trigger rejects a name that is also a live row).
     await mem_repo.delete_by_name(user_key, cf["normalized_name"])
+    food_mem = await mem_repo.get_by_food_id(user_key, food_id)
+    existing = set(food_mem.get("aliases") or []) if food_mem else set()
+    new_aliases = (existing | harvested) - {food["normalized_name"]}
+    # Use add_alias (plain UPDATE) for each new alias rather than upsert_food
+    # (which attempts an INSERT first, causing the alias-uniqueness trigger to
+    # compare the new aliases against the pre-existing Apple row using a
+    # different id, yielding a false collision on already-held aliases).
+    for alias in sorted(new_aliases - existing):
+        await mem_repo.add_alias(user_key, food["normalized_name"], alias, now)
 
 
 async def detach_portion(
@@ -338,7 +358,8 @@ async def detach_portion(
     - None.
 
     **Raises:**
-    - HTTPException(404): The Food is not owned by the user.
+    - HTTPException(404): The Food is not owned by the user, or the custom
+      food is not found among this Food's portions.
     """
     foods_repo = FoodsRepository(session)
     cf_repo = CustomFoodsRepository(session)
@@ -347,16 +368,27 @@ async def detach_portion(
     if food is None:
         raise HTTPException(status_code=404, detail="Food not found")
     cf = await cf_repo.get_by_id(custom_food_id, user_key)
+    if cf is None or cf.get("food_id") != food_id:
+        raise HTTPException(status_code=404, detail="Portion not found in this food")
     await cf_repo.set_food_link(custom_food_id, user_key, None, None, now)
-    if cf is not None:
-        await mem_repo.remove_alias(user_key, food["normalized_name"], cf["normalized_name"], now)
-        await mem_repo.upsert_custom(
-            user_key=user_key,
-            name=cf["name"],
-            normalized_name=cf["normalized_name"],
-            custom_food_id=custom_food_id,
-            now=now,
+    # If the detached portion was the Food's default, repoint to a remaining one.
+    if food.get("default_portion_id") == custom_food_id:
+        remaining = await cf_repo.list_by_food(food_id)
+        new_default = remaining[0]["id"] if remaining else None
+        await foods_repo.update_fields(
+            food_id, user_key, {"default_portion_id": new_default}, now
         )
+    # Strip the portion's name from the Food's aliases (the alias-uniqueness
+    # trigger rejects a standalone row whose name is still an alias), then
+    # restore the portion's own memory row so it resolves again.
+    await mem_repo.remove_alias(user_key, food["normalized_name"], cf["normalized_name"], now)
+    await mem_repo.upsert_custom(
+        user_key=user_key,
+        name=cf["name"],
+        normalized_name=cf["normalized_name"],
+        custom_food_id=custom_food_id,
+        now=now,
+    )
 
 
 async def update_food(

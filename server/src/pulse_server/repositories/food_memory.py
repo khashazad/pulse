@@ -99,6 +99,11 @@ class FoodMemoryRepository:
         The ``aliases`` argument is only written when explicitly supplied, so
         callers that don't touch aliases will not clobber an existing list.
 
+        On conflict, both ``custom_food_id`` and ``food_id`` are set to
+        ``None`` so that re-pointing a Food-targeted or custom-food-targeted
+        name to USDA does not leave multiple non-null target columns in
+        violation of the ``food_memory_one_target`` constraint.
+
         **Inputs:**
         - user_key (str): Owning user.
         - name (str): Original-cased phrase.
@@ -148,6 +153,7 @@ class FoodMemoryRepository:
             col: getattr(insert_stmt.excluded, col) for col in _USDA_UPSERT_COLUMNS
         }
         set_["custom_food_id"] = None
+        set_["food_id"] = None
         set_["updated_at"] = now
         if aliases is not None:
             set_["aliases"] = insert_stmt.excluded.aliases
