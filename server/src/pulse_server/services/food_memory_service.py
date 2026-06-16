@@ -38,7 +38,9 @@ async def resolve_food_by_name(
     - name (str): User-supplied food phrase.
 
     **Outputs:**
-    - ResolvedFood: ``type`` is ``"none"`` when no memory entry exists;
+    - ResolvedFood: ``type`` is ``"none"`` when no memory entry exists or
+      when the entry targets a grouped Food (Food-target rows carry no inline
+      macros; full Food + portion resolution is part of the MCP Foods work);
       otherwise ``"memory_usda"`` or ``"custom_food"`` with all fields
       needed to scale macros and call ``log_food``.
 
@@ -64,6 +66,13 @@ async def resolve_food_by_name(
             carbs_g=float(row["cf_carbs_g"]),
             fat_g=float(row["cf_fat_g"]),
         )
+
+    if row["food_id"] is not None:
+        # Food-target memory rows (grouped foods) carry no inline macros here;
+        # full Food + portion resolution is part of the MCP Foods work. Until
+        # then a grouped name resolves to a graceful miss rather than crashing
+        # on int(None) for usda_fdc_id.
+        return ResolvedFood(type="none")
 
     return ResolvedFood(
         type="memory_usda",

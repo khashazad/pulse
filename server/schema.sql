@@ -65,6 +65,8 @@ create table if not exists custom_foods (
   fat_g numeric not null,
   source text not null default 'manual' check (source in ('manual','photo','corrected')),
   notes text,
+  food_id uuid,
+  portion_label text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -79,6 +81,7 @@ create table if not exists food_memory (
   usda_fdc_id bigint,
   usda_description text,
   custom_food_id uuid references custom_foods(id) on delete cascade,
+  food_id uuid,
   basis text,
   serving_size numeric,
   serving_size_unit text,
@@ -90,14 +93,57 @@ create table if not exists food_memory (
   updated_at timestamptz not null default now(),
   aliases text[] not null default '{}'::text[],
   constraint food_memory_one_target check (
-    (usda_fdc_id is not null and custom_food_id is null) or
-    (usda_fdc_id is null and custom_food_id is not null)
+    (usda_fdc_id is not null)::int
+    + (custom_food_id is not null)::int
+    + (food_id is not null)::int = 1
   ),
   constraint food_memory_alias_not_self check (not (normalized_name = ANY(aliases)))
 );
 create unique index if not exists idx_food_memory_user_key_name on food_memory(user_key, normalized_name);
 create index if not exists idx_food_memory_user_key on food_memory(user_key);
 create index if not exists idx_food_memory_aliases on food_memory using gin (aliases);
+
+-- Foods: a thin parent grouping portion-variants of one food (e.g. "Apple"
+-- owning small/medium/large/per-100g). A custom_foods row IS a portion; a Food
+-- carries no macros. Aliases for a Food live in food_memory (food_id target),
+-- not here, so resolution has a single store.
+create table if not exists foods (
+  id uuid primary key default gen_random_uuid(),
+  user_key text not null,
+  name text not null,
+  normalized_name text not null,
+  notes text,
+  default_portion_id uuid references custom_foods(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create unique index if not exists idx_foods_user_key_name on foods(user_key, normalized_name);
+create index if not exists idx_foods_user_key on foods(user_key);
+
+-- A custom_foods row becomes a portion of a Food via food_id + portion_label.
+-- The columns live in the CREATE body above (for fresh DBs); these guards add
+-- them to already-deployed DBs. The food_id FK is added separately as a named
+-- constraint because foods is created after custom_foods (FK cycle) — an inline
+-- reference in the CREATE body would point at a not-yet-existing table.
+alter table custom_foods add column if not exists food_id uuid;
+alter table custom_foods add column if not exists portion_label text;
+-- on delete set null: ungrouping a Food leaves its portions as standalones.
+alter table custom_foods drop constraint if exists custom_foods_food_id_fkey;
+alter table custom_foods add constraint custom_foods_food_id_fkey
+  foreign key (food_id) references foods(id) on delete set null;
+create index if not exists idx_custom_foods_food_id on custom_foods(food_id);
+
+-- food_memory gains a Food target alongside USDA / custom-food targets.
+alter table food_memory add column if not exists food_id uuid;
+alter table food_memory drop constraint if exists food_memory_food_id_fkey;
+alter table food_memory add constraint food_memory_food_id_fkey
+  foreign key (food_id) references foods(id) on delete cascade;
+alter table food_memory drop constraint if exists food_memory_one_target;
+alter table food_memory add constraint food_memory_one_target check (
+  (usda_fdc_id is not null)::int
+  + (custom_food_id is not null)::int
+  + (food_id is not null)::int = 1
+);
 
 create table if not exists meals (
   id uuid primary key default gen_random_uuid(),

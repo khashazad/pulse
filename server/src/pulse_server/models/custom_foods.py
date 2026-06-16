@@ -95,6 +95,8 @@ class CustomFoodResponse(BaseModel):
     fat_g: float
     source: CustomFoodSource
     notes: str | None
+    food_id: UUID | None = None
+    portion_label: str | None = None
     created_at: DateTimeValue
     updated_at: DateTimeValue
 

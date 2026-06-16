@@ -11,8 +11,9 @@ Tables defined here:
 - ``daily_target_profile`` — per-user macro and weight targets.
 - ``daily_logs`` — one row per ``(user_key, log_date)`` aggregating a day's intake.
 - ``custom_foods`` — user-defined foods with stored macros at a chosen basis.
-- ``food_memory`` — per-user lookup table mapping a phrase to either a USDA food
-  or a custom food (with alias array support).
+- ``foods`` — thin parent grouping portion-variants of one food; carries no macros.
+- ``food_memory`` — per-user lookup table mapping a phrase to a USDA food, a custom
+  food, or a Foods parent (with alias array support).
 - ``meals`` / ``meal_items`` — saved meals and their pre-scaled component items.
 - ``food_entries`` — individual logged entries belonging to a daily log.
 - ``sessions`` — Bearer-token session store keyed by SHA-256 token hash.
@@ -102,12 +103,40 @@ custom_foods = Table(
     Column("notes", Text, nullable=True),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column(
+        "food_id",
+        UUID(as_uuid=True),
+        ForeignKey("foods.id", ondelete="SET NULL"),
+        nullable=True,
+    ),
+    Column("portion_label", Text, nullable=True),
     CheckConstraint(
         "basis in ('per_100g','per_serving','per_unit')", name="custom_foods_basis_check"
     ),
     CheckConstraint("source in ('manual','photo','corrected')", name="custom_foods_source_check"),
     Index("idx_custom_foods_user_key_name", "user_key", "normalized_name", unique=True),
     Index("idx_custom_foods_user_key", "user_key"),
+    Index("idx_custom_foods_food_id", "food_id"),
+)
+
+foods = Table(
+    "foods",
+    metadata,
+    Column("id", UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")),
+    Column("user_key", Text, nullable=False),
+    Column("name", Text, nullable=False),
+    Column("normalized_name", Text, nullable=False),
+    Column("notes", Text, nullable=True),
+    Column(
+        "default_portion_id",
+        UUID(as_uuid=True),
+        ForeignKey("custom_foods.id", ondelete="SET NULL"),
+        nullable=True,
+    ),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Index("idx_foods_user_key_name", "user_key", "normalized_name", unique=True),
+    Index("idx_foods_user_key", "user_key"),
 )
 
 food_memory = Table(
@@ -125,6 +154,12 @@ food_memory = Table(
         ForeignKey("custom_foods.id", ondelete="CASCADE"),
         nullable=True,
     ),
+    Column(
+        "food_id",
+        UUID(as_uuid=True),
+        ForeignKey("foods.id", ondelete="CASCADE"),
+        nullable=True,
+    ),
     Column("basis", Text, nullable=True),
     Column("serving_size", Numeric, nullable=True),
     Column("serving_size_unit", Text, nullable=True),
@@ -136,8 +171,9 @@ food_memory = Table(
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("aliases", ARRAY(Text), nullable=False, server_default=text("'{}'::text[]")),
     CheckConstraint(
-        "(usda_fdc_id is not null and custom_food_id is null) or "
-        "(usda_fdc_id is null and custom_food_id is not null)",
+        "(usda_fdc_id is not null)::int "
+        "+ (custom_food_id is not null)::int "
+        "+ (food_id is not null)::int = 1",
         name="food_memory_one_target",
     ),
     Index("idx_food_memory_user_key_name", "user_key", "normalized_name", unique=True),
