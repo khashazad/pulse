@@ -35,6 +35,8 @@ from pulse_server.services.foods_service import (
     group_foods,
     list_foods_with_portions,
     ungroup_food,
+)
+from pulse_server.services.foods_service import (
     update_food as update_food_service,
 )
 
@@ -43,9 +45,7 @@ router = APIRouter(dependencies=[Depends(require_session)])
 TZ = ZoneInfo(settings.timezone)
 
 
-async def _build_food_response(
-    session: AsyncSession, user_key: str, food_id: UUID
-) -> FoodResponse:
+async def _build_food_response(session: AsyncSession, user_key: str, food_id: UUID) -> FoodResponse:
     """Assemble a Food's response (row + portions + aliases) or 404.
 
     **Inputs:**
@@ -174,7 +174,9 @@ async def add_portion(
     user_key = request.state.user_key
     now = DateTimeValue.now(tz=TZ)
     async with transaction(session):
-        await attach_portion(session, user_key, food_id, body.custom_food_id, body.portion_label, now)
+        await attach_portion(
+            session, user_key, food_id, body.custom_food_id, body.portion_label, now
+        )
     return await _build_food_response(session, user_key, food_id)
 
 

@@ -34,9 +34,6 @@ from pulse_server.routers import (
     custom_foods as custom_foods_router,
 )
 from pulse_server.routers import (
-    foods as foods_router,
-)
-from pulse_server.routers import (
     entries,
     logs,
     summary,
@@ -44,6 +41,9 @@ from pulse_server.routers import (
 )
 from pulse_server.routers import (
     food_memory as food_memory_router,
+)
+from pulse_server.routers import (
+    foods as foods_router,
 )
 from pulse_server.routers import (
     meals as meals_router,

@@ -26,7 +26,7 @@ from pulse_server.repositories.food_memory import FoodMemoryRepository
 from pulse_server.repositories.foods import FoodsRepository
 from pulse_server.repositories.tables import food_entries
 from pulse_server.services.custom_foods_service import upsert_custom_food_and_remember
-from pulse_server.services.foods_service import group_foods, ungroup_food, list_foods_with_portions
+from pulse_server.services.foods_service import group_foods, list_foods_with_portions, ungroup_food
 from pulse_server.services.normalize import normalize_name
 
 pytestmark = pytest.mark.integration
@@ -65,8 +65,12 @@ async def _make_custom_food(session: AsyncSession, name: str, calories: int) -> 
         session=session,
         user_key=USER,
         payload=CustomFoodCreate(
-            name=name, basis="per_unit", calories=calories,
-            protein_g=0.0, carbs_g=float(calories) / 4, fat_g=0.0,
+            name=name,
+            basis="per_unit",
+            calories=calories,
+            protein_g=0.0,
+            carbs_g=float(calories) / 4,
+            fat_g=0.0,
         ),
         now=now,
     )
@@ -82,9 +86,11 @@ async def test_group_links_portions_and_rolls_up_aliases(maker):
             large = await _make_custom_food(session, "large apple", 110)
         async with transaction(session):
             food, portions, aliases = await group_foods(
-                session, USER,
-                FoodCreate(name="Apple", portion_ids=[small, medium, large],
-                           default_portion_id=medium),
+                session,
+                USER,
+                FoodCreate(
+                    name="Apple", portion_ids=[small, medium, large], default_portion_id=medium
+                ),
                 DateTimeValue.now(tz=UTC),
             )
 
@@ -111,27 +117,48 @@ async def test_history_unchanged_after_grouping(maker):
         async with transaction(session):
             medium = await _make_custom_food(session, "medium apple", 95)
             log_id = uuid.uuid4()
-            await session.execute(text(
-                "INSERT INTO daily_logs (id, user_key, log_date) VALUES (:i, :u, CURRENT_DATE)"
-            ), {"i": str(log_id), "u": USER})
+            await session.execute(
+                text(
+                    "INSERT INTO daily_logs (id, user_key, log_date) VALUES (:i, :u, CURRENT_DATE)"
+                ),
+                {"i": str(log_id), "u": USER},
+            )
             entry_id = uuid.uuid4()
-            await session.execute(text(
-                "INSERT INTO food_entries (id, daily_log_id, user_key, entry_group_id, "
-                "display_name, quantity_text, custom_food_id, calories, protein_g, carbs_g, "
-                "fat_g, consumed_at) VALUES (:id, :log, :u, :grp, 'medium apple', '1 apple', "
-                ":cf, 95, 0, 24, 0, now())"
-            ), {"id": str(entry_id), "log": str(log_id), "u": USER,
-                "grp": str(uuid.uuid4()), "cf": str(medium)})
+            await session.execute(
+                text(
+                    "INSERT INTO food_entries (id, daily_log_id, user_key, entry_group_id, "
+                    "display_name, quantity_text, custom_food_id, calories, protein_g, carbs_g, "
+                    "fat_g, consumed_at) VALUES (:id, :log, :u, :grp, 'medium apple', '1 apple', "
+                    ":cf, 95, 0, 24, 0, now())"
+                ),
+                {
+                    "id": str(entry_id),
+                    "log": str(log_id),
+                    "u": USER,
+                    "grp": str(uuid.uuid4()),
+                    "cf": str(medium),
+                },
+            )
 
         async with transaction(session):
-            await group_foods(session, USER,
-                              FoodCreate(name="Apple", portion_ids=[medium]),
-                              DateTimeValue.now(tz=UTC))
+            await group_foods(
+                session,
+                USER,
+                FoodCreate(name="Apple", portion_ids=[medium]),
+                DateTimeValue.now(tz=UTC),
+            )
 
-        row = (await session.execute(
-            select(food_entries.c.calories, food_entries.c.custom_food_id)
-            .where(food_entries.c.id == entry_id)
-        )).mappings().one()
+        row = (
+            (
+                await session.execute(
+                    select(food_entries.c.calories, food_entries.c.custom_food_id).where(
+                        food_entries.c.id == entry_id
+                    )
+                )
+            )
+            .mappings()
+            .one()
+        )
         assert row["calories"] == 95
         assert row["custom_food_id"] == medium
 
@@ -144,9 +171,14 @@ async def test_ungroup_pushes_aliases_back_to_default_portion(maker):
             medium = await _make_custom_food(session, "medium apple", 95)
         async with transaction(session):
             food, _, _ = await group_foods(
-                session, USER,
-                FoodCreate(name="Apple", portion_ids=[small, medium],
-                           default_portion_id=medium, aliases=["apples"]),
+                session,
+                USER,
+                FoodCreate(
+                    name="Apple",
+                    portion_ids=[small, medium],
+                    default_portion_id=medium,
+                    aliases=["apples"],
+                ),
                 DateTimeValue.now(tz=UTC),
             )
         async with transaction(session):
@@ -172,9 +204,12 @@ async def test_list_foods_with_portions_and_standalones(maker):
             medium = await _make_custom_food(session, "medium apple", 95)
             bar = await _make_custom_food(session, "protein bar", 200)
         async with transaction(session):
-            await group_foods(session, USER,
-                              FoodCreate(name="Apple", portion_ids=[small, medium]),
-                              DateTimeValue.now(tz=UTC))
+            await group_foods(
+                session,
+                USER,
+                FoodCreate(name="Apple", portion_ids=[small, medium]),
+                DateTimeValue.now(tz=UTC),
+            )
 
         foods, standalones = await list_foods_with_portions(session, USER)
         assert len(foods) == 1
@@ -191,7 +226,8 @@ async def test_remove_portion_restores_standalone_memory(maker):
             medium = await _make_custom_food(session, "medium apple", 95)
         async with transaction(session):
             food, _, _ = await group_foods(
-                session, USER,
+                session,
+                USER,
                 FoodCreate(name="Apple", portion_ids=[small, medium], default_portion_id=medium),
                 DateTimeValue.now(tz=UTC),
             )
@@ -199,6 +235,7 @@ async def test_remove_portion_restores_standalone_memory(maker):
         mem_repo = FoodMemoryRepository(session)
         cf_repo = CustomFoodsRepository(session)
         from pulse_server.services.foods_service import detach_portion
+
         async with transaction(session):
             await detach_portion(session, USER, food["id"], small, DateTimeValue.now(tz=UTC))
         # The detached portion is standalone and resolvable again.
@@ -215,8 +252,9 @@ async def test_upsert_custom_reclaims_food_targeted_name(maker):
         async with transaction(session):
             medium = await _make_custom_food(session, "medium apple", 95)
         async with transaction(session):
-            food, _, _ = await group_foods(
-                session, USER,
+            _food, _, _ = await group_foods(
+                session,
+                USER,
                 FoodCreate(name="Apple", portion_ids=[medium], default_portion_id=medium),
                 DateTimeValue.now(tz=UTC),
             )
@@ -224,8 +262,11 @@ async def test_upsert_custom_reclaims_food_targeted_name(maker):
         # "apple" currently resolves to the Food (food_id set). Re-point it to a custom food.
         async with transaction(session):
             row = await mem_repo.upsert_custom(
-                user_key=USER, name="Apple", normalized_name="apple",
-                custom_food_id=medium, now=DateTimeValue.now(tz=UTC),
+                user_key=USER,
+                name="Apple",
+                normalized_name="apple",
+                custom_food_id=medium,
+                now=DateTimeValue.now(tz=UTC),
             )
         assert row["custom_food_id"] == medium
         assert row["food_id"] is None
@@ -241,9 +282,14 @@ async def test_update_food_rename_moves_memory_and_preserves_aliases(maker):
             medium = await _make_custom_food(session, "medium apple", 95)
         async with transaction(session):
             food, _, _ = await group_foods(
-                session, USER,
-                FoodCreate(name="Apple", portion_ids=[small, medium],
-                           default_portion_id=medium, aliases=["apples"]),
+                session,
+                USER,
+                FoodCreate(
+                    name="Apple",
+                    portion_ids=[small, medium],
+                    default_portion_id=medium,
+                    aliases=["apples"],
+                ),
                 DateTimeValue.now(tz=UTC),
             )
         async with transaction(session):
@@ -270,7 +316,8 @@ async def test_attach_portion_links_and_derives_label(maker):
             huge = await _make_custom_food(session, "huge apple", 130)
         async with transaction(session):
             food, _, _ = await group_foods(
-                session, USER,
+                session,
+                USER,
                 FoodCreate(name="Apple", portion_ids=[small], default_portion_id=small),
                 DateTimeValue.now(tz=UTC),
             )
@@ -291,17 +338,26 @@ async def test_upsert_usda_reclaims_food_targeted_name(maker):
             medium = await _make_custom_food(session, "medium apple", 95)
         async with transaction(session):
             await group_foods(
-                session, USER,
+                session,
+                USER,
                 FoodCreate(name="Apple", portion_ids=[medium], default_portion_id=medium),
                 DateTimeValue.now(tz=UTC),
             )
         mem_repo = FoodMemoryRepository(session)
         async with transaction(session):
             row = await mem_repo.upsert_usda(
-                user_key=USER, name="Apple", normalized_name="apple",
-                usda_fdc_id=171688, usda_description="Apples, raw",
-                basis="per_100g", serving_size=None, serving_size_unit=None,
-                calories=52, protein_g=0.3, carbs_g=14.0, fat_g=0.2,
+                user_key=USER,
+                name="Apple",
+                normalized_name="apple",
+                usda_fdc_id=171688,
+                usda_description="Apples, raw",
+                basis="per_100g",
+                serving_size=None,
+                serving_size_unit=None,
+                calories=52,
+                protein_g=0.3,
+                carbs_g=14.0,
+                fat_g=0.2,
                 now=DateTimeValue.now(tz=UTC),
             )
         assert row["usda_fdc_id"] == 171688
@@ -318,7 +374,8 @@ async def test_resolve_food_by_name_grouped_food_is_graceful_miss(maker):
             medium = await _make_custom_food(session, "medium apple", 95)
         async with transaction(session):
             await group_foods(
-                session, USER,
+                session,
+                USER,
                 FoodCreate(name="Apple", portion_ids=[medium], default_portion_id=medium),
                 DateTimeValue.now(tz=UTC),
             )
@@ -337,15 +394,20 @@ async def test_detach_portion_rejects_portion_from_other_food(maker):
             b = await _make_custom_food(session, "small banana", 90)
         async with transaction(session):
             apple, _, _ = await group_foods(
-                session, USER, FoodCreate(name="Apple", portion_ids=[a], default_portion_id=a),
+                session,
+                USER,
+                FoodCreate(name="Apple", portion_ids=[a], default_portion_id=a),
                 DateTimeValue.now(tz=UTC),
             )
             banana, _, _ = await group_foods(
-                session, USER, FoodCreate(name="Banana", portion_ids=[b], default_portion_id=b),
+                session,
+                USER,
+                FoodCreate(name="Banana", portion_ids=[b], default_portion_id=b),
                 DateTimeValue.now(tz=UTC),
             )
         import pytest as _pytest
         from fastapi import HTTPException
+
         with _pytest.raises(HTTPException) as exc:
             async with transaction(session):
                 await detach_portion(session, USER, apple["id"], b, DateTimeValue.now(tz=UTC))
@@ -366,7 +428,8 @@ async def test_detach_default_portion_repoints_default(maker):
             medium = await _make_custom_food(session, "medium apple", 95)
         async with transaction(session):
             food, _, _ = await group_foods(
-                session, USER,
+                session,
+                USER,
                 FoodCreate(name="Apple", portion_ids=[small, medium], default_portion_id=small),
                 DateTimeValue.now(tz=UTC),
             )
@@ -388,7 +451,9 @@ async def test_attach_portion_rolls_name_into_food_aliases(maker):
             huge = await _make_custom_food(session, "huge apple", 130)
         async with transaction(session):
             food, _, _ = await group_foods(
-                session, USER, FoodCreate(name="Apple", portion_ids=[small], default_portion_id=small),
+                session,
+                USER,
+                FoodCreate(name="Apple", portion_ids=[small], default_portion_id=small),
                 DateTimeValue.now(tz=UTC),
             )
         async with transaction(session):

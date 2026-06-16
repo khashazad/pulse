@@ -95,9 +95,7 @@ class FoodsRepository:
         - dict[str, Any] | None: Row or ``None``.
         """
         stmt = (
-            select(*_row_columns())
-            .where(foods.c.id == food_id)
-            .where(foods.c.user_key == user_key)
+            select(*_row_columns()).where(foods.c.id == food_id).where(foods.c.user_key == user_key)
         )
         result = await self._session.execute(stmt)
         row = result.mappings().first()

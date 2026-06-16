@@ -14,7 +14,6 @@ from datetime import datetime as DateTimeValue
 from typing import Literal
 from uuid import UUID
 
-
 from pydantic import BaseModel, Field, model_validator
 
 CustomFoodBasis = Literal["per_100g", "per_serving", "per_unit"]

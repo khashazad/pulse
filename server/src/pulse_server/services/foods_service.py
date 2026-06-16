@@ -85,7 +85,10 @@ async def group_foods(
     except CrossTenantReferenceError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    if payload.default_portion_id is not None and payload.default_portion_id not in payload.portion_ids:
+    if (
+        payload.default_portion_id is not None
+        and payload.default_portion_id not in payload.portion_ids
+    ):
         raise HTTPException(status_code=400, detail="default_portion_id must be one of portion_ids")
 
     normalized = normalize_name(payload.name)
@@ -375,9 +378,7 @@ async def detach_portion(
     if food.get("default_portion_id") == custom_food_id:
         remaining = await cf_repo.list_by_food(food_id)
         new_default = remaining[0]["id"] if remaining else None
-        await foods_repo.update_fields(
-            food_id, user_key, {"default_portion_id": new_default}, now
-        )
+        await foods_repo.update_fields(food_id, user_key, {"default_portion_id": new_default}, now)
     # Strip the portion's name from the Food's aliases (the alias-uniqueness
     # trigger rejects a standalone row whose name is still an alias), then
     # restore the portion's own memory row so it resolves again.

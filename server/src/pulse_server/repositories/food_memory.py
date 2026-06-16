@@ -190,23 +190,23 @@ class FoodMemoryRepository:
         **Outputs:**
         - dict[str, Any]: The upserted row.
         """
-        values: dict[str, Any] = dict(
-            user_key=user_key,
-            name=name,
-            normalized_name=normalized_name,
-            usda_fdc_id=None,
-            usda_description=None,
-            custom_food_id=custom_food_id,
-            basis=None,
-            serving_size=None,
-            serving_size_unit=None,
-            calories=None,
-            protein_g=None,
-            carbs_g=None,
-            fat_g=None,
-            created_at=now,
-            updated_at=now,
-        )
+        values: dict[str, Any] = {
+            "user_key": user_key,
+            "name": name,
+            "normalized_name": normalized_name,
+            "usda_fdc_id": None,
+            "usda_description": None,
+            "custom_food_id": custom_food_id,
+            "basis": None,
+            "serving_size": None,
+            "serving_size_unit": None,
+            "calories": None,
+            "protein_g": None,
+            "carbs_g": None,
+            "fat_g": None,
+            "created_at": now,
+            "updated_at": now,
+        }
         if aliases is not None:
             values["aliases"] = aliases
         insert_stmt = pg_insert(food_memory).values(**values)
@@ -416,24 +416,24 @@ class FoodMemoryRepository:
         **Outputs:**
         - dict[str, Any]: The upserted row.
         """
-        values: dict[str, Any] = dict(
-            user_key=user_key,
-            name=name,
-            normalized_name=normalized_name,
-            usda_fdc_id=None,
-            usda_description=None,
-            custom_food_id=None,
-            food_id=food_id,
-            basis=None,
-            serving_size=None,
-            serving_size_unit=None,
-            calories=None,
-            protein_g=None,
-            carbs_g=None,
-            fat_g=None,
-            created_at=now,
-            updated_at=now,
-        )
+        values: dict[str, Any] = {
+            "user_key": user_key,
+            "name": name,
+            "normalized_name": normalized_name,
+            "usda_fdc_id": None,
+            "usda_description": None,
+            "custom_food_id": None,
+            "food_id": food_id,
+            "basis": None,
+            "serving_size": None,
+            "serving_size_unit": None,
+            "calories": None,
+            "protein_g": None,
+            "carbs_g": None,
+            "fat_g": None,
+            "created_at": now,
+            "updated_at": now,
+        }
         if aliases is not None:
             values["aliases"] = aliases
         insert_stmt = pg_insert(food_memory).values(**values)
