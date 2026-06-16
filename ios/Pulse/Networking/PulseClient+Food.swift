@@ -5,23 +5,10 @@
 /// behaviour; only the shared transport now lives on `http`.
 import Foundation
 
-/// Request body for `PATCH /custom-foods/{id}`. Only `name` is sent today; the
-/// optional field is encoded only when present so an omitted key never appears
-/// as `null` (matching the server's partial-update contract).
+/// Request body for `PATCH /custom-foods/{id}`. Carries the new name; relies on
+/// synthesized `Encodable` since the only field is always provided.
 private struct UpdateCustomFoodRequest: Encodable {
-    let name: String?
-
-    enum CodingKeys: String, CodingKey { case name }
-
-    /// Encodes only the non-nil fields so omitted keys do not appear as `null`.
-    /// Inputs:
-    ///   - encoder: the encoder to write into.
-    /// Outputs: nothing.
-    /// Exceptions: rethrows any encoding error.
-    func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encodeIfPresent(name, forKey: .name)
-    }
+    let name: String
 }
 
 extension PulseClient {

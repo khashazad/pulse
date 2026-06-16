@@ -99,6 +99,18 @@ final class CustomFoodClientTests: XCTestCase {
         } catch { XCTFail("unexpected: \(error)") }
     }
 
+    func test_updateCustomFood_404MapsToNotFound() async {
+        let (client, _) = makeClient { req in
+            (HTTPURLResponse(url: req.url!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data())
+        }
+        do {
+            _ = try await client.updateCustomFood(id: Self.id, name: "X")
+            XCTFail("expected error")
+        } catch let e as PulseError {
+            XCTAssertEqual(e, .notFound)
+        } catch { XCTFail("unexpected: \(error)") }
+    }
+
     func test_deleteCustomFood_404MapsToNotFound() async {
         let (client, _) = makeClient { req in
             (HTTPURLResponse(url: req.url!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data())
