@@ -14,8 +14,10 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pulse_server.models import CustomFoodResponse, ResolvedFood
-from pulse_server.models.adapters import custom_food_response
+from pulse_server.models.adapters import custom_food_response, food_portion
+from pulse_server.repositories.custom_foods import CustomFoodsRepository
 from pulse_server.repositories.food_memory import FoodMemoryRepository
+from pulse_server.repositories.foods import FoodsRepository
 from pulse_server.repositories.tables import food_memory
 from pulse_server.services.alias_utils import assert_alias_available
 from pulse_server.services.normalize import normalize_name, optional_float
@@ -39,10 +41,13 @@ async def resolve_food_by_name(
 
     **Outputs:**
     - ResolvedFood: ``type`` is ``"none"`` when no memory entry exists or
-      when the entry targets a grouped Food (Food-target rows carry no inline
-      macros; full Food + portion resolution is part of the MCP Foods work);
-      otherwise ``"memory_usda"`` or ``"custom_food"`` with all fields
-      needed to scale macros and call ``log_food``.
+      when the referenced Food no longer exists in the database; ``"memory_usda"``
+      or ``"custom_food"`` with all fields needed to scale macros and call
+      ``log_food``; or ``"food"`` when the entry targets a grouped Food — in
+      that case ``portions`` lists every :class:`FoodPortion` (each with its
+      own ``custom_food_id`` and per-portion macros), ``default_portion_id``
+      identifies the suggested starting selection, and the caller picks a
+      portion, scales it, and logs with that portion's ``custom_food_id``.
 
     **Exceptions:**
     - sqlalchemy.exc.SQLAlchemyError: Raised when SQL execution fails.
@@ -68,11 +73,19 @@ async def resolve_food_by_name(
         )
 
     if row["food_id"] is not None:
-        # Food-target memory rows (grouped foods) carry no inline macros here;
-        # full Food + portion resolution is part of the MCP Foods work. Until
-        # then a grouped name resolves to a graceful miss rather than crashing
-        # on int(None) for usda_fdc_id.
-        return ResolvedFood(type="none")
+        foods_repo = FoodsRepository(session)
+        cf_repo = CustomFoodsRepository(session)
+        food = await foods_repo.get_by_id(row["food_id"], user_key)
+        if food is None:
+            return ResolvedFood(type="none")
+        portion_rows = await cf_repo.list_by_food(row["food_id"])
+        return ResolvedFood(
+            type="food",
+            name=row["name"],
+            food_id=row["food_id"],
+            default_portion_id=food["default_portion_id"],
+            portions=[food_portion(p) for p in portion_rows],
+        )
 
     return ResolvedFood(
         type="memory_usda",
