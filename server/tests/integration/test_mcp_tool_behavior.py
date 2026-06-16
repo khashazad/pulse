@@ -80,7 +80,7 @@ async def mcp_server():
         await session.execute(
             text(
                 "truncate table food_entries, meal_items, meals, food_memory, "
-                "custom_foods, daily_logs, daily_target_profile, containers, weight_entries "
+                "foods, custom_foods, daily_logs, daily_target_profile, containers, weight_entries "
                 "restart identity cascade"
             )
         )
@@ -645,6 +645,70 @@ async def test_delete_custom_food_referenced_raises_tool_error(mcp_server) -> No
             await client.call_tool("delete_custom_food", {"custom_food_id": cf_id})
     assert _raised_tool_error(exc_info)
     assert "referenced" in str(exc_info.value).lower()
+
+
+@pytest.mark.asyncio
+async def test_save_custom_food_attaches_portion(mcp_server) -> None:
+    """``save_custom_food`` with ``food_id`` attaches the new food as a portion of an existing Food."""
+    from datetime import datetime as DateTimeValue
+    from zoneinfo import ZoneInfo
+
+    from pulse_server.config import get_settings
+    from pulse_server.models import CustomFoodCreate
+    from pulse_server.models.foods import FoodCreate
+    from pulse_server.services.custom_foods_service import upsert_custom_food_and_remember
+    from pulse_server.services.foods_service import group_foods
+
+    settings = get_settings()
+    user_key = settings.legacy_user_key
+    from zoneinfo import ZoneInfo
+
+    tz = ZoneInfo(settings.timezone)
+    now = DateTimeValue.now(tz=tz)
+
+    # Seed an initial portion and create a grouped Food that contains it.
+    async with db.get_session() as session:
+        async with session.begin():
+            seed_cf = await upsert_custom_food_and_remember(
+                session=session,
+                user_key=user_key,
+                payload=CustomFoodCreate(
+                    name="small apple",
+                    basis="per_unit",
+                    calories=80,
+                    protein_g=0.4,
+                    carbs_g=21.0,
+                    fat_g=0.3,
+                ),
+                now=now,
+            )
+            food_row, _portions, _aliases = await group_foods(
+                session=session,
+                user_key=user_key,
+                payload=FoodCreate(name="Apple", portion_ids=[seed_cf["id"]]),
+                now=now,
+            )
+    food_id_str = str(food_row["id"])
+
+    # Via the MCP tool, create a new portion and attach it to the Food.
+    async with Client(mcp_server) as client:
+        result = await client.call_tool(
+            "save_custom_food",
+            {
+                "name": "huge apple",
+                "basis": "per_unit",
+                "calories": 130,
+                "protein_g": 0.7,
+                "carbs_g": 34.0,
+                "fat_g": 0.4,
+                "food_id": food_id_str,
+                "portion_label": "huge",
+            },
+        )
+
+    payload = result.structured_content
+    assert str(payload["food_id"]) == food_id_str
+    assert payload["portion_label"] == "huge"
 
 
 # --------------------------------------------------------------------------- #

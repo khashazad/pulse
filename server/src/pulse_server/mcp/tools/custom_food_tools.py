@@ -12,6 +12,7 @@ from datetime import datetime as DateTimeValue
 from typing import Literal
 from uuid import UUID
 
+from fastapi import HTTPException
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 from pydantic import Field
@@ -26,7 +27,9 @@ from pulse_server.models import (
     custom_food_response,
 )
 from pulse_server.repositories.custom_foods import CustomFoodsRepository
+from pulse_server.repositories.foods import FoodsRepository
 from pulse_server.services.custom_foods_service import upsert_custom_food_and_remember
+from pulse_server.services.foods_service import attach_portion
 from pulse_server.services.normalize import normalize_name
 
 
@@ -55,12 +58,20 @@ def register(mcp: FastMCP, ctx: ToolContext) -> None:
         serving_size_unit: str | None = None,
         source: Literal["manual", "photo", "corrected"] = "manual",
         notes: str | None = None,
+        food_id: str | None = None,
+        food_name: str | None = None,
+        portion_label: str | None = None,
     ) -> CustomFoodResponse:
         """Create or update a user-defined food (no USDA equivalent). Also writes food_memory
         so future mentions of `name` resolve to this custom food automatically.
 
         For photo-derived foods, default `basis="per_serving"` and provide `serving_size`/
         `serving_size_unit` (e.g. 1 / "wrap"). The macros are per the indicated basis.
+
+        To file this food as a portion of an existing grouped food, pass `food_id`
+        (preferred) or `food_name` plus an optional `portion_label` (e.g. "large").
+        The food is created, then attached as a portion; its name folds into the
+        Food's aliases so future mentions resolve to the Food.
         """
         payload = CustomFoodCreate(
             name=name,
@@ -79,6 +90,28 @@ def register(mcp: FastMCP, ctx: ToolContext) -> None:
             row = await upsert_custom_food_and_remember(
                 session=session, user_key=user_key, payload=payload, now=now
             )
+            target_food_id: UUID | None = None
+            if food_id is not None:
+                try:
+                    target_food_id = UUID(food_id)
+                except ValueError as exc:
+                    raise ToolError(f"Invalid food_id '{food_id}'") from exc
+            elif food_name is not None:
+                foods_repo = FoodsRepository(session)
+                food = await foods_repo.get_by_name(user_key, normalize_name(food_name))
+                if food is None:
+                    raise ToolError(f"No food named '{food_name}' to attach to")
+                target_food_id = food["id"]
+            if target_food_id is not None:
+                try:
+                    await attach_portion(
+                        session, user_key, target_food_id, row["id"], portion_label, now
+                    )
+                except HTTPException as exc:
+                    raise ToolError(str(exc.detail)) from exc
+                refreshed = await CustomFoodsRepository(session).get_by_id(row["id"], user_key)
+                if refreshed is not None:
+                    row = refreshed
         return custom_food_response(row)
 
     @mcp.tool
