@@ -1,9 +1,28 @@
 /// `PulseClient` food-domain endpoints: the daily summary, raw log listing,
 /// food-entry batch writes and single-entry deletes, USDA search proxy,
-/// custom foods, and food memory.
+/// custom foods, food memory, and custom-food mutations.
 /// Pure code organization — every method keeps its original signature and
 /// behaviour; only the shared transport now lives on `http`.
 import Foundation
+
+/// Request body for `PATCH /custom-foods/{id}`. Only `name` is sent today; the
+/// optional field is encoded only when present so an omitted key never appears
+/// as `null` (matching the server's partial-update contract).
+private struct UpdateCustomFoodRequest: Encodable {
+    let name: String?
+
+    enum CodingKeys: String, CodingKey { case name }
+
+    /// Encodes only the non-nil fields so omitted keys do not appear as `null`.
+    /// Inputs:
+    ///   - encoder: the encoder to write into.
+    /// Outputs: nothing.
+    /// Exceptions: rethrows any encoding error.
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeIfPresent(name, forKey: .name)
+    }
+}
 
 extension PulseClient {
     // MARK: - read
@@ -114,5 +133,34 @@ extension PulseClient {
         let url = try http.makeURL(path: "/food-memory", query: [])
         let list: FoodMemoryList = try await fetch(url: url)
         return list.entries
+    }
+
+    /// Renames a custom food (`PATCH /custom-foods/{id}`).
+    /// Inputs:
+    ///   - id: the custom food's UUID.
+    ///   - name: the new display name.
+    /// Outputs: the updated `CustomFood` decoded from the response.
+    /// Exceptions: `PulseError.server(status: 409)` when the name collides with
+    /// another custom food; `.notFound` when the id is not owned; other
+    /// `PulseError` on transport, auth, or decoding failure.
+    func updateCustomFood(id: UUID, name: String) async throws -> CustomFood {
+        let url = try http.makeURL(path: "/custom-foods/\(id.uuidString.lowercased())", query: [])
+        let body = try JSONEncoder.pulseDefault().encode(UpdateCustomFoodRequest(name: name))
+        return try await sendJSON(url: url, method: "PATCH", body: body)
+    }
+
+    /// Deletes a custom food (`DELETE /custom-foods/{id}`).
+    /// Inputs:
+    ///   - id: the custom food's UUID.
+    /// Outputs: nothing; the server responds 204 on success.
+    /// Exceptions: `PulseError.server(status: 409)` when the food is still
+    /// referenced by past entries or meal items; `.notFound` when the id is not
+    /// owned; other `PulseError` on transport or auth failure.
+    func deleteCustomFood(id: UUID) async throws {
+        let url = try http.makeURL(path: "/custom-foods/\(id.uuidString.lowercased())", query: [])
+        var req = URLRequest(url: url)
+        req.httpMethod = "DELETE"
+        http.applyAuth(&req)
+        try await sendNoBody(request: req)
     }
 }
