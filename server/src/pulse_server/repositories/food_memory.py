@@ -53,6 +53,7 @@ def _row_columns() -> tuple[Any, ...]:
         food_memory.c.usda_fdc_id,
         food_memory.c.usda_description,
         food_memory.c.custom_food_id,
+        food_memory.c.food_id,
         food_memory.c.basis,
         food_memory.c.serving_size,
         food_memory.c.serving_size_unit,
@@ -369,6 +370,92 @@ class FoodMemoryRepository:
                 updated_at=now,
             )
             .returning(*_row_columns())
+        )
+        result = await self._session.execute(stmt)
+        row = result.mappings().first()
+        return dict(row) if row else None
+
+    async def upsert_food(
+        self,
+        user_key: str,
+        name: str,
+        normalized_name: str,
+        food_id: UUID,
+        now: DateTimeValue,
+        aliases: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Upsert a Food-pointer memory entry; macros live on the Food's portions.
+
+        **Inputs:**
+        - user_key (str): Owning user.
+        - name (str): Original-cased Food name.
+        - normalized_name (str): Lookup key.
+        - food_id (UUID): Linked Food.
+        - now (DateTimeValue): Timestamp for ``created_at``/``updated_at``.
+        - aliases (list[str] | None): Optional alias array to set.
+
+        **Outputs:**
+        - dict[str, Any]: The upserted row.
+        """
+        values: dict[str, Any] = dict(
+            user_key=user_key,
+            name=name,
+            normalized_name=normalized_name,
+            usda_fdc_id=None,
+            usda_description=None,
+            custom_food_id=None,
+            food_id=food_id,
+            basis=None,
+            serving_size=None,
+            serving_size_unit=None,
+            calories=None,
+            protein_g=None,
+            carbs_g=None,
+            fat_g=None,
+            created_at=now,
+            updated_at=now,
+        )
+        if aliases is not None:
+            values["aliases"] = aliases
+        insert_stmt = pg_insert(food_memory).values(**values)
+        set_: dict[str, Any] = {
+            "name": insert_stmt.excluded.name,
+            "usda_fdc_id": None,
+            "usda_description": None,
+            "custom_food_id": None,
+            "food_id": insert_stmt.excluded.food_id,
+            "basis": None,
+            "serving_size": None,
+            "serving_size_unit": None,
+            "calories": None,
+            "protein_g": None,
+            "carbs_g": None,
+            "fat_g": None,
+            "updated_at": now,
+        }
+        if aliases is not None:
+            set_["aliases"] = insert_stmt.excluded.aliases
+        stmt = insert_stmt.on_conflict_do_update(
+            index_elements=[food_memory.c.user_key, food_memory.c.normalized_name],
+            set_=set_,
+        ).returning(*_row_columns())
+        result = await self._session.execute(stmt)
+        return dict(result.mappings().one())
+
+    async def get_by_food_id(self, user_key: str, food_id: UUID) -> dict[str, Any] | None:
+        """Fetch the memory entry pointing at a Food (carries its aliases).
+
+        **Inputs:**
+        - user_key (str): Owner.
+        - food_id (UUID): Linked Food.
+
+        **Outputs:**
+        - dict[str, Any] | None: Row when found, else ``None``.
+        """
+        stmt = (
+            select(*_row_columns())
+            .where(food_memory.c.user_key == user_key)
+            .where(food_memory.c.food_id == food_id)
         )
         result = await self._session.execute(stmt)
         row = result.mappings().first()
