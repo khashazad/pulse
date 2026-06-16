@@ -38,6 +38,9 @@ struct CustomFoodDetailView: View {
         .toolbarBackground(.visible, for: .navigationBar)
         .task {
             if model == nil { model = CustomFoodDetailModel(food: food, auth: auth) }
+            // Containers feed the log sheet's weigh mode; loading them here keeps
+            // the sheet instant when the user taps "Log to today".
+            await model?.loadContainers()
         }
     }
 
@@ -153,12 +156,7 @@ struct CustomFoodDetailView: View {
         VStack(spacing: 10) {
             PrimaryActionButton(title: "Log to today", leading: .icon("plus.circle.fill"), disabled: false) {
                 model.resetLogState()
-                // Containers are only needed for the log sheet's weigh mode, so fetch
-                // them lazily here rather than on every detail-screen open.
-                Task {
-                    if model.containers.isEmpty { await model.loadContainers() }
-                    showLogSheet = true
-                }
+                showLogSheet = true
             }
             Button {
                 renameText = model.food.name
@@ -185,8 +183,24 @@ struct CustomFoodDetailView: View {
                     .ctpCard()
             }
             .buttonStyle(.plain)
+            deleteStatusRow(model: model)
 
             logStatusRow(model: model)
+        }
+    }
+
+    /// Inline error row for a failed delete (the confirmation dialog dismisses on
+    /// tap, so the error — e.g. a 409 when the food is still referenced — has to
+    /// surface here rather than in the dialog).
+    /// Inputs:
+    ///   - model: the bound detail model.
+    /// Outputs: a red error label when the delete failed, else empty.
+    @ViewBuilder
+    private func deleteStatusRow(model: CustomFoodDetailModel) -> some View {
+        if case .failed = model.deleteState {
+            Label(model.deleteErrorMessage, systemImage: "exclamationmark.triangle")
+                .font(.system(size: 12))
+                .foregroundStyle(Theme.CTP.red)
         }
     }
 
