@@ -13,6 +13,8 @@ from pulse_server.models.adapters import (
     container_response,
     custom_food_response,
     food_memory_entry,
+    food_portion,
+    food_response,
     macro_targets_from_row,
     meal_item_response,
     meal_response,
@@ -56,6 +58,14 @@ from pulse_server.models.food_memory import (
     FoodMemoryUsdaWrite,
     ResolvedFood,
 )
+from pulse_server.models.foods import (
+    AddPortionRequest,
+    FoodCreate,
+    FoodListResponse,
+    FoodPortion,
+    FoodResponse,
+    FoodUpdate,
+)
 from pulse_server.models.meals import (
     MealCreate,
     MealItemCreate,
@@ -73,6 +83,7 @@ from pulse_server.models.weight import (
 )
 
 __all__ = [
+    "AddPortionRequest",
     "CaloriesDailyRow",
     "ContainerCreate",
     "ContainerPhotoStatus",
@@ -92,12 +103,17 @@ __all__ = [
     "EntriesCreateRequest",
     "EntriesCreateResponse",
     "EntriesListResponse",
+    "FoodCreate",
     "FoodEntryCreate",
     "FoodEntryResponse",
+    "FoodListResponse",
     "FoodMemoryCustomWrite",
     "FoodMemoryEntry",
     "FoodMemoryListResponse",
     "FoodMemoryUsdaWrite",
+    "FoodPortion",
+    "FoodResponse",
+    "FoodUpdate",
     "LogsListResponse",
     "MacroFields",
     "MacroTargets",
@@ -118,6 +134,8 @@ __all__ = [
     "container_response",
     "custom_food_response",
     "food_memory_entry",
+    "food_portion",
+    "food_response",
     "macro_targets_from_row",
     "meal_item_response",
     "meal_response",

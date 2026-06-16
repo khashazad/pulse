@@ -15,6 +15,7 @@ from pulse_server.models.common import MacroTargets
 from pulse_server.models.containers import ContainerResponse
 from pulse_server.models.custom_foods import CustomFoodResponse
 from pulse_server.models.food_memory import FoodMemoryEntry
+from pulse_server.models.foods import FoodPortion, FoodResponse
 from pulse_server.models.meals import MealItemResponse, MealResponse, MealSummary
 
 
@@ -64,6 +65,8 @@ def custom_food_response(row: dict[str, Any]) -> CustomFoodResponse:
         fat_g=float(row["fat_g"]),
         source=row["source"],
         notes=row["notes"],
+        food_id=row.get("food_id"),
+        portion_label=row.get("portion_label"),
         created_at=row["created_at"],
         updated_at=row["updated_at"],
     )
@@ -176,6 +179,57 @@ def macro_targets_from_row(row: dict[str, Any]) -> MacroTargets:
         protein_g=float(row["protein_g_target"]),
         carbs_g=float(row["carbs_g_target"]),
         fat_g=float(row["fat_g_target"]),
+    )
+
+
+def food_portion(row: dict[str, Any]) -> FoodPortion:
+    """Adapt a portion (``custom_foods`` row) to its nested Food-portion DTO.
+
+    **Inputs:**
+    - row (dict[str, Any]): Column→value mapping for a portion row.
+
+    **Outputs:**
+    - FoodPortion: Portion DTO with the row's ``portion_label`` as ``label``.
+    """
+    return FoodPortion(
+        custom_food_id=row["id"],
+        label=row.get("portion_label"),
+        basis=row["basis"],
+        serving_size=None if row["serving_size"] is None else float(row["serving_size"]),
+        serving_size_unit=row["serving_size_unit"],
+        calories=int(row["calories"]),
+        protein_g=float(row["protein_g"]),
+        carbs_g=float(row["carbs_g"]),
+        fat_g=float(row["fat_g"]),
+    )
+
+
+def food_response(
+    food_row: dict[str, Any],
+    portion_rows: list[dict[str, Any]],
+    aliases: list[str],
+) -> FoodResponse:
+    """Adapt a ``foods`` row plus its portions and aliases to the Food DTO.
+
+    **Inputs:**
+    - food_row (dict[str, Any]): Column→value mapping from ``FoodsRepository``.
+    - portion_rows (list[dict[str, Any]]): The Food's portion rows.
+    - aliases (list[str]): Aliases from the Food's ``food_memory`` row.
+
+    **Outputs:**
+    - FoodResponse: Nested Food DTO.
+    """
+    return FoodResponse(
+        id=food_row["id"],
+        user_key=food_row["user_key"],
+        name=food_row["name"],
+        normalized_name=food_row["normalized_name"],
+        notes=food_row.get("notes"),
+        default_portion_id=food_row.get("default_portion_id"),
+        aliases=aliases,
+        portions=[food_portion(r) for r in portion_rows],
+        created_at=food_row["created_at"],
+        updated_at=food_row["updated_at"],
     )
 
 
