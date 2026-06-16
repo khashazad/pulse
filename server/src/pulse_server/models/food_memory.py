@@ -20,6 +20,7 @@ from pydantic import BaseModel, Field
 
 from pulse_server.models.common import MacroFields
 from pulse_server.models.custom_foods import CustomFoodBasis, CustomFoodResponse
+from pulse_server.models.foods import FoodPortion
 
 
 class FoodMemoryUsdaWrite(MacroFields):
@@ -82,15 +83,28 @@ class ResolvedFood(BaseModel):
 
     Always includes basis + macros so the model can scale them to the
     user's quantity before calling ``log_food``. ``type`` discriminates
-    between a USDA memory hit, a custom-food hit, and a miss.
+    between a USDA memory hit, a custom-food hit, a grouped Food hit,
+    and a miss.
+
+    ``type="memory_usda"`` — USDA memory hit; use ``usda_fdc_id`` + cached macros.
+    ``type="custom_food"`` — custom-food hit; use ``custom_food_id`` + cached macros.
+    ``type="food"`` — grouped Food hit; ``portions`` lists every :class:`FoodPortion`
+    (each with its own ``custom_food_id`` + per-portion macros). The caller picks a
+    portion, scales its macros to the user's quantity, and logs using that portion's
+    ``custom_food_id``. ``default_portion_id`` identifies the suggested starting
+    portion (may be ``None`` if none was designated).
+    ``type="none"`` — no match; fall back to USDA search.
     """
 
-    type: Literal["memory_usda", "custom_food", "none"]
+    type: Literal["memory_usda", "custom_food", "food", "none"]
     name: str | None = None
     usda_fdc_id: int | None = None
     usda_description: str | None = None
     custom_food_id: UUID | None = None
     custom_food: CustomFoodResponse | None = None
+    food_id: UUID | None = None
+    default_portion_id: UUID | None = None
+    portions: list[FoodPortion] = Field(default_factory=list)
     basis: CustomFoodBasis | None = None
     serving_size: float | None = None
     serving_size_unit: str | None = None
