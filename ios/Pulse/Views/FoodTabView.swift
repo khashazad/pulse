@@ -54,12 +54,16 @@ struct FoodTabView: View {
         .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always),
                     prompt: section == .meals ? "Search meals" : "Search foods")
         .task {
-            await mealsModel.load()
-            await foodsModel.load()
+            // Independent fetches — load concurrently so a cold tab open isn't
+            // gated on one then the other.
+            async let meals: Void = mealsModel.load()
+            async let foods: Void = foodsModel.load()
+            _ = await (meals, foods)
         }
         .refreshable {
-            await mealsModel.load()
-            await foodsModel.load()
+            async let meals: Void = mealsModel.load()
+            async let foods: Void = foodsModel.load()
+            _ = await (meals, foods)
         }
     }
 
