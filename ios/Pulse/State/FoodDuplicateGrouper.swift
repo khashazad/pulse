@@ -35,6 +35,20 @@ enum FoodDuplicateGrouper {
         }
     }
 
+    /// Suggests a parent-Food name for a set of foods being grouped.
+    /// Inputs:
+    ///   - foods: the custom foods selected for grouping (>= 1).
+    /// Outputs: the shared size-stripped stem, title-cased, when all foods share
+    ///   one non-empty stem; otherwise the first food's trimmed name; "" if empty.
+    static func suggestedName(for foods: [CustomFood]) -> String {
+        guard let first = foods.first else { return "" }
+        let stems = Set(foods.map { stem($0.name) })
+        if stems.count == 1, let only = stems.first, !only.isEmpty {
+            return only.split(separator: " ").map { $0.capitalized }.joined(separator: " ")
+        }
+        return first.name.trimmingCharacters(in: .whitespaces)
+    }
+
     /// Computes the order-independent stem key for a name.
     /// Inputs:
     ///   - name: the food name.

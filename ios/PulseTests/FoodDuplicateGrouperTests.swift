@@ -28,4 +28,24 @@ final class FoodDuplicateGrouperTests: XCTestCase {
         ])
         XCTAssertTrue(clusters.isEmpty)
     }
+
+    func test_suggestedName_sharedStemTitleCased() {
+        let name = FoodDuplicateGrouper.suggestedName(for: [
+            food("small apple", "00000000-0000-0000-0000-000000000001"),
+            food("medium apple", "00000000-0000-0000-0000-000000000002"),
+        ])
+        XCTAssertEqual(name, "Apple")
+    }
+
+    func test_suggestedName_mixedFallsBackToFirstName() {
+        let name = FoodDuplicateGrouper.suggestedName(for: [
+            food("apple", "00000000-0000-0000-0000-000000000001"),
+            food("banana", "00000000-0000-0000-0000-000000000002"),
+        ])
+        XCTAssertEqual(name, "apple")
+    }
+
+    func test_suggestedName_emptyReturnsEmpty() {
+        XCTAssertEqual(FoodDuplicateGrouper.suggestedName(for: []), "")
+    }
 }
