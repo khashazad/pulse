@@ -34,6 +34,9 @@ from pulse_server.routers import (
     custom_foods as custom_foods_router,
 )
 from pulse_server.routers import (
+    foods as foods_router,
+)
+from pulse_server.routers import (
     entries,
     logs,
     summary,
@@ -146,6 +149,7 @@ app.include_router(usda_router.router)
 app.include_router(logs.router)
 app.include_router(containers_router.router)
 app.include_router(custom_foods_router.router)
+app.include_router(foods_router.router)
 app.include_router(food_memory_router.router)
 app.include_router(meals_router.router)
 app.include_router(weight_router.router)
