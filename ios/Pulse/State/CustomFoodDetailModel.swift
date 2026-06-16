@@ -149,8 +149,8 @@ final class CustomFoodDetailModel {
             let n = NumericInput.formatBare(value)
             switch unit {
             case .grams: return "\(n) g"
-            case .servings: return "\(n) \(value == 1 ? "serving" : "servings")"
-            case .units: return "\(n) \(value == 1 ? "unit" : "units")"
+            case .servings: return "\(n) \(abs(value - 1) < 1e-9 ? "serving" : "servings")"
+            case .units: return "\(n) \(abs(value - 1) < 1e-9 ? "unit" : "units")"
             }
         case .weighed(let grossG):
             let tare = containers.first { $0.id == item.containerId }?.tareWeightG ?? 0

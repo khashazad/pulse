@@ -69,4 +69,72 @@ final class CustomFoodDetailModelTests: XCTestCase {
         if case .failed = model.deleteState {} else { return XCTFail("expected failed") }
         XCTAssertTrue(model.deleteErrorMessage.contains("used by"), model.deleteErrorMessage)
     }
+
+    // MARK: - log(_:) path
+
+    /// Minimal nutrition stub; the log path only reads `item.macros`, not this.
+    private func nutrition() -> FoodNutrition {
+        FoodNutrition(basis: .perServing, servingSize: 1, servingSizeUnit: "scoop",
+                      caloriesPerBasis: 130, proteinGPerBasis: 25, carbsGPerBasis: 3, fatGPerBasis: 1.5)
+    }
+
+    /// Builds a custom-food batch item for the log path.
+    /// Inputs:
+    ///   - customFoodId: the custom-food reference (nil exercises the guard).
+    ///   - value: typed quantity value.
+    ///   - macros: frozen macros posted on the entry.
+    /// Outputs: a `BatchFoodItem` in typed-servings mode.
+    private func item(customFoodId: UUID?, value: Double,
+                      macros: MacroTotals = MacroTotals(calories: 260, proteinG: 50, carbsG: 6, fatG: 3)) -> BatchFoodItem {
+        BatchFoodItem(id: UUID(), displayName: "Protein Shake", usdaFdcId: nil, usdaDescription: nil,
+                      customFoodId: customFoodId, nutrition: nutrition(),
+                      quantity: .typed(value: value, unit: .servings), containerId: nil, macros: macros)
+    }
+
+    func test_log_success_setsLoggedWithDailyTotals() async {
+        let body = #"{"entries":[],"daily_totals":{"calories":260,"protein_g":50.0,"carbs_g":6.0,"fat_g":3.0}}"#
+        let auth = makeAuth { _ in (201, Data(body.utf8)) }
+        let model = CustomFoodDetailModel(food: food(), auth: auth)
+        await model.log(item(customFoodId: Self.id, value: 2))
+        guard case .logged(let totals) = model.logState else {
+            return XCTFail("expected logged, got \(model.logState)")
+        }
+        XCTAssertEqual(totals, MacroTotals(calories: 260, proteinG: 50, carbsG: 6, fatG: 3))
+    }
+
+    func test_log_nilCustomFoodId_failsWithoutNetwork() async {
+        let auth = makeAuth { _ in
+            XCTFail("network should not be hit when customFoodId is nil")
+            return (500, Data())
+        }
+        let model = CustomFoodDetailModel(food: food(), auth: auth)
+        await model.log(item(customFoodId: nil, value: 2))
+        if case .failed = model.logState {} else { XCTFail("expected failed, got \(model.logState)") }
+    }
+
+    func test_log_typedServings_quantityTextSingularVsPlural() async throws {
+        let body = #"{"entries":[],"daily_totals":{"calories":0,"protein_g":0.0,"carbs_g":0.0,"fat_g":0.0}}"#
+
+        let authPlural = makeAuth { _ in (201, Data(body.utf8)) }
+        let modelPlural = CustomFoodDetailModel(food: food(), auth: authPlural)
+        await modelPlural.log(item(customFoodId: Self.id, value: 2))
+        XCTAssertEqual(try postedQuantityText(), "2 servings")
+
+        let authSingular = makeAuth { _ in (201, Data(body.utf8)) }
+        let modelSingular = CustomFoodDetailModel(food: food(), auth: authSingular)
+        await modelSingular.log(item(customFoodId: Self.id, value: 1))
+        XCTAssertEqual(try postedQuantityText(), "1 serving")
+    }
+
+    /// Parses `quantity_text` out of the most recently posted entries body.
+    /// The body is `{"items":[<FoodEntryCreate>...]}`; we read items[0].
+    /// Outputs: the posted `quantity_text` string.
+    /// Throws: when no body was captured or the shape is unexpected.
+    private func postedQuantityText() throws -> String {
+        let data = try XCTUnwrap(activeStubs.last?.lastRequestBody, "no request body captured")
+        let root = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any], "expected JSON object")
+        let items = try XCTUnwrap(root["items"] as? [[String: Any]], "expected items array")
+        let first = try XCTUnwrap(items.first, "empty items array")
+        return try XCTUnwrap(first["quantity_text"] as? String, "missing quantity_text")
+    }
 }
