@@ -144,7 +144,7 @@ async def group_foods(
         aliases=rolled_list,
     )
 
-    portion_rows = await cf_repo.list_by_food(food_id)
+    portion_rows = await cf_repo.list_by_food(food_id, user_key)
     return food_row, portion_rows, rolled_list
 
 
@@ -178,7 +178,7 @@ async def ungroup_food(
 
     mem = await mem_repo.get_by_food_id(user_key, food_id)
     target_portion = food.get("default_portion_id")
-    portions = await cf_repo.list_by_food(food_id)
+    portions = await cf_repo.list_by_food(food_id, user_key)
     if target_portion is None and portions:
         target_portion = portions[0]["id"]
 
@@ -221,7 +221,7 @@ async def _portions_and_aliases(
     """
     cf_repo = CustomFoodsRepository(session)
     mem_repo = FoodMemoryRepository(session)
-    portions = await cf_repo.list_by_food(food_id)
+    portions = await cf_repo.list_by_food(food_id, user_key)
     mem = await mem_repo.get_by_food_id(user_key, food_id)
     aliases = list((mem.get("aliases") if mem else None) or [])
     return portions, aliases
@@ -376,7 +376,7 @@ async def detach_portion(
     await cf_repo.set_food_link(custom_food_id, user_key, None, None, now)
     # If the detached portion was the Food's default, repoint to a remaining one.
     if food.get("default_portion_id") == custom_food_id:
-        remaining = await cf_repo.list_by_food(food_id)
+        remaining = await cf_repo.list_by_food(food_id, user_key)
         new_default = remaining[0]["id"] if remaining else None
         await foods_repo.update_fields(food_id, user_key, {"default_portion_id": new_default}, now)
     # Strip the portion's name from the Food's aliases (the alias-uniqueness

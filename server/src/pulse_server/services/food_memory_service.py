@@ -78,7 +78,7 @@ async def resolve_food_by_name(
         food = await foods_repo.get_by_id(row["food_id"], user_key)
         if food is None:
             return ResolvedFood(type="none")
-        portion_rows = await cf_repo.list_by_food(row["food_id"])
+        portion_rows = await cf_repo.list_by_food(row["food_id"], user_key)
         return ResolvedFood(
             type="food",
             name=row["name"],

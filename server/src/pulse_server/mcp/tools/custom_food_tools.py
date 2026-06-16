@@ -105,6 +105,10 @@ def register(mcp: FastMCP, ctx: ToolContext) -> None:
                     raise ToolError(f"No food named '{food_name}' to attach to")
                 target_food_id = food["id"]
             if target_food_id is not None:
+                # upsert_custom_food_and_remember above wrote a standalone memory
+                # row for this name; attach_portion deletes that row and folds the
+                # name into the parent Food's aliases. Order matters — the upsert
+                # must run first so attach_portion has the row to harvest.
                 try:
                     await attach_portion(
                         session, user_key, target_food_id, row["id"], portion_label, now
