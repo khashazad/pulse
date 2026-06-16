@@ -24,4 +24,35 @@ final class FoodTabFilterTests: XCTestCase {
     func test_filter_noMatchReturnsEmpty() {
         XCTAssertTrue(FoodTabFilter.foods([food("Egg")], query: "zzz").isEmpty)
     }
+
+    // MARK: - MealSummary helpers
+
+    /// Builds a minimal `MealSummary` by decoding from JSON. `MealSummary` only
+    /// exposes `init(from:)`, so this is the canonical construction path in tests.
+    /// Inputs:
+    ///   - name: the meal's display name.
+    /// Outputs: a `MealSummary` with all macro fields zeroed and `itemCount` of 0.
+    private func meal(_ name: String) -> MealSummary {
+        let json = """
+        {
+          "id": "\(UUID().uuidString)",
+          "name": "\(name)",
+          "normalized_name": "\(name.lowercased())",
+          "notes": null,
+          "aliases": [],
+          "item_count": 0,
+          "total_calories": 0,
+          "total_protein_g": 0.0,
+          "total_carbs_g": 0.0,
+          "total_fat_g": 0.0
+        }
+        """.data(using: .utf8)!
+        return try! JSONDecoder().decode(MealSummary.self, from: json)
+    }
+
+    func test_mealsFilter_matchesByNameCaseInsensitive() {
+        let meals = [meal("Wrap"), meal("Salad")]
+        let out = FoodTabFilter.meals(meals, query: "wr")
+        XCTAssertEqual(out.map(\.name), ["Wrap"])
+    }
 }

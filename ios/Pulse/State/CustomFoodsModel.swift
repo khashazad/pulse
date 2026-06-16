@@ -20,7 +20,11 @@ final class CustomFoodsModel {
         self.auth = auth
     }
 
-    /// Fetches the custom-foods list and updates `state`; routes 401 through AuthSession.
+    /// Fetches the custom-foods list and updates `state`. Never throws — all
+    /// failures are surfaced through `state`: `.failed(.notSignedIn)` when there
+    /// is no client, `.failed(.unauthorized)` (also routed through
+    /// `AuthSession.handleUnauthorized()`), or `.failed(.server(status:))` for
+    /// other errors. On success `state` becomes `.loaded`.
     /// Outputs: nothing; the result is reflected in `state`.
     func load() async {
         guard let client = auth?.makeClient() else {
