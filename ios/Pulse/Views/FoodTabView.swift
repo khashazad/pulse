@@ -42,6 +42,8 @@ struct FoodTabView: View {
     @State private var isSelecting = false
     @State private var selected: Set<UUID> = []
     @State private var grouping: GroupingRequest?
+    // The food pending an ungroup confirmation, if any.
+    @State private var ungroupTarget: Food?
 
     /// Toggles a grouped food's expansion in the browse list.
     /// Inputs:
@@ -95,6 +97,43 @@ struct FoodTabView: View {
                 isSelecting = false
                 selected = []
             }
+        }
+        .confirmationDialog(
+            ungroupTarget.map { "Ungroup \($0.name)?" } ?? "",
+            isPresented: Binding(get: { ungroupTarget != nil },
+                                 set: { if !$0 { ungroupTarget = nil } }),
+            titleVisibility: .visible,
+            presenting: ungroupTarget
+        ) { food in
+            Button("Ungroup", role: .destructive) {
+                Task { await ungroup(food) }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: { food in
+            Text("Its \(food.portions.count) portions become separate foods again. Your logs are unaffected.")
+        }
+    }
+
+    /// Ungroups a food: deletes the parent on the server, then restores its
+    /// portions as standalones locally (resolving each portion's full custom food
+    /// from the model's lookup). Falls back to a full reload if a portion can't be
+    /// resolved or the request fails, keeping the browse consistent.
+    /// Inputs:
+    ///   - food: the grouped food to dissolve.
+    /// Outputs: nothing; updates `foodsModel.state` via apply or reload.
+    private func ungroup(_ food: Food) async {
+        ungroupTarget = nil
+        guard let client = auth.makeClient() else { return }
+        do {
+            try await client.ungroupFood(id: food.id)
+            let restored = food.portions.compactMap { foodsModel.customFood(for: $0.customFoodId) }
+            if restored.count == food.portions.count {
+                foodsModel.applyUngrouped(foodId: food.id, restored: restored)
+            } else {
+                await foodsModel.load()
+            }
+        } catch {
+            await foodsModel.load()
         }
     }
 
@@ -165,7 +204,8 @@ struct FoodTabView: View {
                                 food: food,
                                 isExpanded: expanded.contains(food.id),
                                 onToggle: { toggle(food.id) },
-                                onSelectPortion: { onOpenPortion($0) }
+                                onSelectPortion: { onOpenPortion($0) },
+                                onUngroup: { ungroupTarget = food }
                             )
                             .opacity(isSelecting ? 0.4 : 1)
                             .disabled(isSelecting)

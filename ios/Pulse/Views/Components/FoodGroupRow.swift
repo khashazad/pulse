@@ -15,6 +15,8 @@ struct FoodGroupRow: View {
     let onToggle: () -> Void
     /// Invoked with a portion's custom-food id when a portion sub-row is tapped.
     let onSelectPortion: (UUID) -> Void
+    /// Invoked when the user taps Ungroup (shown only when expanded and non-nil).
+    var onUngroup: (() -> Void)? = nil
 
     var body: some View {
         VStack(spacing: 0) {
@@ -26,9 +28,31 @@ struct FoodGroupRow: View {
                     }
                     .buttonStyle(.plain)
                 }
+                if let onUngroup { ungroupButton(onUngroup) }
             }
         }
         .contentShape(Rectangle())
+    }
+
+    /// The Ungroup action shown at the foot of an expanded food.
+    /// Inputs:
+    ///   - action: the handler invoked when Ungroup is tapped.
+    /// Outputs: the composed ungroup button row.
+    private func ungroupButton(_ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: "rectangle.split.3x1")
+                    .font(.system(size: 12, weight: .semibold))
+                Text("Ungroup")
+                    .font(.system(size: 13, weight: .medium))
+                Spacer()
+            }
+            .foregroundStyle(Theme.CTP.red)
+            .padding(.vertical, 10)
+            .padding(.leading, 16)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     /// The collapsed header: name + portion count on the left, representative
