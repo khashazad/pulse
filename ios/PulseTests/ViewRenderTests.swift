@@ -78,6 +78,7 @@ final class ViewRenderTests: XCTestCase {
             if path == "/targets" { return ok(#"{"calories":2000,"protein_g":150,"carbs_g":200,"fat_g":60,"target_weight_lb":175}"#.data(using: .utf8)!) }
             if path == "/meals" { return ok(self.fixture("meals_with_aliases")) }
             if path.hasPrefix("/meals/") { return ok(#"{"id":"22222222-2222-2222-2222-222222222222","user_key":"khash","name":"Wrap","normalized_name":"wrap","notes":null,"created_at":"2026-05-10T12:00:00Z","updated_at":"2026-05-10T12:00:00Z","items":[]}"#.data(using: .utf8)!) }
+            if path == "/foods" { return ok(self.fixture("foods")) }
             if path == "/custom-foods" { return ok(self.fixture("custom_foods")) }
             if path == "/food-memory" { return ok(self.fixture("food_memory")) }
             if path == "/usda/search" { return ok(self.fixture("usda_search")) }
@@ -153,9 +154,10 @@ final class ViewRenderTests: XCTestCase {
     func test_render_meals() {
         render(FoodTabView(
             mealsModel: MealsModel(auth: auth),
-            foodsModel: CustomFoodsModel(auth: auth),
+            foodsModel: FoodsModel(auth: auth),
             onOpenMeal: { _ in },
-            onOpenFood: { _ in }
+            onOpenFood: { _ in },
+            onOpenPortion: { _ in }
         ))
         render(MealDetailView(summary: sampleSummary()))
     }

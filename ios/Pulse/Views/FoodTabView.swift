@@ -16,14 +16,28 @@ private enum FoodSection: String, CaseIterable, Identifiable {
 /// Food-tab root: section toggle + shared search over meals and custom foods.
 struct FoodTabView: View {
     let mealsModel: MealsModel
-    let foodsModel: CustomFoodsModel
+    let foodsModel: FoodsModel
     /// Forwards a tapped meal to the host (`RootView`) for navigation.
     let onOpenMeal: (MealSummary) -> Void
-    /// Forwards a tapped custom food to the host (`RootView`) for navigation.
+    /// Forwards a tapped standalone custom food to the host (`RootView`) for navigation.
     let onOpenFood: (CustomFood) -> Void
+    /// Forwards a tapped portion's custom-food id to the host, which resolves it
+    /// back to a full `CustomFood` and pushes the detail screen.
+    let onOpenPortion: (UUID) -> Void
 
     @State private var section: FoodSection = .meals
     @State private var query = ""
+    // Expansion persists across query changes by design: a row the user expanded
+    // reappears still-expanded after a filtering query is cleared.
+    @State private var expanded: Set<UUID> = []
+
+    /// Toggles a grouped food's expansion in the browse list.
+    /// Inputs:
+    ///   - id: the food's UUID.
+    /// Outputs: nothing; mutates `expanded`.
+    private func toggle(_ id: UUID) {
+        if expanded.contains(id) { expanded.remove(id) } else { expanded.insert(id) }
+    }
 
     /// The screen body: section picker, the active section's content, and the
     /// shared search field, with on-appear / pull-to-refresh loading of both models.
@@ -97,23 +111,37 @@ struct FoodTabView: View {
 
     // MARK: - Foods section
 
-    /// Foods section: loading / failed / empty / list states from `CustomFoodsModel`.
+    /// Foods section: loading / failed / empty / list states from `FoodsModel`.
+    /// Grouped foods render first as collapsible rows, then ungrouped standalones.
     @ViewBuilder
     private var foodsSection: some View {
         switch foodsModel.state {
         case .idle, .loading:
             loading
-        case .loaded(let foods):
-            let filtered = FoodTabFilter.foods(foods, query: query)
-            if filtered.isEmpty {
-                EmptyStateView(icon: "carrot", title: query.isEmpty ? "No saved foods" : "No matches",
+        case .loaded(let browse):
+            // Grouped foods keep the server's order (it sorts by normalized_name),
+            // so we only name-filter here; standalones are re-sorted by FoodTabFilter.foods.
+            let foods = browse.foods.filter { FoodTabFilter.matches($0.name, query: query) }
+            let standalones = FoodTabFilter.foods(browse.standalones, query: query)
+            if foods.isEmpty && standalones.isEmpty {
+                EmptyStateView(icon: "carrot",
+                               title: query.isEmpty ? "No saved foods" : "No matches",
                                description: query.isEmpty ? "Custom foods you save will appear here." : "No foods match \"\(query)\".")
             } else {
                 listCard {
-                    ForEach(Array(filtered.enumerated()), id: \.element.id) { idx, food in
+                    ForEach(Array(foods.enumerated()), id: \.element.id) { idx, food in
+                        FoodGroupRow(
+                            food: food,
+                            isExpanded: expanded.contains(food.id),
+                            onToggle: { toggle(food.id) },
+                            onSelectPortion: { onOpenPortion($0) }
+                        )
+                        if idx < foods.count - 1 || !standalones.isEmpty { divider }
+                    }
+                    ForEach(Array(standalones.enumerated()), id: \.element.id) { idx, food in
                         Button { onOpenFood(food) } label: { CustomFoodRow(food: food) }
                             .buttonStyle(.plain)
-                        if idx < filtered.count - 1 { divider }
+                        if idx < standalones.count - 1 { divider }
                     }
                 }
             }
