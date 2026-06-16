@@ -50,6 +50,29 @@ final class CustomFoodDetailModel {
         if let list = try? await client.listContainers() { containers = list }
     }
 
+    /// Runs an authenticated API call, routing a 401 through `AuthSession` and
+    /// normalizing any other error to `PulseError`. Keeps the success/failure
+    /// shell — and the auth-error routing — in one place across the three actions.
+    /// Inputs:
+    ///   - work: the async API call to run.
+    ///   - success: applied to the call's result on success.
+    ///   - failure: applied to the normalized error on failure.
+    /// Outputs: nothing; the handlers update the relevant action state.
+    private func perform<T>(
+        _ work: () async throws -> T,
+        success: (T) -> Void,
+        failure: (PulseError) -> Void
+    ) async {
+        do {
+            success(try await work())
+        } catch let error as PulseError {
+            if error == .unauthorized { auth?.handleUnauthorized() }
+            failure(error)
+        } catch {
+            failure(.server(status: -1))
+        }
+    }
+
     /// Renames the food via the API and applies the result locally on success.
     /// Inputs:
     ///   - newName: the requested new name (already trimmed by the caller).
@@ -57,16 +80,11 @@ final class CustomFoodDetailModel {
     func rename(to newName: String) async {
         guard let client = auth?.makeClient() else { renameState = .failed(.notSignedIn); return }
         renameState = .saving
-        do {
-            let updated = try await client.updateCustomFood(id: food.id, name: newName)
-            food = updated
-            renameState = .saved
-        } catch let error as PulseError {
-            if error == .unauthorized { auth?.handleUnauthorized() }
-            renameState = .failed(error)
-        } catch {
-            renameState = .failed(.server(status: -1))
-        }
+        await perform(
+            { try await client.updateCustomFood(id: food.id, name: newName) },
+            success: { food = $0; renameState = .saved },
+            failure: { renameState = .failed($0) }
+        )
     }
 
     /// Deletes the food via the API.
@@ -74,15 +92,11 @@ final class CustomFoodDetailModel {
     func delete() async {
         guard let client = auth?.makeClient() else { deleteState = .failed(.notSignedIn); return }
         deleteState = .deleting
-        do {
-            try await client.deleteCustomFood(id: food.id)
-            deleteState = .deleted
-        } catch let error as PulseError {
-            if error == .unauthorized { auth?.handleUnauthorized() }
-            deleteState = .failed(error)
-        } catch {
-            deleteState = .failed(.server(status: -1))
-        }
+        await perform(
+            { try await client.deleteCustomFood(id: food.id) },
+            success: { _ in deleteState = .deleted },
+            failure: { deleteState = .failed($0) }
+        )
     }
 
     /// Logs a chosen quantity of this food to today (server "now"). Builds a
@@ -104,15 +118,11 @@ final class CustomFoodDetailModel {
             fatG: item.macros.fatG,
             consumedAt: nil
         )
-        do {
-            let response = try await client.createEntries([payload])
-            logState = .logged(response.dailyTotals)
-        } catch let error as PulseError {
-            if error == .unauthorized { auth?.handleUnauthorized() }
-            logState = .failed(error)
-        } catch {
-            logState = .failed(.server(status: -1))
-        }
+        await perform(
+            { try await client.createEntries([payload]) },
+            success: { logState = .logged($0.dailyTotals) },
+            failure: { logState = .failed($0) }
+        )
     }
 
     /// Resets the log action to idle so stale success/failure state doesn't leak

@@ -129,10 +129,3 @@ struct RootView: View {
         }
     }
 }
-
-/// Navigation routes pushed within the Food tab's stack: a saved meal or a saved
-/// custom food. `Hashable` so it drives `navigationDestination(for:)`.
-enum FoodRoute: Hashable {
-    case meal(MealSummary)
-    case food(CustomFood)
-}

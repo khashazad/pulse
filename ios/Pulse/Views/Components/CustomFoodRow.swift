@@ -64,9 +64,6 @@ struct CustomFoodRow: View {
     /// Compact `P… · C… · F…` macro summary string with rounded grams.
     /// Outputs: monospaced summary string for the trailing column.
     private var macroSummary: String {
-        let p = Int(food.proteinG.rounded())
-        let c = Int(food.carbsG.rounded())
-        let f = Int(food.fatG.rounded())
-        return "P\(p) · C\(c) · F\(f)"
+        MacroTotals.pcfSummary(proteinG: food.proteinG, carbsG: food.carbsG, fatG: food.fatG)
     }
 }

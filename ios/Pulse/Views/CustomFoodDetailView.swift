@@ -38,7 +38,6 @@ struct CustomFoodDetailView: View {
         .toolbarBackground(.visible, for: .navigationBar)
         .task {
             if model == nil { model = CustomFoodDetailModel(food: food, auth: auth) }
-            await model?.loadContainers()
         }
     }
 
@@ -113,10 +112,9 @@ struct CustomFoodDetailView: View {
     private func heroCard(food: CustomFood) -> some View {
         let totals = MacroTotals(calories: food.calories, proteinG: food.proteinG,
                                  carbsG: food.carbsG, fatG: food.fatG)
-        let nutrition = FoodNutrition(basis: food.basis, servingSize: food.servingSize,
-                                      servingSizeUnit: food.servingSizeUnit, caloriesPerBasis: food.calories,
-                                      proteinGPerBasis: food.proteinG, carbsGPerBasis: food.carbsG,
-                                      fatGPerBasis: food.fatG)
+        // Reuse the canonical custom-food → nutrition mapping rather than rebuilding
+        // the FoodNutrition by hand (same construction `FoodSearchResult` uses).
+        let nutrition = FoodSearchResult(customFood: food).nutrition
         return VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline) {
                 Text("Per basis")
@@ -155,7 +153,12 @@ struct CustomFoodDetailView: View {
         VStack(spacing: 10) {
             PrimaryActionButton(title: "Log to today", leading: .icon("plus.circle.fill"), disabled: false) {
                 model.resetLogState()
-                showLogSheet = true
+                // Containers are only needed for the log sheet's weigh mode, so fetch
+                // them lazily here rather than on every detail-screen open.
+                Task {
+                    if model.containers.isEmpty { await model.loadContainers() }
+                    showLogSheet = true
+                }
             }
             Button {
                 renameText = model.food.name

@@ -34,8 +34,8 @@ enum FoodTabFilter {
     /// Outputs: name-sorted matches (locale-aware, case-insensitive); the full
     ///   sorted list when the trimmed query is empty.
     private static func filtered<T>(_ items: [T], query: String, name: KeyPath<T, String>) -> [T] {
-        let q = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        let matched = q.isEmpty ? items : items.filter { $0[keyPath: name].lowercased().contains(q) }
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let matched = q.isEmpty ? items : items.filter { $0[keyPath: name].localizedCaseInsensitiveContains(q) }
         return matched.sorted { $0[keyPath: name].localizedCaseInsensitiveCompare($1[keyPath: name]) == .orderedAscending }
     }
 }

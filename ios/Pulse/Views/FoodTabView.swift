@@ -53,18 +53,17 @@ struct FoodTabView: View {
         .toolbarBackground(.visible, for: .navigationBar)
         .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always),
                     prompt: section == .meals ? "Search meals" : "Search foods")
-        .task {
-            // Independent fetches — load concurrently so a cold tab open isn't
-            // gated on one then the other.
-            async let meals: Void = mealsModel.load()
-            async let foods: Void = foodsModel.load()
-            _ = await (meals, foods)
-        }
-        .refreshable {
-            async let meals: Void = mealsModel.load()
-            async let foods: Void = foodsModel.load()
-            _ = await (meals, foods)
-        }
+        .task { await loadBoth() }
+        .refreshable { await loadBoth() }
+    }
+
+    /// Loads both sections concurrently so a cold tab open (or pull-to-refresh)
+    /// isn't gated on one fetch then the other — they're independent.
+    /// Outputs: nothing; each model reflects its own result in `state`.
+    private func loadBoth() async {
+        async let meals: Void = mealsModel.load()
+        async let foods: Void = foodsModel.load()
+        _ = await (meals, foods)
     }
 
     // MARK: - Meals section
