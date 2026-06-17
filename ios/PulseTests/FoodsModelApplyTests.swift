@@ -196,4 +196,36 @@ final class FoodsModelApplyTests: XCTestCase {
             return XCTFail("expected idle, got \(model.state)")
         }
     }
+
+    /// Renaming a *portion* (a custom food that is not a standalone) still
+    /// refreshes its `customFoodsById` entry, so a later ungroup / re-open
+    /// resolves the new name rather than a stale one.
+    func test_applyRenamedStandalone_refreshesMapForPortion() async throws {
+        let model = try await loadedModel()
+        let portionId = UUID(uuidString: "33333333-3333-3333-3333-333333333333")!
+        let renamed = standalone(id: portionId, name: "renamed portion")
+
+        model.applyRenamedStandalone(renamed)
+
+        XCTAssertEqual(model.customFood(for: portionId)?.name, "renamed portion")
+    }
+
+    /// Deleting a *portion* detaches it from its parent `Food` (so the sub-row
+    /// disappears instead of becoming a dead tap), clears a default that pointed
+    /// at it, and purges the resolve map.
+    func test_applyRemovedStandalone_detachesPortionFromParentFood() async throws {
+        let model = try await loadedModel()
+        let portionId = UUID(uuidString: "33333333-3333-3333-3333-333333333333")!
+
+        model.applyRemovedStandalone(id: portionId)
+
+        guard case .loaded(let after) = model.state else {
+            return XCTFail("expected loaded")
+        }
+        let apple = try XCTUnwrap(after.foods.first { $0.name == "Apple" })
+        XCTAssertFalse(apple.portions.contains { $0.customFoodId == portionId })
+        XCTAssertEqual(apple.portions.count, 1)
+        XCTAssertNil(apple.defaultPortionId, "default pointed at the deleted portion → cleared")
+        XCTAssertNil(model.customFood(for: portionId))
+    }
 }

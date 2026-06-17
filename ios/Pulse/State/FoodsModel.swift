@@ -134,38 +134,60 @@ final class FoodsModel {
         }
     }
 
-    // Limitation: `applyRenamedStandalone`/`applyRemovedStandalone` cover the
-    // common standalone case driven from the detail screen. Renaming or deleting
-    // a *portion* (a custom food nested under a parent `Food`) via the detail
-    // screen is intentionally NOT locally applied: the label-keyed browse never
-    // surfaces a portion's name, and a portion delete self-heals on the next
-    // refresh. We deliberately do not rebuild every `Food`'s portion list here.
+    // Note on portion (vs standalone) edits from the detail screen:
+    //  - RENAME: not reflected in the browse — the label-keyed `FoodGroupRow`
+    //    never shows a portion's name — but the `customFoodsById` resolve map IS
+    //    kept current (see `applyRenamedStandalone`), so ungroup and portion
+    //    re-open use the new name.
+    //  - DELETE: the portion is detached from its parent `Food`'s portion list
+    //    (see `applyRemovedStandalone`) so the deleted sub-row disappears rather
+    //    than lingering as a dead tap (its map entry is purged, so it can't open).
 
-    /// Reflects a standalone rename locally: replaces the matching standalone in
-    /// place and refreshes its `customFoodsById` lookup entry. No-op when `state`
-    /// is not `.loaded`, or when no standalone matches `food.id`.
+    /// Reflects a custom-food rename locally: always refreshes the `customFoodsById`
+    /// lookup entry (so a renamed portion resolves to its new name on ungroup or
+    /// re-open), and additionally replaces the matching standalone in the browse
+    /// in place when one exists. No-op on the browse when `state` is not `.loaded`
+    /// or no standalone matches.
     /// Inputs:
     ///   - food: the updated custom food returned by the rename call.
-    /// Outputs: nothing; republishes `state` and updates `customFoodsById` only when
-    ///   loaded and a matching standalone is found.
+    /// Outputs: nothing; updates `customFoodsById` unconditionally and republishes
+    ///   `state` when loaded and a matching standalone is found.
     func applyRenamedStandalone(_ food: CustomFood) {
+        // Keep the resolve map fresh for ANY renamed custom food — including a
+        // portion that isn't in the standalone list — so a later ungroup or a
+        // re-open of that portion sees the new name, not a stale one.
+        customFoodsById[food.id] = food
         guard case .loaded(let browse) = state else { return }
         guard let idx = browse.standalones.firstIndex(where: { $0.id == food.id }) else { return }
         var standalones = browse.standalones
         standalones[idx] = food
         setLoaded(FoodList(foods: browse.foods, standalones: standalones))
-        customFoodsById[food.id] = food
     }
 
-    /// Reflects a standalone deletion locally: drops the matching standalone from
-    /// the browse and purges its `customFoodsById` lookup entry. No-op on `state`
-    /// unless `.loaded`.
+    /// Reflects a custom-food deletion locally: removes it from the browse —
+    /// dropping a matching standalone, and detaching it from any parent `Food`'s
+    /// portion list so a deleted portion's sub-row disappears rather than becoming
+    /// an un-openable dead tap — and purges its `customFoodsById` entry. No-op on
+    /// the browse unless `.loaded`.
     /// Inputs:
     ///   - id: the deleted custom food's UUID.
     /// Outputs: nothing; republishes `state` and removes the map entry.
     func applyRemovedStandalone(id: UUID) {
-        updateLoaded { FoodList(foods: $0.foods, standalones: $0.standalones.filter { $0.id != id }) }
         // A deleted food must not remain resolvable via `customFood(for:)`.
         customFoodsById.removeValue(forKey: id)
+        updateLoaded { list in
+            FoodList(
+                foods: list.foods.map { food in
+                    guard food.portions.contains(where: { $0.customFoodId == id }) else { return food }
+                    return Food(
+                        id: food.id, name: food.name, notes: food.notes,
+                        defaultPortionId: food.defaultPortionId == id ? nil : food.defaultPortionId,
+                        aliases: food.aliases,
+                        portions: food.portions.filter { $0.customFoodId != id }
+                    )
+                },
+                standalones: list.standalones.filter { $0.id != id }
+            )
+        }
     }
 }
