@@ -106,34 +106,11 @@ struct FoodTabView: View {
             presenting: ungroupTarget
         ) { food in
             Button("Ungroup", role: .destructive) {
-                Task { await ungroup(food) }
+                Task { await foodsModel.ungroup(food) }
             }
             Button("Cancel", role: .cancel) {}
         } message: { food in
             Text("Its \(food.portions.count) portions become separate foods again. Your logs are unaffected.")
-        }
-    }
-
-    /// Ungroups a food: deletes the parent on the server, then restores its
-    /// portions as standalones locally (resolving each portion's full custom food
-    /// from the model's lookup). Falls back to a full reload if a portion can't be
-    /// resolved or the request fails, keeping the browse consistent.
-    /// Inputs:
-    ///   - food: the grouped food to dissolve.
-    /// Outputs: nothing; updates `foodsModel.state` via apply or reload.
-    private func ungroup(_ food: Food) async {
-        ungroupTarget = nil
-        guard let client = auth.makeClient() else { return }
-        do {
-            try await client.ungroupFood(id: food.id)
-            let restored = food.portions.compactMap { foodsModel.customFood(for: $0.customFoodId) }
-            if restored.count == food.portions.count {
-                foodsModel.applyUngrouped(foodId: food.id, restored: restored)
-            } else {
-                await foodsModel.load()
-            }
-        } catch {
-            await foodsModel.load()
         }
     }
 
@@ -199,7 +176,7 @@ struct FoodTabView: View {
                     // selecting, or when standalones survive the current query — so a
                     // query that filters all standalones away leaves no phantom gap.
                     if isSelecting || !standalones.isEmpty {
-                        foodsControls(allStandalones: browse.standalones, visibleStandalones: standalones)
+                        foodsControls(allStandalones: browse.standalones)
                     }
                     VStack(spacing: 0) {
                         ForEach(Array(foods.enumerated()), id: \.element.id) { idx, food in
@@ -235,23 +212,22 @@ struct FoodTabView: View {
 
     /// The controls above the foods list: the Select/Done toggle, the
     /// "group N into food" action while selecting, and the duplicates hint.
+    /// The caller only renders this while selecting or when standalones are
+    /// visible, so the Select/Done button is always appropriate here.
     /// Inputs:
     ///   - allStandalones: the full standalone list (selection resolves against it).
-    ///   - visibleStandalones: the name-filtered standalones currently shown.
     /// Outputs: the composed controls view.
     @ViewBuilder
-    private func foodsControls(allStandalones: [CustomFood], visibleStandalones: [CustomFood]) -> some View {
+    private func foodsControls(allStandalones: [CustomFood]) -> some View {
         VStack(spacing: 10) {
             HStack {
                 Spacer()
-                if isSelecting || !visibleStandalones.isEmpty {
-                    Button(isSelecting ? "Done" : "Select") {
-                        isSelecting.toggle()
-                        if !isSelecting { selected = [] }
-                    }
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(Theme.CTP.mauve)
+                Button(isSelecting ? "Done" : "Select") {
+                    isSelecting.toggle()
+                    if !isSelecting { selected = [] }
                 }
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(Theme.CTP.mauve)
             }
             if isSelecting, selected.count >= 2 {
                 let chosen = allStandalones.filter { selected.contains($0.id) }
@@ -260,9 +236,8 @@ struct FoodTabView: View {
                     grouping = GroupingRequest(foods: chosen)
                 }
             }
-            if !isSelecting {
-                let clusters = FoodDuplicateGrouper.clusters(from: allStandalones)
-                if !clusters.isEmpty { duplicateHint(clusters: clusters) }
+            if !isSelecting, !foodsModel.duplicateClusters.isEmpty {
+                duplicateHint(clusters: foodsModel.duplicateClusters)
             }
         }
         .padding(.horizontal, 16)

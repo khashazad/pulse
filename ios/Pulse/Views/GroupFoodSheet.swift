@@ -2,8 +2,8 @@
 /// Sheet for grouping a set of standalone custom foods into one Food. Lets the
 /// user name the Food, edit each portion's label, pick the default portion, and
 /// create it via `GroupFoodSheetModel.save()`. On success it invokes `onCreated`
-/// with the new Food and the set of grouped portion ids, then dismisses. Not yet
-/// wired into the Food tab — presented standalone for now.
+/// with the new Food and the set of grouped portion ids, then dismisses.
+/// Presented from `FoodTabView`'s selection mode.
 import SwiftUI
 
 /// The grouping sheet: name field + per-portion label/default rows + create.
