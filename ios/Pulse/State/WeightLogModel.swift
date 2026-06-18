@@ -11,6 +11,19 @@ final class WeightLogModel {
     private(set) var state: LoadState<[WeightEntry]> = .idle
     private weak var auth: AuthSession?
 
+    /// Number of trailing days the weight log loads — and the floor for how far
+    /// back a missed weigh-in can be backfilled. Single source of truth shared by
+    /// `load` and the backfill UI so the load window and backfill floor can't drift.
+    static let windowDays = 89
+
+    /// Computes the earliest day in the trailing load/backfill window.
+    /// - Parameter today: The anchor date the window is measured back from.
+    /// - Returns: `today` minus `windowDays` days (falls back to `today` if date
+    ///   arithmetic fails).
+    static func windowStart(from today: Date) -> Date {
+        Calendar.current.date(byAdding: .day, value: -windowDays, to: today) ?? today
+    }
+
     /// Initializes the weight-log model.
     /// Inputs:
     ///   - auth: auth session used to construct an authenticated client.
@@ -33,8 +46,7 @@ final class WeightLogModel {
             return
         }
         state = .loading
-        let cal = Calendar.current
-        let from = cal.date(byAdding: .day, value: -89, to: today) ?? today
+        let from = Self.windowStart(from: today)
         do {
             let entries = try await client.listWeightEntries(from: from, to: today)
             state = .loaded(entries.sorted { $0.date > $1.date })

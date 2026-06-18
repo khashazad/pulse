@@ -27,13 +27,13 @@ struct WeightLogView: View {
         }
     }
 
-    /// Earliest selectable backfill date: 89 days before today, matching the
-    /// trailing window `WeightLogModel.load` fetches. Recomputed on each render;
-    /// stable within a calendar day.
-    /// - Returns: The start-of-day 89 days before today.
+    /// Earliest selectable backfill date, matching the trailing window
+    /// `WeightLogModel.load` fetches (shared via `WeightLogModel.windowStart`, so
+    /// the load window and backfill floor stay in lockstep). Recomputed on each
+    /// render; stable within a calendar day.
+    /// - Returns: The start-of-day `WeightLogModel.windowDays` days before today.
     private var backfillLowerBound: Date {
-        let today = Calendar.current.startOfDay(for: Date())
-        return Calendar.current.date(byAdding: .day, value: -89, to: today) ?? today
+        WeightLogModel.windowStart(from: Calendar.current.startOfDay(for: Date()))
     }
 
     /// The entries currently loaded, read live from the model's load state.
