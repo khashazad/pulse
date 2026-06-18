@@ -164,7 +164,7 @@ struct WeightEntrySheet: View {
     /// Inputs: none (reads `effectiveDate`, `lookupEntry`, `unit`).
     /// Outputs: none; mutates `input`.
     private func syncInputToExistingEntry() {
-        if let entry = lookupEntry(effectiveDate) {
+        if let entry = existing {
             input = WeightFormatter.entryString(WeightFormatter.fromLb(entry.weightLb, to: unit))
         } else {
             input = ""

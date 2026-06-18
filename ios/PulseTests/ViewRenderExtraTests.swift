@@ -360,7 +360,7 @@ final class ViewRenderExtraTests: XCTestCase {
                                 onSave: { _, _, _ in }, onDelete: { _ in }))
         // Editable/backfill variant: DatePicker present.
         render(WeightEntrySheet(date: Date(), editableDate: true,
-                                lowerBound: Calendar.current.date(byAdding: .day, value: -89, to: Date())!,
+                                lowerBound: WeightLogModel.windowStart(from: Date()),
                                 lookupEntry: { _ in nil },
                                 onSave: { _, _, _ in }, onDelete: { _ in }))
         UserDefaults.standard.set(WeightUnit.kg.rawValue, forKey: WeightUnit.displayPreferenceKey)

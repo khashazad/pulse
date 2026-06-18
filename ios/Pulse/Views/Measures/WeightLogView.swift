@@ -36,21 +36,6 @@ struct WeightLogView: View {
         WeightLogModel.windowStart(from: Calendar.current.startOfDay(for: Date()))
     }
 
-    /// The entries currently loaded, read live from the model's load state.
-    /// - Returns: The loaded `WeightEntry` array, or `[]` if not yet loaded.
-    private var loadedEntries: [WeightEntry] {
-        if case .loaded(let entries) = model?.state { return entries }
-        return []
-    }
-
-    /// Resolves the loaded entry for a given calendar day, if any.
-    /// - Parameter day: The date to look up, compared at start-of-day.
-    /// - Returns: The matching `WeightEntry`, or `nil` if no entry exists.
-    private func entry(on day: Date) -> WeightEntry? {
-        let target = Calendar.current.startOfDay(for: day)
-        return loadedEntries.first { Calendar.current.startOfDay(for: $0.date) == target }
-    }
-
     var body: some View {
         ZStack {
             Theme.BG.primary.ignoresSafeArea()
@@ -80,38 +65,29 @@ struct WeightLogView: View {
         // `model` is view-owned @State; it cannot outlive these sheets, so the
         // `model?` optional captures below are safe and never silently no-op.
         .sheet(item: $sheetState) { state in
-            switch state {
-            case .add(let date):
-                WeightEntrySheet(
-                    date: date,
-                    editableDate: true,
-                    lowerBound: backfillLowerBound,
-                    lookupEntry: { entry(on: $0) },
-                    onSave: { day, value, unit in
-                        await model?.upsert(date: day, weight: value, unit: unit)
-                    },
-                    onDelete: { day in await model?.delete(date: day) }
-                )
-            case .edit(let existing):
-                // editableDate: false pins the sheet's effective date to
-                // existing.date, so onDelete's `day` is always existing.date.
-                WeightEntrySheet(
-                    date: existing.date,
-                    editableDate: false,
-                    lowerBound: backfillLowerBound,
-                    lookupEntry: { entry(on: $0) },
-                    onSave: { day, value, unit in
-                        await model?.upsert(date: day, weight: value, unit: unit)
-                    },
-                    onDelete: { day in await model?.delete(date: day) }
-                )
+            // .add is date-editable (backfill); .edit pins the date to the
+            // existing entry. Both share one sheet — `lookupEntry` drives the
+            // title, prefill, and delete-button visibility from the live model.
+            let (sheetDate, isEditable): (Date, Bool) = switch state {
+            case .add(let date): (date, true)
+            case .edit(let existing): (existing.date, false)
             }
+            WeightEntrySheet(
+                date: sheetDate,
+                editableDate: isEditable,
+                lowerBound: backfillLowerBound,
+                lookupEntry: { model?.entry(on: $0) },
+                onSave: { day, value, unit in
+                    await model?.upsert(date: day, weight: value, unit: unit)
+                },
+                onDelete: { day in await model?.delete(date: day) }
+            )
         }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
                     sheetState = .add(WeightBackfill.defaultBackfillDate(
-                        entries: loadedEntries, lowerBound: backfillLowerBound))
+                        entries: model?.entries ?? [], lowerBound: backfillLowerBound))
                 } label: {
                     Image(systemName: "plus")
                 }
