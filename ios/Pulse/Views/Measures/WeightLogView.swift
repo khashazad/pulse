@@ -62,8 +62,10 @@ struct WeightLogView: View {
             await model?.load()
         }
         .refreshable { await model?.load() }
-        // `model` is view-owned @State; it cannot outlive these sheets, so the
-        // `model?` optional captures below are safe and never silently no-op.
+        // `model` is non-nil here: `sheetState`/the toolbar `+` only become
+        // reachable after `.task` assigns it, and entry-presenting paths gate on
+        // `model != nil`. The `model?` captures below are written defensively, but
+        // in practice the optional is already resolved by the time a sheet opens.
         .sheet(item: $sheetState) { state in
             // .add is date-editable (backfill); .edit pins the date to the
             // existing entry. Both share one sheet — `lookupEntry` drives the
@@ -85,13 +87,17 @@ struct WeightLogView: View {
         }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    sheetState = .add(WeightBackfill.defaultBackfillDate(
-                        entries: model?.entries ?? [], lowerBound: backfillLowerBound))
-                } label: {
-                    Image(systemName: "plus")
+                // Gated on the model existing so a save can never be silently
+                // dropped by a `model?` no-op before `.task` initializes it.
+                if let model {
+                    Button {
+                        sheetState = .add(WeightBackfill.defaultBackfillDate(
+                            entries: model.entries, lowerBound: backfillLowerBound))
+                    } label: {
+                        Image(systemName: "plus")
+                    }
+                    .tint(Theme.CTP.mauve)
                 }
-                .tint(Theme.CTP.mauve)
             }
         }
     }

@@ -40,6 +40,9 @@ enum WeightBackfill {
             guard let prev = cal.date(byAdding: .day, value: -1, to: day) else { break }
             day = prev
         }
-        return yesterday
+        // Every day in the window is logged. Fall back to yesterday, but never
+        // return a date earlier than `lowerBound` (honors the documented
+        // contract even for a degenerate window where `lowerBound` > yesterday).
+        return Swift.max(yesterday, startLower)
     }
 }
