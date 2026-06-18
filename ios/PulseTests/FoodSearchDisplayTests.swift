@@ -19,7 +19,7 @@ final class FoodSearchDisplayTests: XCTestCase {
         FoodSearchResult(customFood: CustomFood(
             id: UUID(), name: "Protein Shake", basis: .perServing,
             servingSize: servingSize, servingSizeUnit: unit,
-            calories: 130, proteinG: 25, carbsG: 3, fatG: 1.5))
+            calories: 130, proteinG: 25, carbsG: 3, fatG: 1.5, foodId: nil, portionLabel: nil))
     }
 
     func test_usdaCaption_per100g() {

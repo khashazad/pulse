@@ -20,7 +20,7 @@ final class CustomFoodDetailModelTests: XCTestCase {
 
     private func food(_ name: String = "Protein Shake") -> CustomFood {
         CustomFood(id: Self.id, name: name, basis: .perServing, servingSize: 1, servingSizeUnit: "scoop",
-                   calories: 130, proteinG: 25, carbsG: 3, fatG: 1.5)
+                   calories: 130, proteinG: 25, carbsG: 3, fatG: 1.5, foodId: nil, portionLabel: nil)
     }
 
     /// Builds a signed-in AuthSession whose client routes every request through `responder`.

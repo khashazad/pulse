@@ -16,7 +16,7 @@ struct RootView: View {
     @State private var measuresPath = NavigationPath()
     @State private var showSettings = false
     @State private var mealsModel: MealsModel?
-    @State private var foodsModel: CustomFoodsModel?
+    @State private var foodsModel: FoodsModel?
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -43,7 +43,13 @@ struct RootView: View {
                                     mealsModel: mealsModel,
                                     foodsModel: foodsModel,
                                     onOpenMeal: { summary in foodPath.append(FoodRoute.meal(summary)) },
-                                    onOpenFood: { food in foodPath.append(FoodRoute.food(food)) }
+                                    onOpenFood: { food in foodPath.append(FoodRoute.food(food)) },
+                                    onOpenPortion: { portionId in
+                                        if let cf = foodsModel.customFood(for: portionId) {
+                                            foodPath.append(FoodRoute.food(cf))
+                                        }
+                                    },
+                                    auth: auth
                                 )
                             } else {
                                 ProgressView()
@@ -60,8 +66,8 @@ struct RootView: View {
                             case .food(let food):
                                 CustomFoodDetailView(
                                     food: food,
-                                    onRenamed: { updated in foodsModel?.applyRename(updated) },
-                                    onDeleted: { id in foodsModel?.applyRemoval(id: id) }
+                                    onRenamed: { updated in foodsModel?.applyRenamedStandalone(updated) },
+                                    onDeleted: { id in foodsModel?.applyRemovedStandalone(id: id) }
                                 )
                                 .toolbar { settingsButton }
                             }
@@ -98,7 +104,7 @@ struct RootView: View {
         .task {
             await auth.bootstrap()
             if mealsModel == nil { mealsModel = MealsModel(auth: auth) }
-            if foodsModel == nil { foodsModel = CustomFoodsModel(auth: auth) }
+            if foodsModel == nil { foodsModel = FoodsModel(auth: auth) }
         }
     }
 

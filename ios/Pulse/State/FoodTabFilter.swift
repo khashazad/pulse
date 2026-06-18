@@ -8,6 +8,18 @@ import Foundation
 
 /// Namespace for the Food tab's section filters.
 enum FoodTabFilter {
+    /// The single source of truth for the tab's name-match rule: a blank (after
+    /// trimming) query matches everything; otherwise a locale-aware,
+    /// case-insensitive substring match.
+    /// Inputs:
+    ///   - name: the candidate display name.
+    ///   - query: raw search text (may be blank or whitespace).
+    /// Outputs: `true` when the name passes the active query.
+    static func matches(_ name: String, query: String) -> Bool {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        return q.isEmpty || name.localizedCaseInsensitiveContains(q)
+    }
+
     /// Filters meal summaries by name.
     /// Inputs:
     ///   - meals: the loaded meal summaries.
@@ -34,8 +46,7 @@ enum FoodTabFilter {
     /// Outputs: name-sorted matches (locale-aware, case-insensitive); the full
     ///   sorted list when the trimmed query is empty.
     private static func filtered<T>(_ items: [T], query: String, name: KeyPath<T, String>) -> [T] {
-        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        let matched = q.isEmpty ? items : items.filter { $0[keyPath: name].localizedCaseInsensitiveContains(q) }
+        let matched = items.filter { matches($0[keyPath: name], query: query) }
         return matched.sorted { $0[keyPath: name].localizedCaseInsensitiveCompare($1[keyPath: name]) == .orderedAscending }
     }
 }

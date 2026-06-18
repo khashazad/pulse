@@ -6,7 +6,7 @@ import XCTest
 final class FoodTabFilterTests: XCTestCase {
     private func food(_ name: String) -> CustomFood {
         CustomFood(id: UUID(), name: name, basis: .perServing, servingSize: 1, servingSizeUnit: "scoop",
-                   calories: 100, proteinG: 10, carbsG: 5, fatG: 2)
+                   calories: 100, proteinG: 10, carbsG: 5, fatG: 2, foodId: nil, portionLabel: nil)
     }
 
     func test_filter_blankQueryReturnsAllSortedByName() {

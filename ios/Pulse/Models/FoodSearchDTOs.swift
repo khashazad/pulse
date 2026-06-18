@@ -50,6 +50,10 @@ struct CustomFood: Codable, Equatable, Hashable, Identifiable {
     let proteinG: Double
     let carbsG: Double
     let fatG: Double
+    /// Parent Food id when this custom food is a portion; nil for standalones.
+    let foodId: UUID?
+    /// Portion label within its parent Food; nil for standalones.
+    let portionLabel: String?
 
     enum CodingKeys: String, CodingKey {
         case id, name, basis
@@ -59,6 +63,8 @@ struct CustomFood: Codable, Equatable, Hashable, Identifiable {
         case proteinG = "protein_g"
         case carbsG = "carbs_g"
         case fatG = "fat_g"
+        case foodId = "food_id"
+        case portionLabel = "portion_label"
     }
 }
 
