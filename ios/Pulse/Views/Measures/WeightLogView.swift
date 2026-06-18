@@ -27,6 +27,30 @@ struct WeightLogView: View {
         }
     }
 
+    /// Earliest selectable backfill date: 89 days before today, matching the
+    /// trailing window `WeightLogModel.load` fetches. Recomputed on each render;
+    /// stable within a calendar day.
+    /// - Returns: The start-of-day 89 days before today.
+    private var backfillLowerBound: Date {
+        let today = Calendar.current.startOfDay(for: Date())
+        return Calendar.current.date(byAdding: .day, value: -89, to: today) ?? today
+    }
+
+    /// The entries currently loaded, read live from the model's load state.
+    /// - Returns: The loaded `WeightEntry` array, or `[]` if not yet loaded.
+    private var loadedEntries: [WeightEntry] {
+        if case .loaded(let entries) = model?.state { return entries }
+        return []
+    }
+
+    /// Resolves the loaded entry for a given calendar day, if any.
+    /// - Parameter day: The date to look up, compared at start-of-day.
+    /// - Returns: The matching `WeightEntry`, or `nil` if no entry exists.
+    private func entry(on day: Date) -> WeightEntry? {
+        let target = Calendar.current.startOfDay(for: day)
+        return loadedEntries.first { Calendar.current.startOfDay(for: $0.date) == target }
+    }
+
     var body: some View {
         ZStack {
             Theme.BG.primary.ignoresSafeArea()
@@ -53,22 +77,45 @@ struct WeightLogView: View {
             await model?.load()
         }
         .refreshable { await model?.load() }
+        // `model` is view-owned @State; it cannot outlive these sheets, so the
+        // `model?` optional captures below are safe and never silently no-op.
         .sheet(item: $sheetState) { state in
             switch state {
             case .add(let date):
                 WeightEntrySheet(
                     date: date,
-                    existing: nil,
-                    onSave: { value, unit in await model?.upsert(date: date, weight: value, unit: unit) },
-                    onDelete: nil
+                    editableDate: true,
+                    lowerBound: backfillLowerBound,
+                    lookupEntry: { entry(on: $0) },
+                    onSave: { day, value, unit in
+                        await model?.upsert(date: day, weight: value, unit: unit)
+                    },
+                    onDelete: { day in await model?.delete(date: day) }
                 )
-            case .edit(let entry):
+            case .edit(let existing):
+                // editableDate: false pins the sheet's effective date to
+                // existing.date, so onDelete's `day` is always existing.date.
                 WeightEntrySheet(
-                    date: entry.date,
-                    existing: entry,
-                    onSave: { value, unit in await model?.upsert(date: entry.date, weight: value, unit: unit) },
-                    onDelete: { await model?.delete(date: entry.date) }
+                    date: existing.date,
+                    editableDate: false,
+                    lowerBound: backfillLowerBound,
+                    lookupEntry: { entry(on: $0) },
+                    onSave: { day, value, unit in
+                        await model?.upsert(date: day, weight: value, unit: unit)
+                    },
+                    onDelete: { day in await model?.delete(date: day) }
                 )
+            }
+        }
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    sheetState = .add(WeightBackfill.defaultBackfillDate(
+                        entries: loadedEntries, lowerBound: backfillLowerBound))
+                } label: {
+                    Image(systemName: "plus")
+                }
+                .tint(Theme.CTP.mauve)
             }
         }
     }
