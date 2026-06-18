@@ -14,7 +14,7 @@ final class FoodDuplicateGrouperTests: XCTestCase {
             food("small apple", "00000000-0000-0000-0000-000000000001"),
             food("medium apple", "00000000-0000-0000-0000-000000000002"),
             food("apple per 100g", "00000000-0000-0000-0000-000000000003"),
-            food("banana", "00000000-0000-0000-0000-000000000004"),
+            food("banana", "00000000-0000-0000-0000-000000000004")
         ]
         let clusters = FoodDuplicateGrouper.clusters(from: foods)
         XCTAssertEqual(clusters.count, 1)
@@ -24,7 +24,7 @@ final class FoodDuplicateGrouperTests: XCTestCase {
     func test_singletonsAreNotClusters() {
         let clusters = FoodDuplicateGrouper.clusters(from: [
             food("apple", "00000000-0000-0000-0000-000000000001"),
-            food("banana", "00000000-0000-0000-0000-000000000002"),
+            food("banana", "00000000-0000-0000-0000-000000000002")
         ])
         XCTAssertTrue(clusters.isEmpty)
     }
@@ -32,7 +32,7 @@ final class FoodDuplicateGrouperTests: XCTestCase {
     func test_suggestedName_sharedStemTitleCased() {
         let name = FoodDuplicateGrouper.suggestedName(for: [
             food("small apple", "00000000-0000-0000-0000-000000000001"),
-            food("medium apple", "00000000-0000-0000-0000-000000000002"),
+            food("medium apple", "00000000-0000-0000-0000-000000000002")
         ])
         XCTAssertEqual(name, "Apple")
     }
@@ -40,7 +40,7 @@ final class FoodDuplicateGrouperTests: XCTestCase {
     func test_suggestedName_mixedFallsBackToFirstName() {
         let name = FoodDuplicateGrouper.suggestedName(for: [
             food("apple", "00000000-0000-0000-0000-000000000001"),
-            food("banana", "00000000-0000-0000-0000-000000000002"),
+            food("banana", "00000000-0000-0000-0000-000000000002")
         ])
         XCTAssertEqual(name, "apple")
     }

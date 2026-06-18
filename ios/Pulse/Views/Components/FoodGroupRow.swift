@@ -16,7 +16,7 @@ struct FoodGroupRow: View {
     /// Invoked with a portion's custom-food id when a portion sub-row is tapped.
     let onSelectPortion: (UUID) -> Void
     /// Invoked when the user taps Ungroup (shown only when expanded and non-nil).
-    var onUngroup: (() -> Void)? = nil
+    var onUngroup: (() -> Void)?
 
     var body: some View {
         VStack(spacing: 0) {

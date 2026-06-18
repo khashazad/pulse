@@ -12,7 +12,7 @@ enum FoodDuplicateGrouper {
     private static let sizeWords: Set<String> = [
         "small", "medium", "large", "xl", "mini", "regular", "big",
         "per", "100g", "g", "kg", "oz", "ml", "l", "cup", "cups", "serving",
-        "slice", "slices", "piece", "pieces", "half", "whole", "a", "an",
+        "slice", "slices", "piece", "pieces", "half", "whole", "a", "an"
     ]
 
     /// Clusters foods by their size-stripped stem.
