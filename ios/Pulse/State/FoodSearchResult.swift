@@ -137,3 +137,50 @@ enum FoodSearchMerge {
         return ranked + usdaResults
     }
 }
+
+extension FoodSearchResult {
+    /// Synthesizes a pickable result from an existing meal item so its quantity
+    /// can be re-entered and rescaled in `QuantityEntryView` without a network
+    /// call. Per-basis macros are the item's stored macros divided by its
+    /// normalized quantity value; the basis is derived from the stored unit
+    /// ("g" → per-100g, "serving" → per-serving, anything else → per-unit).
+    /// Returns nil when the item has no positive normalized quantity value
+    /// (free-text quantities can't be linearly rescaled).
+    /// Inputs:
+    ///   - mealItem: the saved item being edited.
+    init?(mealItem: MealItem) {
+        guard let value = mealItem.normalizedQuantityValue, value > 0 else { return nil }
+        let unit = (mealItem.normalizedQuantityUnit ?? "").lowercased()
+        let basis: FoodBasis
+        let perBasisFactor: Double   // multiply (macro / value) by this to get per-basis
+        switch unit {
+        case "g", "gram", "grams":
+            basis = .per100g
+            perBasisFactor = 100
+        case "serving", "servings":
+            basis = .perServing
+            perBasisFactor = 1
+        default:
+            basis = .perUnit
+            perBasisFactor = 1
+        }
+        let scale = perBasisFactor / value
+        self.id = "mealitem:\(mealItem.id.uuidString)"
+        self.source = .myFood
+        self.displayName = mealItem.displayName
+        self.usdaFdcId = mealItem.usdaFdcId
+        self.usdaDescription = mealItem.usdaDescription
+        self.usdaDataType = nil
+        self.usdaBrandOwner = nil
+        self.customFoodId = mealItem.customFoodId
+        self.nutrition = FoodNutrition(
+            basis: basis,
+            servingSize: nil,
+            servingSizeUnit: nil,
+            caloriesPerBasis: Int((Double(mealItem.calories) * scale).rounded()),
+            proteinGPerBasis: mealItem.proteinG * scale,
+            carbsGPerBasis: mealItem.carbsG * scale,
+            fatGPerBasis: mealItem.fatG * scale)
+        self.matchTerms = [mealItem.displayName.lowercased()]
+    }
+}
