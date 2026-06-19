@@ -35,6 +35,15 @@ final class MealsModel {
             state = .failed(.server(status: -1))
         }
     }
+
+    /// Removes a meal from the loaded list in place (after a successful delete),
+    /// avoiding a full refetch. No-op unless the list is already loaded.
+    /// - Parameter id: the deleted meal's id.
+    /// - Returns: Nothing.
+    func applyRemoval(id: UUID) {
+        guard case .loaded(let meals) = state else { return }
+        state = .loaded(meals.filter { $0.id != id })
+    }
 }
 
 /// Observable view-model that loads a single saved meal's full payload by id.
@@ -54,6 +63,23 @@ final class MealDetailModel {
         case logging
         case logged(MacroTotals)
         case failed(PulseError)
+    }
+
+    /// Outcome of the most recent edit (rename / delete / item mutation),
+    /// surfaced inline by the detail view's edit mode.
+    private(set) var editState: EditActionState = .idle
+
+    /// Discrete states of a meal-edit action, separate from the load/log states.
+    enum EditActionState: Equatable {
+        case idle
+        case working
+        case failed(PulseError)
+    }
+
+    /// Resets the edit action back to idle (e.g. when leaving edit mode).
+    /// - Returns: Nothing.
+    func resetEditState() {
+        editState = .idle
     }
 
     /// Initializes the detail model for a specific meal id.
@@ -116,5 +142,91 @@ final class MealDetailModel {
     /// - Returns: Nothing.
     func resetLogState() {
         logState = .idle
+    }
+
+    /// Renames the meal, then reloads it so totals/name stay correct.
+    /// - Parameter name: the new display name.
+    /// - Returns: true on success (caller can fire its list-refresh callback).
+    @discardableResult
+    func rename(to name: String) async -> Bool {
+        await mutate { client in _ = try await client.updateMeal(id: mealId, name: name) }
+    }
+
+    /// Deletes the meal.
+    /// - Returns: true on success (caller should pop + refresh the list).
+    @discardableResult
+    func deleteMeal() async -> Bool {
+        guard let client = auth?.makeClient() else {
+            editState = .failed(.notSignedIn)
+            return false
+        }
+        editState = .working
+        do {
+            try await client.deleteMeal(id: mealId)
+            editState = .idle
+            return true
+        } catch let error as PulseError {
+            if error == .unauthorized { auth?.handleUnauthorized() }
+            editState = .failed(error)
+            return false
+        } catch {
+            editState = .failed(.server(status: -1))
+            return false
+        }
+    }
+
+    /// Adds an item to the meal, then reloads.
+    /// - Parameter item: the quantified item to add.
+    /// - Returns: true on success.
+    @discardableResult
+    func addItem(_ item: NewMealItem) async -> Bool {
+        await mutate { client in _ = try await client.addMealItem(mealId: mealId, item: item) }
+    }
+
+    /// Updates an item's quantity/macros, then reloads.
+    /// - Parameters:
+    ///   - itemId: the item being changed.
+    ///   - item: the rebuilt item carrying the new quantity + macros.
+    /// - Returns: true on success.
+    @discardableResult
+    func updateItem(itemId: UUID, to item: NewMealItem) async -> Bool {
+        await mutate { client in
+            _ = try await client.updateMealItem(mealId: mealId, itemId: itemId, item: item)
+        }
+    }
+
+    /// Removes an item from the meal, then reloads.
+    /// - Parameter itemId: the item to remove.
+    /// - Returns: true on success.
+    @discardableResult
+    func deleteItem(itemId: UUID) async -> Bool {
+        await mutate { client in try await client.deleteMealItem(mealId: mealId, itemId: itemId) }
+    }
+
+    /// Runs an edit action against an authenticated client, sets `editState`,
+    /// and reloads the meal on success. Routes 401 through `AuthSession`.
+    /// - Parameter action: the client call to perform.
+    /// - Returns: true on success.
+    private func mutate(_ action: (PulseClient) async throws -> Void) async -> Bool {
+        guard let client = auth?.makeClient() else {
+            editState = .failed(.notSignedIn)
+            return false
+        }
+        editState = .working
+        do {
+            try await action(client)
+            // Stay in `.working` across the reload so the edit UI shows progress
+            // until fresh totals land; only then clear to `.idle`.
+            await load()
+            editState = .idle
+            return true
+        } catch let error as PulseError {
+            if error == .unauthorized { auth?.handleUnauthorized() }
+            editState = .failed(error)
+            return false
+        } catch {
+            editState = .failed(.server(status: -1))
+            return false
+        }
     }
 }
