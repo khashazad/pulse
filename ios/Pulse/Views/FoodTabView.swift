@@ -25,6 +25,12 @@ private struct SuggestionsRequest: Identifiable {
     let clusters: [[CustomFood]]
 }
 
+/// Identifiable payload that drives the "save foods as meal" wizard.
+private struct SaveMealRequest: Identifiable {
+    let id = UUID()
+    let foods: [CustomFood]
+}
+
 /// Food-tab root: section toggle + shared search over meals and custom foods.
 struct FoodTabView: View {
     let mealsModel: MealsModel
@@ -50,6 +56,10 @@ struct FoodTabView: View {
     @State private var grouping: GroupingRequest?
     // Drives the "browse all merge suggestions" chooser sheet.
     @State private var suggestions: SuggestionsRequest?
+    // Drives the "save selected foods as meal" quantity wizard.
+    @State private var savingFoodsAsMeal: SaveMealRequest?
+    /// Name of a just-saved meal, shown as a transient confirmation; nil hides it.
+    @State private var savedMealName: String?
     // The food pending an ungroup confirmation, if any.
     @State private var ungroupTarget: Food?
 
@@ -112,6 +122,33 @@ struct FoodTabView: View {
                 selected = Set(cluster.map(\.id))
             }
         }
+        .sheet(item: $savingFoodsAsMeal) { request in
+            SaveFoodsAsMealSheet(foods: request.foods, auth: auth) { meal in
+                isSelecting = false
+                selected = []
+                savedMealName = meal.name
+                Task { await mealsModel.load() }
+            }
+        }
+        .overlay(alignment: .bottom) {
+            if let name = savedMealName {
+                Text("Saved “\(name)”")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(Theme.FG.primary)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .background(
+                        Capsule().fill(Theme.BG.secondary)
+                            .overlay(Capsule().stroke(Theme.separator, lineWidth: 0.5)))
+                    .padding(.bottom, Theme.Layout.dockClearance)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .task {
+                        try? await Task.sleep(nanoseconds: 1_800_000_000)
+                        withAnimation { savedMealName = nil }
+                    }
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: savedMealName)
         .confirmationDialog(
             ungroupTarget.map { "Ungroup \($0.name)?" } ?? "",
             isPresented: Binding(get: { ungroupTarget != nil },
@@ -243,11 +280,17 @@ struct FoodTabView: View {
                 .font(.system(size: 14, weight: .medium))
                 .foregroundStyle(Theme.CTP.mauve)
             }
-            if isSelecting, selected.count >= 2 {
+            if isSelecting, selected.count >= 1 {
                 let chosen = allStandalones.filter { selected.contains($0.id) }
-                PrimaryActionButton(title: "Group \(chosen.count) into food",
-                                    leading: .icon("rectangle.3.group"), disabled: false) {
-                    grouping = GroupingRequest(foods: chosen)
+                if chosen.count >= 2 {
+                    PrimaryActionButton(title: "Group \(chosen.count) into food",
+                                        leading: .icon("rectangle.3.group"), disabled: false) {
+                        grouping = GroupingRequest(foods: chosen)
+                    }
+                }
+                PrimaryActionButton(title: "Save \(chosen.count) as meal",
+                                    leading: .icon("square.stack.3d.up"), disabled: false) {
+                    savingFoodsAsMeal = SaveMealRequest(foods: chosen)
                 }
             }
             if !isSelecting, !foodsModel.duplicateClusters.isEmpty {
