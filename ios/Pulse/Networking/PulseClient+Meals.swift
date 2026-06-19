@@ -3,6 +3,13 @@
 /// Pure code organization — signatures and behaviour are unchanged.
 import Foundation
 
+/// Request body for `POST /meals` (create a meal from selected items). Mirrors
+/// the server `MealCreate`; `notes`/`aliases` are omitted (server defaults them).
+private struct CreateMealRequest: Encodable {
+    let name: String
+    let items: [NewMealItem]
+}
+
 extension PulseClient {
     /// Lists all saved meals for the current user.
     /// Outputs: the array unwrapped from the `MealsListResponse` envelope.
@@ -37,6 +44,21 @@ extension PulseClient {
     func logMeal(id: UUID, consumedAt: Date?) async throws -> EntryWriteResponse {
         let url = try http.makeURL(path: "/meals/\(id.uuidString.lowercased())/log", query: [])
         let body = try JSONEncoder.pulseDefault().encode(LogMealRequest(consumedAt: consumedAt))
+        return try await sendJSON(url: url, method: "POST", body: body)
+    }
+
+    /// Creates a saved meal from a name and a set of items (`POST /meals`). Each
+    /// item carries its display name, quantity, food source, and macros; the
+    /// server persists them in order and returns the full meal.
+    /// Inputs:
+    ///   - name: the meal's display name.
+    ///   - items: the meal's items (at least one).
+    /// Outputs: the created `Meal` decoded from the 201 `MealResponse`.
+    /// Exceptions: `PulseError.server(status: 409)` when the name collides with an
+    /// existing meal; other `PulseError` on transport, auth, or decoding failure.
+    func createMeal(name: String, items: [NewMealItem]) async throws -> Meal {
+        let url = try http.makeURL(path: "/meals", query: [])
+        let body = try JSONEncoder.pulseDefault().encode(CreateMealRequest(name: name, items: items))
         return try await sendJSON(url: url, method: "POST", body: body)
     }
 }
