@@ -148,6 +148,9 @@ extension FoodSearchResult {
     /// (free-text quantities can't be linearly rescaled).
     /// Inputs:
     ///   - mealItem: the saved item being edited.
+    /// Outputs: a pickable result whose `nutrition` reproduces the item's macros
+    ///   at its current quantity, or nil when the item has no positive normalized
+    ///   quantity value.
     init?(mealItem: MealItem) {
         guard let value = mealItem.normalizedQuantityValue, value > 0 else { return nil }
         let unit = (mealItem.normalizedQuantityUnit ?? "").lowercased()

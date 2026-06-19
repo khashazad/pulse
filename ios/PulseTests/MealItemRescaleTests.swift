@@ -47,6 +47,7 @@ final class MealItemRescaleTests: XCTestCase {
         XCTAssertEqual(r.nutrition.basis, .perServing)
         let m = try XCTUnwrap(r.nutrition.macros(typedValue: 2, unit: .servings))
         XCTAssertEqual(m.calories, 110, accuracy: 1)
+        XCTAssertEqual(m.proteinG, 8, accuracy: 0.1)
     }
 
     func test_customFoodPointerPreserved() throws {
@@ -55,5 +56,9 @@ final class MealItemRescaleTests: XCTestCase {
         XCTAssertEqual(r.nutrition.basis, .perUnit)
         XCTAssertEqual(r.customFoodId, cf)
         XCTAssertNil(r.usdaFdcId)
+        // perUnit round-trips the stored macros at the original quantity.
+        let m = try XCTUnwrap(r.nutrition.macros(typedValue: 1, unit: .units))
+        XCTAssertEqual(m.calories, 110, accuracy: 1)
+        XCTAssertEqual(m.proteinG, 8, accuracy: 0.1)
     }
 }
