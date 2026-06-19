@@ -347,15 +347,25 @@ final class ViewRenderExtraTests: XCTestCase {
         return a
     }
 
-    /// Renders `WeightEntrySheet` for both add (no existing) and edit (existing
-    /// + delete affordance) variants, and with a kg display unit.
+    /// Renders `WeightEntrySheet` for add (no existing entry), edit (lookup finds
+    /// the entry, delete visible), editable/backfill (DatePicker present), and kg
+    /// display unit variants.
     func test_render_weightEntrySheet_variants() {
         let entry = WeightEntry(id: UUID(), date: Date(), weightLb: 180.5, sourceUnit: .lb,
                                 createdAt: Date(), updatedAt: Date())
-        render(WeightEntrySheet(date: Date(), existing: nil, onSave: { _, _ in }, onDelete: nil))
-        render(WeightEntrySheet(date: Date(), existing: entry, onSave: { _, _ in }, onDelete: { }))
+        // Add (no existing entry): no prefill, no delete.
+        render(WeightEntrySheet(date: Date(), onSave: { _, _, _ in }, onDelete: { _ in }))
+        // Edit (lookup finds the entry): prefilled, delete visible.
+        render(WeightEntrySheet(date: Date(), lookupEntry: { _ in entry },
+                                onSave: { _, _, _ in }, onDelete: { _ in }))
+        // Editable/backfill variant: DatePicker present.
+        render(WeightEntrySheet(date: Date(), editableDate: true,
+                                lowerBound: WeightLogModel.windowStart(from: Date()),
+                                lookupEntry: { _ in nil },
+                                onSave: { _, _, _ in }, onDelete: { _ in }))
         UserDefaults.standard.set(WeightUnit.kg.rawValue, forKey: WeightUnit.displayPreferenceKey)
-        render(WeightEntrySheet(date: Date(), existing: entry, onSave: { _, _ in }, onDelete: { }))
+        render(WeightEntrySheet(date: Date(), lookupEntry: { _ in entry },
+                                onSave: { _, _, _ in }, onDelete: { _ in }))
     }
 
     /// Renders `WeightTrendsView` against a dense weight history (≥8 entries on a

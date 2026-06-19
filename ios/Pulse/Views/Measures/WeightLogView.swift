@@ -27,6 +27,15 @@ struct WeightLogView: View {
         }
     }
 
+    /// Earliest selectable backfill date, matching the trailing window
+    /// `WeightLogModel.load` fetches (shared via `WeightLogModel.windowStart`, so
+    /// the load window and backfill floor stay in lockstep). Recomputed on each
+    /// render; stable within a calendar day.
+    /// - Returns: The start-of-day `WeightLogModel.windowDays` days before today.
+    private var backfillLowerBound: Date {
+        WeightLogModel.windowStart(from: Calendar.current.startOfDay(for: Date()))
+    }
+
     var body: some View {
         ZStack {
             Theme.BG.primary.ignoresSafeArea()
@@ -53,22 +62,42 @@ struct WeightLogView: View {
             await model?.load()
         }
         .refreshable { await model?.load() }
+        // `model` is non-nil here: `sheetState`/the toolbar `+` only become
+        // reachable after `.task` assigns it, and entry-presenting paths gate on
+        // `model != nil`. The `model?` captures below are written defensively, but
+        // in practice the optional is already resolved by the time a sheet opens.
         .sheet(item: $sheetState) { state in
-            switch state {
-            case .add(let date):
-                WeightEntrySheet(
-                    date: date,
-                    existing: nil,
-                    onSave: { value, unit in await model?.upsert(date: date, weight: value, unit: unit) },
-                    onDelete: nil
-                )
-            case .edit(let entry):
-                WeightEntrySheet(
-                    date: entry.date,
-                    existing: entry,
-                    onSave: { value, unit in await model?.upsert(date: entry.date, weight: value, unit: unit) },
-                    onDelete: { await model?.delete(date: entry.date) }
-                )
+            // .add is date-editable (backfill); .edit pins the date to the
+            // existing entry. Both share one sheet — `lookupEntry` drives the
+            // title, prefill, and delete-button visibility from the live model.
+            let (sheetDate, isEditable): (Date, Bool) = switch state {
+            case .add(let date): (date, true)
+            case .edit(let existing): (existing.date, false)
+            }
+            WeightEntrySheet(
+                date: sheetDate,
+                editableDate: isEditable,
+                lowerBound: backfillLowerBound,
+                lookupEntry: { model?.entry(on: $0) },
+                onSave: { day, value, unit in
+                    await model?.upsert(date: day, weight: value, unit: unit)
+                },
+                onDelete: { day in await model?.delete(date: day) }
+            )
+        }
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                // Gated on the model existing so a save can never be silently
+                // dropped by a `model?` no-op before `.task` initializes it.
+                if let model {
+                    Button {
+                        sheetState = .add(WeightBackfill.defaultBackfillDate(
+                            entries: model.entries, lowerBound: backfillLowerBound))
+                    } label: {
+                        Image(systemName: "plus")
+                    }
+                    .tint(Theme.CTP.mauve)
+                }
             }
         }
     }

@@ -180,7 +180,7 @@ final class ViewRenderTests: XCTestCase {
         render(MeasuresTabRootView())
         render(WeightLogView())
         render(WeightTrendsView())
-        render(WeightEntrySheet(date: Date(), existing: nil, onSave: { _, _ in }, onDelete: nil))
+        render(WeightEntrySheet(date: Date(), onSave: { _, _, _ in }, onDelete: { _ in }))
         render(ProgressPhotosView())
         render(ProgressPhotoComparisonView(initialDate: Date()))
         render(ManageTagsView())
