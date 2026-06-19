@@ -28,6 +28,10 @@ struct DayMacroView: View {
     @State private var confirmRetry: [FoodEntry] = []
     /// Whether the confirm-failure alert (with Retry) is presented.
     @State private var showConfirmFailure = false
+    /// Whether the "save selection as meal" sheet is presented.
+    @State private var showSaveMealSheet = false
+    /// Name of a just-saved meal, shown as a transient confirmation; nil hides it.
+    @State private var savedMealName: String?
 
     var body: some View {
         ZStack {
@@ -65,6 +69,12 @@ struct DayMacroView: View {
                         Task { await model.load() }
                     }
                 )
+            }
+        }
+        .sheet(isPresented: $showSaveMealSheet) {
+            SaveAsMealSheet(items: selectedEntries().map { NewMealItem.from(entry: $0) }, auth: auth) { meal in
+                exitSelection()
+                savedMealName = meal.name
             }
         }
         .confirmationDialog(
@@ -106,6 +116,25 @@ struct DayMacroView: View {
                 Text(error.userMessage)
             }
         }
+        .overlay(alignment: .bottom) {
+            if let name = savedMealName {
+                Text("Saved “\(name)”")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(Theme.FG.primary)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .background(
+                        Capsule().fill(Theme.BG.secondary)
+                            .overlay(Capsule().stroke(Theme.separator, lineWidth: 0.5)))
+                    .padding(.bottom, Theme.Layout.dockClearance)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .task {
+                        try? await Task.sleep(nanoseconds: 1_800_000_000)
+                        withAnimation { savedMealName = nil }
+                    }
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: savedMealName)
     }
 
     /// Toolbar toggle that enters/exits multi-select. Only meaningful once the
@@ -342,10 +371,11 @@ struct DayMacroView: View {
         .ctpCard()
     }
 
-    /// Action bar shown under the selectable list: count-aware Copy and Delete
-    /// buttons. Copy opens the backdating copy sheet; Delete asks for
-    /// confirmation before destructively removing the selected entries. Both
-    /// are disabled until at least one entry is selected.
+    /// Action bar shown under the selectable list: count-aware Copy, Save as
+    /// meal, and Delete buttons. Copy opens the backdating copy sheet; Save as
+    /// meal opens the sheet that turns the selection into a saved meal template;
+    /// Delete asks for confirmation before destructively removing the selected
+    /// entries. All are disabled until at least one entry is selected.
     private var selectionActionBar: some View {
         let count = selectedIds.count
         return HStack(spacing: 10) {
@@ -356,6 +386,13 @@ struct DayMacroView: View {
             ) {
                 model?.resetCopyState()
                 showCopySheet = true
+            }
+            PrimaryActionButton(
+                title: count == 0 ? "Save as meal" : "Save as meal \(count)",
+                leading: .icon("square.stack.3d.up"),
+                disabled: count == 0
+            ) {
+                showSaveMealSheet = true
             }
             PrimaryActionButton(
                 title: count == 0 ? "Delete" : "Delete \(count)",
