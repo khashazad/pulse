@@ -477,6 +477,16 @@ def test_update_meal_item_item_not_found_returns_404(rest_client: TestClient) ->
     assert resp.status_code == 404
 
 
+def test_update_meal_item_explicit_null_display_name_returns_422(rest_client: TestClient) -> None:
+    """`PATCH /meals/{id}/items/{item_id}` returns 422 for an explicit null on a non-nullable field."""
+    resp = rest_client.patch(
+        f"/meals/{uuid.uuid4()}/items/{uuid.uuid4()}",
+        headers=AUTH_HEADERS,
+        json={"display_name": None},
+    )
+    assert resp.status_code == 422
+
+
 def _entry_row(
     meal_id: uuid.UUID, meal_name: str, calories: int = 140, confirmed: bool = True
 ) -> dict:
