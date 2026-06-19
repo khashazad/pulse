@@ -9,9 +9,21 @@ import SwiftUI
 /// Triggers a `MealDetailModel` load on appear and on pull-to-refresh.
 struct MealDetailView: View {
     @Environment(AuthSession.self) private var auth
+    @Environment(\.dismiss) private var dismiss
     let summary: MealSummary
+    /// Called after a rename or item mutation so the host can refresh the list.
+    var onMutated: () -> Void = {}
+    /// Called after a successful delete with the deleted meal's id.
+    var onDeleted: (UUID) -> Void = { _ in }
     @State private var model: MealDetailModel?
     @State private var showLogSheet = false
+    @State private var isEditing = false
+    @State private var nameDraft = ""
+    @State private var showDeleteConfirm = false
+    @State private var addingItem = false
+    @State private var editingItem: MealItem?
+    @State private var searchModel: FoodSearchModel?
+    @State private var containers: [Container] = []
 
     var body: some View {
         ZStack {
@@ -41,9 +53,59 @@ struct MealDetailView: View {
         .toolbarBackground(.visible, for: .navigationBar)
         .task(id: summary.id) {
             model = MealDetailModel(mealId: summary.id, auth: auth)
+            searchModel = FoodSearchModel(auth: auth)
             await model?.load()
+            // Containers are needed by the quantity step (tare lookup). Best-effort.
+            containers = (try? await auth.makeClient()?.listContainers()) ?? []
         }
         .refreshable { await model?.load() }
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                if case .loaded = model?.state {
+                    Button(isEditing ? "Done" : "Edit") {
+                        if isEditing {
+                            isEditing = false
+                        } else {
+                            nameDraft = summary.name
+                            model?.resetEditState()
+                            isEditing = true
+                        }
+                    }
+                    .foregroundStyle(Theme.CTP.mauve)
+                }
+            }
+        }
+        .sheet(isPresented: $addingItem) {
+            if let searchModel {
+                FoodSearchSheet(model: searchModel, containers: containers) { batchItem in
+                    Task {
+                        let item = NewMealItem.from(batchItem: batchItem, containers: containers)
+                        if await model?.addItem(item) == true { onMutated() }
+                    }
+                }
+            }
+        }
+        .sheet(item: $editingItem) { item in
+            if let result = FoodSearchResult(mealItem: item) {
+                QuantityEntryView(result: result, containers: containers) { batchItem in
+                    Task {
+                        let rebuilt = NewMealItem.from(batchItem: batchItem, containers: containers)
+                        if await model?.updateItem(itemId: item.id, to: rebuilt) == true { onMutated() }
+                    }
+                }
+            }
+        }
+        .confirmationDialog("Delete this meal?", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
+            Button("Delete meal", role: .destructive) {
+                Task {
+                    if await model?.deleteMeal() == true {
+                        onDeleted(summary.id)
+                        dismiss()
+                    }
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        }
         .sheet(isPresented: $showLogSheet) {
             if let model {
                 MealLogSheet(model: model, mealName: summary.name)
@@ -75,12 +137,29 @@ struct MealDetailView: View {
                         title: "No ingredients",
                         description: "This meal has no items yet."
                     )
+                    if isEditing {
+                        addItemButton
+                            .padding(.horizontal, 16)
+                            .padding(.top, 4)
+                    }
                 } else {
                     ingredientsCard(meal.items)
                         .padding(.horizontal, 16)
-                    logButton(disabled: false)
+                    if isEditing {
+                        addItemButton
+                            .padding(.horizontal, 16)
+                            .padding(.top, 4)
+                    } else {
+                        logButton(disabled: false)
+                            .padding(.horizontal, 16)
+                            .padding(.top, 4)
+                    }
+                }
+                editErrorRow
+                if isEditing {
+                    deleteMealButton
                         .padding(.horizontal, 16)
-                        .padding(.top, 4)
+                        .padding(.top, 8)
                 }
 
                 Spacer(minLength: Theme.Layout.dockClearance)
@@ -104,6 +183,51 @@ struct MealDetailView: View {
         }
     }
 
+    /// "Add item" button shown in edit mode; presents the food search sheet.
+    private var addItemButton: some View {
+        PrimaryActionButton(title: "Add item", leading: .icon("plus"), disabled: false) {
+            searchModel?.query = ""
+            addingItem = true
+        }
+    }
+
+    /// Destructive "Delete meal" button shown in edit mode.
+    private var deleteMealButton: some View {
+        Button(role: .destructive) {
+            showDeleteConfirm = true
+        } label: {
+            Label("Delete meal", systemImage: "trash")
+                .font(.system(size: 15, weight: .semibold))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+                .foregroundStyle(Theme.CTP.red)
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Theme.CTP.red.opacity(0.12)))
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// Commits the rename draft if it changed and is non-empty.
+    /// Outputs: nothing; fires the model rename + `onMutated` on success.
+    private func commitRename() {
+        let trimmed = nameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed != summary.name else { return }
+        Task { if await model?.rename(to: trimmed) == true { onMutated() } }
+    }
+
+    /// Inline error line for the most recent edit action (e.g. 409 name clash).
+    /// Outputs: a red label, or empty when there is no error.
+    @ViewBuilder
+    private var editErrorRow: some View {
+        if case .failed(let error) = model?.editState {
+            Label(error.userMessage, systemImage: "exclamationmark.triangle")
+                .font(.system(size: 12))
+                .foregroundStyle(Theme.CTP.red)
+                .padding(.horizontal, 20)
+        }
+    }
+
     /// Top card showing meal totals, notes, macro distribution bar, and per-macro chips.
     /// Inputs:
     ///   - meal: the loaded `Meal`.
@@ -113,6 +237,14 @@ struct MealDetailView: View {
         return VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 4) {
+                    if isEditing {
+                        TextField("Meal name", text: $nameDraft)
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(Theme.FG.primary)
+                            .tint(Theme.CTP.mauve)
+                            .submitLabel(.done)
+                            .onSubmit { commitRename() }
+                    }
                     Text("Total")
                         .font(.system(size: 11, weight: .semibold))
                         .tracking(0.6)
@@ -156,7 +288,26 @@ struct MealDetailView: View {
     private func ingredientsCard(_ items: [MealItem]) -> some View {
         VStack(spacing: 0) {
             ForEach(Array(items.enumerated()), id: \.element.id) { idx, item in
-                ingredientRow(item)
+                let canEditQuantity = FoodSearchResult(mealItem: item) != nil
+                HStack(spacing: 8) {
+                    ingredientRow(item)
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            guard isEditing, canEditQuantity else { return }
+                            model?.resetEditState()
+                            editingItem = item
+                        }
+                    if isEditing {
+                        Button(role: .destructive) {
+                            Task { if await model?.deleteItem(itemId: item.id) == true { onMutated() } }
+                        } label: {
+                            Image(systemName: "minus.circle.fill")
+                                .font(.system(size: 18))
+                                .foregroundStyle(Theme.CTP.red)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
                 if idx < items.count - 1 {
                     Rectangle().fill(Theme.separator).frame(height: 0.5)
                 }
