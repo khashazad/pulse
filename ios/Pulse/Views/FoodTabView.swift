@@ -19,6 +19,12 @@ private struct GroupingRequest: Identifiable {
     let foods: [CustomFood]
 }
 
+/// Identifiable payload that drives the grouping-suggestions chooser sheet.
+private struct SuggestionsRequest: Identifiable {
+    let id = UUID()
+    let clusters: [[CustomFood]]
+}
+
 /// Food-tab root: section toggle + shared search over meals and custom foods.
 struct FoodTabView: View {
     let mealsModel: MealsModel
@@ -42,6 +48,8 @@ struct FoodTabView: View {
     @State private var isSelecting = false
     @State private var selected: Set<UUID> = []
     @State private var grouping: GroupingRequest?
+    // Drives the "browse all merge suggestions" chooser sheet.
+    @State private var suggestions: SuggestionsRequest?
     // The food pending an ungroup confirmation, if any.
     @State private var ungroupTarget: Food?
 
@@ -96,6 +104,12 @@ struct FoodTabView: View {
                 foodsModel.applyGrouped(newFood, groupedIds: ids)
                 isSelecting = false
                 selected = []
+            }
+        }
+        .sheet(item: $suggestions) { request in
+            GroupSuggestionsSheet(clusters: request.clusters) { cluster in
+                isSelecting = true
+                selected = Set(cluster.map(\.id))
             }
         }
         .confirmationDialog(
@@ -244,15 +258,20 @@ struct FoodTabView: View {
         .padding(.top, 8)
     }
 
-    /// A tappable hint surfacing likely grouping candidates; tapping enters
-    /// selection mode with the first cluster pre-selected.
+    /// A tappable hint surfacing likely grouping candidates. With a single
+    /// cluster, tapping enters selection mode with it pre-selected; with several,
+    /// tapping opens the chooser sheet so the user can pick which to merge.
     /// Inputs:
     ///   - clusters: the duplicate clusters found among standalones (non-empty).
     /// Outputs: the composed hint banner.
     private func duplicateHint(clusters: [[CustomFood]]) -> some View {
         Button {
-            isSelecting = true
-            selected = Set(clusters[0].map(\.id))
+            if clusters.count == 1 {
+                isSelecting = true
+                selected = Set(clusters[0].map(\.id))
+            } else {
+                suggestions = SuggestionsRequest(clusters: clusters)
+            }
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: "wand.and.stars")
