@@ -61,8 +61,12 @@ struct RootView: View {
                         .navigationDestination(for: FoodRoute.self) { route in
                             switch route {
                             case .meal(let summary):
-                                MealDetailView(summary: summary)
-                                    .toolbar { settingsButton }
+                                MealDetailView(
+                                    summary: summary,
+                                    onMutated: { Task { await mealsModel?.load() } },
+                                    onDeleted: { id in mealsModel?.applyRemoval(id: id) }
+                                )
+                                .toolbar { settingsButton }
                             case .food(let food):
                                 CustomFoodDetailView(
                                     food: food,
