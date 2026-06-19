@@ -56,6 +56,24 @@ class MealItemResponse(BaseModel):
     created_at: DateTimeValue
 
 
+class MealItemUpdate(BaseModel):
+    """Request body for ``PATCH /meals/{id}/items/{item_id}`` — partial item update.
+
+    All fields optional; only the mutable fields are accepted. The food source
+    (``usda_fdc_id`` / ``custom_food_id``) cannot be changed in place — delete
+    and re-add to switch sources.
+    """
+
+    display_name: str | None = None
+    quantity_text: str | None = None
+    normalized_quantity_value: float | None = None
+    normalized_quantity_unit: str | None = None
+    calories: int | None = Field(default=None, ge=0)
+    protein_g: float | None = Field(default=None, ge=0)
+    carbs_g: float | None = Field(default=None, ge=0)
+    fat_g: float | None = Field(default=None, ge=0)
+
+
 class MealCreate(BaseModel):
     """Request body for ``POST /meals`` — meal header plus initial items and aliases."""
 
