@@ -44,6 +44,8 @@ private struct UpdateMealItemRequest: Encodable {
     /// immutable food-source pointer fields.
     /// Inputs:
     ///   - item: the rebuilt item carrying the new quantity + macros.
+    /// Outputs: a request value carrying only the item's mutable fields.
+    /// Exceptions: none.
     init(item: NewMealItem) {
         self.displayName = item.displayName
         self.quantityText = item.quantityText

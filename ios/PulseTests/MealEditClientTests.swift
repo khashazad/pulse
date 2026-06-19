@@ -132,6 +132,7 @@ final class MealEditClientTests: XCTestCase {
         }
         try await client.deleteMealItem(mealId: Self.mealId, itemId: Self.itemId)
         XCTAssertEqual(captured?.httpMethod, "DELETE")
+        XCTAssertEqual(captured?.value(forHTTPHeaderField: "Authorization"), "Bearer session-k")
         XCTAssertEqual(captured?.url?.path,
                        "/meals/55555555-5555-5555-5555-555555555555/items/66666666-6666-6666-6666-666666666666")
     }
