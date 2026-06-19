@@ -424,6 +424,59 @@ def test_delete_meal_item_item_not_found_returns_404(rest_client: TestClient) ->
     assert resp.status_code == 404
 
 
+def test_update_meal_item_200(rest_client: TestClient) -> None:
+    """`PATCH /meals/{id}/items/{item_id}` returns 200 with the updated item."""
+    meal = _meal_row()
+    item = _item_row(meal["id"])
+    with patch("pulse_server.routers.meals.MealsRepository") as MockRepo:
+        instance = MockRepo.return_value
+        instance.get_meal = AsyncMock(return_value=meal)
+        instance.update_meal_item = AsyncMock(return_value=item)
+        resp = rest_client.patch(
+            f"/meals/{meal['id']}/items/{item['id']}",
+            headers=AUTH_HEADERS,
+            json={"quantity_text": "120 g", "calories": 165, "protein_g": 1.5,
+                  "carbs_g": 24.0, "fat_g": 1.0, "normalized_quantity_value": 120,
+                  "normalized_quantity_unit": "g"},
+        )
+    assert resp.status_code == 200
+    assert resp.json()["display_name"] == "Eggs"
+    # Only the mutable fields were forwarded to the repository.
+    fields = instance.update_meal_item.await_args.args[2] \
+        if len(instance.update_meal_item.await_args.args) > 2 \
+        else instance.update_meal_item.await_args.kwargs["fields"]
+    assert "usda_fdc_id" not in fields
+    assert fields["quantity_text"] == "120 g"
+
+
+def test_update_meal_item_meal_not_found_returns_404(rest_client: TestClient) -> None:
+    """`PATCH /meals/{id}/items/{item_id}` returns 404 when the meal is missing."""
+    with patch("pulse_server.routers.meals.MealsRepository") as MockRepo:
+        instance = MockRepo.return_value
+        instance.get_meal = AsyncMock(return_value=None)
+        resp = rest_client.patch(
+            f"/meals/{uuid.uuid4()}/items/{uuid.uuid4()}",
+            headers=AUTH_HEADERS,
+            json={"quantity_text": "1"},
+        )
+    assert resp.status_code == 404
+
+
+def test_update_meal_item_item_not_found_returns_404(rest_client: TestClient) -> None:
+    """`PATCH /meals/{id}/items/{item_id}` returns 404 when the item is missing."""
+    meal = _meal_row()
+    with patch("pulse_server.routers.meals.MealsRepository") as MockRepo:
+        instance = MockRepo.return_value
+        instance.get_meal = AsyncMock(return_value=meal)
+        instance.update_meal_item = AsyncMock(return_value=None)
+        resp = rest_client.patch(
+            f"/meals/{meal['id']}/items/{uuid.uuid4()}",
+            headers=AUTH_HEADERS,
+            json={"quantity_text": "1"},
+        )
+    assert resp.status_code == 404
+
+
 def _entry_row(
     meal_id: uuid.UUID, meal_name: str, calories: int = 140, confirmed: bool = True
 ) -> dict:

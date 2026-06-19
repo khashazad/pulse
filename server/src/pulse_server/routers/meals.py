@@ -28,6 +28,7 @@ from pulse_server.models import (
     MealCreate,
     MealItemCreate,
     MealItemResponse,
+    MealItemUpdate,
     MealResponse,
     MealsListResponse,
     MealUpdate,
@@ -305,6 +306,46 @@ async def delete_meal_item(
         deleted = await repo.delete_meal_item(item_id, meal_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Meal item not found")
+
+
+@router.patch("/meals/{meal_id}/items/{item_id}", response_model=MealItemResponse)
+async def update_meal_item(
+    request: Request,
+    meal_id: UUID,
+    item_id: UUID,
+    body: MealItemUpdate,
+    session: AsyncSession = Depends(get_session_dependency),
+) -> MealItemResponse:
+    """Update a meal item's mutable fields (name, quantity, macros).
+
+    The food source (USDA vs custom food) cannot be changed in place — delete
+    and re-add to switch sources. Only fields present in the request body are
+    written.
+
+    **Inputs:**
+    - request (Request): Active request providing ``user_key``.
+    - meal_id (UUID): Owning meal's primary key.
+    - item_id (UUID): Meal-item primary key.
+    - body (MealItemUpdate): Subset of mutable fields to overwrite.
+    - session (AsyncSession): DB session dependency.
+
+    **Outputs:**
+    - MealItemResponse: The updated item.
+
+    **Exceptions:**
+    - HTTPException(404): Raised when the meal or the item does not exist for this user.
+    """
+    user_key = request.state.user_key
+    fields = body.model_dump(exclude_unset=True)
+    repo = MealsRepository(session)
+    async with transaction(session):
+        meal_row = await repo.get_meal(meal_id, user_key)
+        if meal_row is None:
+            raise HTTPException(status_code=404, detail="Meal not found")
+        row = await repo.update_meal_item(item_id, meal_id, fields)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Meal item not found")
+    return meal_item_response(row)
 
 
 @router.post("/meals/{meal_id}/log", response_model=LogMealResponse)
