@@ -19,6 +19,18 @@ private struct GroupingRequest: Identifiable {
     let foods: [CustomFood]
 }
 
+/// Identifiable payload that drives the grouping-suggestions chooser sheet.
+private struct SuggestionsRequest: Identifiable {
+    let id = UUID()
+    let clusters: [[CustomFood]]
+}
+
+/// Identifiable payload that drives the "save foods as meal" wizard.
+private struct SaveMealRequest: Identifiable {
+    let id = UUID()
+    let foods: [CustomFood]
+}
+
 /// Food-tab root: section toggle + shared search over meals and custom foods.
 struct FoodTabView: View {
     let mealsModel: MealsModel
@@ -42,6 +54,12 @@ struct FoodTabView: View {
     @State private var isSelecting = false
     @State private var selected: Set<UUID> = []
     @State private var grouping: GroupingRequest?
+    // Drives the "browse all merge suggestions" chooser sheet.
+    @State private var suggestions: SuggestionsRequest?
+    // Drives the "save selected foods as meal" quantity wizard.
+    @State private var savingFoodsAsMeal: SaveMealRequest?
+    /// Name of a just-saved meal, shown as a transient confirmation; nil hides it.
+    @State private var savedMealName: String?
     // The food pending an ungroup confirmation, if any.
     @State private var ungroupTarget: Food?
 
@@ -98,6 +116,21 @@ struct FoodTabView: View {
                 selected = []
             }
         }
+        .sheet(item: $suggestions) { request in
+            GroupSuggestionsSheet(clusters: request.clusters) { cluster in
+                isSelecting = true
+                selected = Set(cluster.map(\.id))
+            }
+        }
+        .sheet(item: $savingFoodsAsMeal) { request in
+            SaveFoodsAsMealSheet(foods: request.foods, auth: auth) { meal in
+                isSelecting = false
+                selected = []
+                savedMealName = meal.name
+                Task { await mealsModel.load() }
+            }
+        }
+        .transientConfirmation($savedMealName)
         .confirmationDialog(
             ungroupTarget.map { "Ungroup \($0.name)?" } ?? "",
             isPresented: Binding(get: { ungroupTarget != nil },
@@ -229,11 +262,17 @@ struct FoodTabView: View {
                 .font(.system(size: 14, weight: .medium))
                 .foregroundStyle(Theme.CTP.mauve)
             }
-            if isSelecting, selected.count >= 2 {
+            if isSelecting, selected.count >= 1 {
                 let chosen = allStandalones.filter { selected.contains($0.id) }
-                PrimaryActionButton(title: "Group \(chosen.count) into food",
-                                    leading: .icon("rectangle.3.group"), disabled: false) {
-                    grouping = GroupingRequest(foods: chosen)
+                if chosen.count >= 2 {
+                    PrimaryActionButton(title: "Group \(chosen.count) into food",
+                                        leading: .icon("rectangle.3.group"), disabled: false) {
+                        grouping = GroupingRequest(foods: chosen)
+                    }
+                }
+                PrimaryActionButton(title: "Save \(chosen.count) as meal",
+                                    leading: .icon("square.stack.3d.up"), disabled: false) {
+                    savingFoodsAsMeal = SaveMealRequest(foods: chosen)
                 }
             }
             if !isSelecting, !foodsModel.duplicateClusters.isEmpty {
@@ -244,15 +283,20 @@ struct FoodTabView: View {
         .padding(.top, 8)
     }
 
-    /// A tappable hint surfacing likely grouping candidates; tapping enters
-    /// selection mode with the first cluster pre-selected.
+    /// A tappable hint surfacing likely grouping candidates. With a single
+    /// cluster, tapping enters selection mode with it pre-selected; with several,
+    /// tapping opens the chooser sheet so the user can pick which to merge.
     /// Inputs:
     ///   - clusters: the duplicate clusters found among standalones (non-empty).
     /// Outputs: the composed hint banner.
     private func duplicateHint(clusters: [[CustomFood]]) -> some View {
         Button {
-            isSelecting = true
-            selected = Set(clusters[0].map(\.id))
+            if clusters.count == 1 {
+                isSelecting = true
+                selected = Set(clusters[0].map(\.id))
+            } else {
+                suggestions = SuggestionsRequest(clusters: clusters)
+            }
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: "wand.and.stars")
