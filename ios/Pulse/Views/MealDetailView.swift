@@ -67,7 +67,7 @@ struct MealDetailView: View {
                             commitRename()
                             isEditing = false
                         } else {
-                            nameDraft = summary.name
+                            nameDraft = currentMealName
                             model?.resetEditState()
                             isEditing = true
                         }
@@ -214,11 +214,21 @@ struct MealDetailView: View {
         .buttonStyle(.plain)
     }
 
+    /// The meal's current name: the freshly loaded value when available, else
+    /// the summary captured at navigation. Used to seed the rename field and to
+    /// skip no-op renames, so a second rename in the same session compares
+    /// against the up-to-date name rather than the stale `summary.name`.
+    /// Outputs: the current display name.
+    private var currentMealName: String {
+        if case .loaded(let meal) = model?.state { return meal.name }
+        return summary.name
+    }
+
     /// Commits the rename draft if it changed and is non-empty.
     /// Outputs: nothing; fires the model rename + `onMutated` on success.
     private func commitRename() {
         let trimmed = nameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, trimmed != summary.name else { return }
+        guard !trimmed.isEmpty, trimmed != currentMealName else { return }
         Task { if await model?.rename(to: trimmed) == true { onMutated() } }
     }
 
