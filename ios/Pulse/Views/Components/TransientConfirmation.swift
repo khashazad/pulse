@@ -27,7 +27,7 @@ private struct TransientConfirmationModifier: ViewModifier {
                                 .overlay(Capsule().stroke(Theme.separator, lineWidth: 0.5)))
                         .padding(.bottom, Theme.Layout.dockClearance)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
-                        .task {
+                        .task(id: message) {
                             try? await Task.sleep(nanoseconds: Self.visibleNanoseconds)
                             withAnimation { self.message = nil }
                         }
