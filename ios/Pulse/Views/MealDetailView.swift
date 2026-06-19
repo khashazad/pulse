@@ -64,6 +64,7 @@ struct MealDetailView: View {
                 if case .loaded = model?.state {
                     Button(isEditing ? "Done" : "Edit") {
                         if isEditing {
+                            commitRename()
                             isEditing = false
                         } else {
                             nameDraft = summary.name
@@ -93,6 +94,9 @@ struct MealDetailView: View {
                         if await model?.updateItem(itemId: item.id, to: rebuilt) == true { onMutated() }
                     }
                 }
+            } else {
+                // Not quantity-editable (free-text quantity): dismiss immediately.
+                Color.clear.onAppear { editingItem = nil }
             }
         }
         .confirmationDialog("Delete this meal?", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
@@ -184,6 +188,7 @@ struct MealDetailView: View {
     }
 
     /// "Add item" button shown in edit mode; presents the food search sheet.
+    /// Outputs: a button that opens the add-item flow.
     private var addItemButton: some View {
         PrimaryActionButton(title: "Add item", leading: .icon("plus"), disabled: false) {
             searchModel?.query = ""
@@ -192,6 +197,7 @@ struct MealDetailView: View {
     }
 
     /// Destructive "Delete meal" button shown in edit mode.
+    /// Outputs: a button that requests delete confirmation.
     private var deleteMealButton: some View {
         Button(role: .destructive) {
             showDeleteConfirm = true
