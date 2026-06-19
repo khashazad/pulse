@@ -9,8 +9,6 @@ import SwiftUI
 struct SaveFoodsAsMealSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var flow: SaveFoodsAsMealFlow
-    /// The naming step's model, built once all quantities are collected.
-    @State private var saveModel: SaveAsMealSheetModel?
     /// Called once the meal is created, with the new meal.
     let onCreated: (Meal) -> Void
 
@@ -51,38 +49,50 @@ struct SaveFoodsAsMealSheet: View {
         if let food = flow.currentFood {
             // `.id(food.id)` forces a fresh QuantityEntryView per food so its
             // internal @State (mode, typed text) resets between steps.
+            // NOTE: QuantityEntryView owns its own NavigationStack, so during the
+            // per-food steps it nests inside this wizard's stack (two nav bars).
+            // Deferred: making QuantityEntryView headless would touch its other
+            // callers (CustomFoodDetailView, FoodSearchSheet) — out of scope here.
             QuantityEntryView(result: FoodSearchResult(customFood: food),
                               containers: flow.containers) { item in
                 flow.add(item)
             }
             .id(food.id)
         } else {
-            namingStep
+            WizardNamingStep(flow: flow, onCreated: onCreated, onDismiss: { dismiss() })
         }
     }
+}
 
-    /// The naming step, lazily building the save model once on first appearance.
-    /// Outputs: the meal-naming step view.
-    @ViewBuilder
-    private var namingStep: some View {
-        Group {
-            if let saveModel {
-                MealNameStep(model: saveModel)
-                    .navigationTitle("Save as meal")
-                    .onChange(of: saveModel.created) { _, created in
-                        guard let created else { return }
-                        onCreated(created)
-                        dismiss()
-                    }
-            } else {
-                Color.clear
+/// Final naming step of the wizard. Owns its `SaveAsMealSheetModel` in `@State`
+/// (built once from the flow's collected quantities, so it survives re-renders)
+/// and reports completion up to the wizard.
+private struct WizardNamingStep: View {
+    @State private var model: SaveAsMealSheetModel
+    /// Called with the created meal once the user saves.
+    let onCreated: (Meal) -> Void
+    /// Dismisses the enclosing wizard sheet.
+    let onDismiss: () -> Void
+
+    /// Builds the naming step, constructing the save model from the flow once.
+    /// Inputs:
+    ///   - flow: the completed wizard flow supplying the collected items.
+    ///   - onCreated: invoked with the created meal on success.
+    ///   - onDismiss: invoked to dismiss the wizard after success.
+    /// Outputs: a configured naming-step view.
+    init(flow: SaveFoodsAsMealFlow, onCreated: @escaping (Meal) -> Void, onDismiss: @escaping () -> Void) {
+        _model = State(initialValue: flow.makeSaveModel())
+        self.onCreated = onCreated
+        self.onDismiss = onDismiss
+    }
+
+    var body: some View {
+        MealNameStep(model: model)
+            .navigationTitle("Save as meal")
+            .onChange(of: model.created) { _, created in
+                guard let created else { return }
+                onCreated(created)
+                onDismiss()
             }
-        }
-        .onAppear {
-            if saveModel == nil {
-                saveModel = flow.makeSaveModel(
-                    suggestedName: FoodDuplicateGrouper.suggestedName(for: flow.foods))
-            }
-        }
     }
 }

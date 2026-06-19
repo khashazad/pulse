@@ -31,16 +31,6 @@ final class SaveAsMealSheetModel {
         self.auth = auth
     }
 
-    /// Sum of the items' macros, for the sheet's preview header.
-    /// Outputs: the aggregate `MacroTotals` over `items`.
-    var totals: MacroTotals {
-        MacroTotals(
-            calories: items.reduce(0) { $0 + $1.calories },
-            proteinG: items.reduce(0) { $0 + $1.proteinG },
-            carbsG: items.reduce(0) { $0 + $1.carbsG },
-            fatG: items.reduce(0) { $0 + $1.fatG })
-    }
-
     /// Creates the meal via `createMeal`. On success sets `created`; on failure
     /// sets `errorMessage` (409 → name-clash). No-op while already saving, on a
     /// blank name, or with no items.

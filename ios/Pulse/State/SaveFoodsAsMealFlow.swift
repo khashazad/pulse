@@ -62,11 +62,12 @@ final class SaveFoodsAsMealFlow: Identifiable {
         collected.map { NewMealItem.from(batchItem: $0, containers: containers) }
     }
 
-    /// Builds the save model for the final naming step from the collected items.
-    /// Inputs:
-    ///   - suggestedName: an initial meal name to pre-fill.
+    /// Builds the naming-step model from the collected items, pre-filling the
+    /// meal name from the shared stem of the grouped foods.
     /// Outputs: a `SaveAsMealSheetModel` over `mealItems`.
-    func makeSaveModel(suggestedName: String) -> SaveAsMealSheetModel {
-        SaveAsMealSheetModel(items: mealItems, suggestedName: suggestedName, auth: auth)
+    func makeSaveModel() -> SaveAsMealSheetModel {
+        SaveAsMealSheetModel(items: mealItems,
+                             suggestedName: FoodDuplicateGrouper.suggestedName(for: foods),
+                             auth: auth)
     }
 }

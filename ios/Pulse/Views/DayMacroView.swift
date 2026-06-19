@@ -116,25 +116,7 @@ struct DayMacroView: View {
                 Text(error.userMessage)
             }
         }
-        .overlay(alignment: .bottom) {
-            if let name = savedMealName {
-                Text("Saved “\(name)”")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(Theme.FG.primary)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
-                    .background(
-                        Capsule().fill(Theme.BG.secondary)
-                            .overlay(Capsule().stroke(Theme.separator, lineWidth: 0.5)))
-                    .padding(.bottom, Theme.Layout.dockClearance)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-                    .task {
-                        try? await Task.sleep(nanoseconds: 1_800_000_000)
-                        withAnimation { savedMealName = nil }
-                    }
-            }
-        }
-        .animation(.easeInOut(duration: 0.2), value: savedMealName)
+        .transientConfirmation($savedMealName)
     }
 
     /// Toolbar toggle that enters/exits multi-select. Only meaningful once the
