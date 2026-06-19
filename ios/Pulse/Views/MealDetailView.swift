@@ -55,8 +55,6 @@ struct MealDetailView: View {
             model = MealDetailModel(mealId: summary.id, auth: auth)
             searchModel = FoodSearchModel(auth: auth)
             await model?.load()
-            // Containers are needed by the quantity step (tare lookup). Best-effort.
-            containers = (try? await auth.makeClient()?.listContainers()) ?? []
         }
         .refreshable { await model?.load() }
         .toolbar {
@@ -70,6 +68,9 @@ struct MealDetailView: View {
                             nameDraft = currentMealName
                             model?.resetEditState()
                             isEditing = true
+                            // Defer the container fetch (needed only by the quantity
+                            // step) until edit mode, so read-only visits skip it.
+                            Task { await loadContainersIfNeeded() }
                         }
                     }
                     .foregroundStyle(Theme.CTP.mauve)
@@ -224,6 +225,15 @@ struct MealDetailView: View {
         return summary.name
     }
 
+    /// Best-effort fetch of the user's containers (the quantity step's tare
+    /// source), deferred until edit mode so read-only visits skip the request.
+    /// Re-attempts on the next edit-mode entry only while still empty.
+    /// Outputs: nothing; populates `containers` on success.
+    private func loadContainersIfNeeded() async {
+        guard containers.isEmpty else { return }
+        containers = (try? await auth.makeClient()?.listContainers()) ?? []
+    }
+
     /// Commits the rename draft if it changed and is non-empty.
     /// Outputs: nothing; fires the model rename + `onMutated` on success.
     private func commitRename() {
@@ -240,7 +250,7 @@ struct MealDetailView: View {
             Label(error.userMessage, systemImage: "exclamationmark.triangle")
                 .font(.system(size: 12))
                 .foregroundStyle(Theme.CTP.red)
-                .padding(.horizontal, 20)
+                .padding(.horizontal, 16)
         }
     }
 
@@ -304,7 +314,10 @@ struct MealDetailView: View {
     private func ingredientsCard(_ items: [MealItem]) -> some View {
         VStack(spacing: 0) {
             ForEach(Array(items.enumerated()), id: \.element.id) { idx, item in
-                let canEditQuantity = FoodSearchResult(mealItem: item) != nil
+                // Mirrors `FoodSearchResult(mealItem:)`'s nil condition without
+                // allocating a result per row render: an item is quantity-editable
+                // iff it has a positive normalized quantity value.
+                let canEditQuantity = (item.normalizedQuantityValue ?? 0) > 0
                 HStack(spacing: 8) {
                     ingredientRow(item)
                         .contentShape(Rectangle())

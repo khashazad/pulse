@@ -152,27 +152,11 @@ final class MealDetailModel {
         await mutate { client in _ = try await client.updateMeal(id: mealId, name: name) }
     }
 
-    /// Deletes the meal.
+    /// Deletes the meal. Skips the post-action reload (the meal no longer exists).
     /// - Returns: true on success (caller should pop + refresh the list).
     @discardableResult
     func deleteMeal() async -> Bool {
-        guard let client = auth?.makeClient() else {
-            editState = .failed(.notSignedIn)
-            return false
-        }
-        editState = .working
-        do {
-            try await client.deleteMeal(id: mealId)
-            editState = .idle
-            return true
-        } catch let error as PulseError {
-            if error == .unauthorized { auth?.handleUnauthorized() }
-            editState = .failed(error)
-            return false
-        } catch {
-            editState = .failed(.server(status: -1))
-            return false
-        }
+        await mutate(reload: false) { client in try await client.deleteMeal(id: mealId) }
     }
 
     /// Adds an item to the meal, then reloads.
@@ -204,10 +188,14 @@ final class MealDetailModel {
     }
 
     /// Runs an edit action against an authenticated client, sets `editState`,
-    /// and reloads the meal on success. Routes 401 through `AuthSession`.
-    /// - Parameter action: the client call to perform.
+    /// and (unless `reload` is false) reloads the meal on success. Routes 401
+    /// through `AuthSession`.
+    /// - Parameters:
+    ///   - reload: whether to refetch the meal after the action succeeds; pass
+    ///     false for actions that leave no meal to reload (e.g. delete).
+    ///   - action: the client call to perform.
     /// - Returns: true on success.
-    private func mutate(_ action: (PulseClient) async throws -> Void) async -> Bool {
+    private func mutate(reload: Bool = true, _ action: (PulseClient) async throws -> Void) async -> Bool {
         guard let client = auth?.makeClient() else {
             editState = .failed(.notSignedIn)
             return false
@@ -217,7 +205,7 @@ final class MealDetailModel {
             try await action(client)
             // Stay in `.working` across the reload so the edit UI shows progress
             // until fresh totals land; only then clear to `.idle`.
-            await load()
+            if reload { await load() }
             editState = .idle
             return true
         } catch let error as PulseError {
