@@ -435,16 +435,24 @@ def test_update_meal_item_200(rest_client: TestClient) -> None:
         resp = rest_client.patch(
             f"/meals/{meal['id']}/items/{item['id']}",
             headers=AUTH_HEADERS,
-            json={"quantity_text": "120 g", "calories": 165, "protein_g": 1.5,
-                  "carbs_g": 24.0, "fat_g": 1.0, "normalized_quantity_value": 120,
-                  "normalized_quantity_unit": "g"},
+            json={
+                "quantity_text": "120 g",
+                "calories": 165,
+                "protein_g": 1.5,
+                "carbs_g": 24.0,
+                "fat_g": 1.0,
+                "normalized_quantity_value": 120,
+                "normalized_quantity_unit": "g",
+            },
         )
     assert resp.status_code == 200
     assert resp.json()["display_name"] == "Eggs"
     # Only the mutable fields were forwarded to the repository.
-    fields = instance.update_meal_item.await_args.args[2] \
-        if len(instance.update_meal_item.await_args.args) > 2 \
+    fields = (
+        instance.update_meal_item.await_args.args[2]
+        if len(instance.update_meal_item.await_args.args) > 2
         else instance.update_meal_item.await_args.kwargs["fields"]
+    )
     assert "usda_fdc_id" not in fields
     assert fields["quantity_text"] == "120 g"
 

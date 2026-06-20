@@ -145,7 +145,7 @@ extension FoodSearchResult {
     /// round-trip through that pipeline — re-saving them would silently relabel
     /// the quantity to "units" — so they are not quantity-editable.
     private static let rescalableUnits: Set<String> = [
-        "g", "gram", "grams", "serving", "servings", "unit", "units",
+        "g", "gram", "grams", "serving", "servings", "unit", "units"
     ]
 
     /// Whether a meal item's quantity can be edited via the rescale flow: it must

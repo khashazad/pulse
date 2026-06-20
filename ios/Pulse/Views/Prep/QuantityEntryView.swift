@@ -16,7 +16,7 @@ struct QuantityEntryView: View {
     /// in Type mode — used when editing an existing item's quantity so the user
     /// tweaks the current value instead of re-entering from scratch. `nil` (the
     /// default, used by the add-food flow) leaves the field empty.
-    var initialTypedValue: Double? = nil
+    var initialTypedValue: Double?
     /// Called with the assembled batch item when the user confirms.
     let onAdd: (BatchFoodItem) -> Void
 
