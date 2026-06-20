@@ -77,6 +77,13 @@ final class PrepModel {
     /// Serving divisor: the override if present, else the container count (min 1).
     var portions: Int { portionsOverride ?? max(1, containerCount) }
 
+    /// True when the calculator carries user input (targets, weigh-ins, or a
+    /// portions override). Batch-food emptiness is composed by the view, which
+    /// also owns the batch model.
+    var isDirty: Bool {
+        !targets.isEmpty || !weighIns.isEmpty || portionsOverride != nil
+    }
+
     /// Net food across all weigh-ins (`Σ max(0, gross - tare)`); nil until a gross
     /// is entered so the result rows stay blank.
     var totalNetGrams: Double? {
@@ -165,6 +172,19 @@ final class PrepModel {
     /// Outputs: nothing.
     func persist() {
         store.save(targets: targets, weighIns: weighIns, portionsOverride: portionsOverride)
+    }
+
+    /// Wipes the page to a clean slate for a brand-new batch: clears targets,
+    /// weigh-ins, and the portions override, persists the empty calculator state,
+    /// and empties the batch foods — which also clears the applied-days memory
+    /// (see `saveBatchItems`, where empty is the batch-identity boundary).
+    /// Outputs: nothing; mutates and persists model state.
+    func resetAll() {
+        targets = []
+        weighIns = []
+        portionsOverride = nil
+        persist()
+        saveBatchItems([])
     }
 
     /// Refreshes container snapshots and drops deleted ones using `list`, but only
