@@ -500,10 +500,13 @@ struct PrepView: View {
         }
     }
 
-    // MARK: - Reusable views
+}
 
+// MARK: - Reusable views
+
+private extension PrepView {
     /// A thin separator used between card rows.
-    private var divider: some View {
+    var divider: some View {
         Rectangle().fill(Theme.separator).frame(height: 0.5)
     }
 
@@ -511,7 +514,7 @@ struct PrepView: View {
     /// Inputs:
     ///   - text: the placeholder message.
     /// Outputs: a styled row `View`.
-    private func emptyRow(_ text: String) -> some View {
+    func emptyRow(_ text: String) -> some View {
         HStack {
             Text(text)
                 .font(.system(size: 13))
@@ -527,7 +530,7 @@ struct PrepView: View {
     ///   - title: the button label.
     ///   - action: the tap handler.
     /// Outputs: a styled button `View`.
-    private func addButton(_ title: String, action: @escaping () -> Void) -> some View {
+    func addButton(_ title: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 6) {
                 Image(systemName: "plus.circle.fill")
@@ -549,7 +552,7 @@ struct PrepView: View {
     ///   - label: left-aligned descriptive label.
     ///   - value: optional gram value; renders an em-dash placeholder when nil.
     /// Outputs: a styled row `View`.
-    private func resultRow(_ label: String, value: Double?) -> some View {
+    func resultRow(_ label: String, value: Double?) -> some View {
         HStack {
             Text(label)
                 .font(.system(size: 14, weight: .medium))
