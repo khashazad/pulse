@@ -89,7 +89,11 @@ struct MealDetailView: View {
         }
         .sheet(item: $editingItem) { item in
             if let result = FoodSearchResult(mealItem: item) {
-                QuantityEntryView(result: result, containers: containers) { batchItem in
+                QuantityEntryView(
+                    result: result,
+                    containers: containers,
+                    initialTypedValue: item.normalizedQuantityValue
+                ) { batchItem in
                     Task {
                         let rebuilt = NewMealItem.from(batchItem: batchItem, containers: containers)
                         if await model?.updateItem(itemId: item.id, to: rebuilt) == true { onMutated() }
@@ -314,10 +318,10 @@ struct MealDetailView: View {
     private func ingredientsCard(_ items: [MealItem]) -> some View {
         VStack(spacing: 0) {
             ForEach(Array(items.enumerated()), id: \.element.id) { idx, item in
-                // Mirrors `FoodSearchResult(mealItem:)`'s nil condition without
-                // allocating a result per row render: an item is quantity-editable
-                // iff it has a positive normalized quantity value.
-                let canEditQuantity = (item.normalizedQuantityValue ?? 0) > 0
+                // Shared with `FoodSearchResult(mealItem:)`'s nil condition (no
+                // per-row allocation): an item is quantity-editable iff it has a
+                // positive normalized value and a unit that maps to a basis.
+                let canEditQuantity = FoodSearchResult.isQuantityEditable(item)
                 HStack(spacing: 8) {
                     ingredientRow(item)
                         .contentShape(Rectangle())

@@ -50,6 +50,21 @@ final class MealItemRescaleTests: XCTestCase {
         XCTAssertEqual(m.proteinG, 8, accuracy: 0.1)
     }
 
+    func test_unrecognizedUnit_isNotEditable() {
+        // Units that can't round-trip through the typed-quantity pipeline (e.g.
+        // "ml") must not be editable, else re-saving would relabel them "units".
+        XCTAssertNil(FoodSearchResult(mealItem: item(value: 250, unit: "ml")))
+        XCTAssertFalse(FoodSearchResult.isQuantityEditable(item(value: 250, unit: "ml")))
+    }
+
+    func test_recognizedUnitsAndPositiveValue_areEditable() {
+        XCTAssertTrue(FoodSearchResult.isQuantityEditable(item(value: 80, unit: "g")))
+        XCTAssertTrue(FoodSearchResult.isQuantityEditable(item(value: 1, unit: "units")))
+        XCTAssertTrue(FoodSearchResult.isQuantityEditable(item(value: 2, unit: "serving")))
+        XCTAssertFalse(FoodSearchResult.isQuantityEditable(item(value: nil, unit: "g")))
+        XCTAssertFalse(FoodSearchResult.isQuantityEditable(item(value: 0, unit: "g")))
+    }
+
     func test_customFoodPointerPreserved() throws {
         let cf = UUID()
         let r = try XCTUnwrap(FoodSearchResult(mealItem: item(value: 1, unit: "unit", fdc: nil, customFood: cf)))
