@@ -143,13 +143,38 @@ struct ProgressPhotoComparisonView: View {
         return "\(day) · no weight"
     }
 
-    // MARK: rows
+    private func reload() async {
+        isLoading = true
+        let lo = min(dateA, dateB)
+        let hi = max(dateA, dateB)
+        await store.reconcile(from: lo, to: hi)
+        await loadWeights()
+        if !Task.isCancelled { isLoading = false }
+    }
 
+    /// Fetches the logged weight for each side's date in parallel, tolerating a
+    /// missing entry (the column then shows "no weight"). Skips applying results
+    /// when the surrounding reload was cancelled by a newer date change.
+    /// - Returns: nothing; updates `weightA` / `weightB` in place.
+    private func loadWeights() async {
+        guard let client = auth.makeClient() else { return }
+        async let a = try? client.getWeight(date: dateA)
+        async let b = try? client.getWeight(date: dateB)
+        let (resultA, resultB) = await (a, b)
+        if Task.isCancelled { return }
+        weightA = resultA
+        weightB = resultB
+    }
+}
+
+// MARK: - Rows
+
+private extension ProgressPhotoComparisonView {
     /// Latest photo per tag for the given date. When multiple uploads share
     /// `(date, tagId)`, keeps the one with the largest `updatedAt`.
     /// - Parameter date: the calendar day to look up.
     /// - Returns: map from `tagId` to the most recent photo metadata.
-    private func latestByTag(on date: Date) -> [UUID: ProgressPhotoMetadata] {
+    func latestByTag(on date: Date) -> [UUID: ProgressPhotoMetadata] {
         var out: [UUID: ProgressPhotoMetadata] = [:]
         for m in store.photos(on: date) {
             if let existing = out[m.tagId], existing.updatedAt >= m.updatedAt { continue }
@@ -164,7 +189,7 @@ struct ProgressPhotoComparisonView: View {
     ///   - a: map of tag id → photo for side A.
     ///   - b: map of tag id → photo for side B.
     /// - Returns: ordered list of tag ids to render as rows.
-    private func orderedTagIds(_ a: [UUID: ProgressPhotoMetadata], _ b: [UUID: ProgressPhotoMetadata]) -> [UUID] {
+    func orderedTagIds(_ a: [UUID: ProgressPhotoMetadata], _ b: [UUID: ProgressPhotoMetadata]) -> [UUID] {
         let ids = Set(a.keys).union(b.keys)
         return ids.sorted { lhs, rhs in
             let lo = tagStore.tag(id: lhs)?.sortOrder ?? .max
@@ -177,7 +202,7 @@ struct ProgressPhotoComparisonView: View {
     }
 
     @ViewBuilder
-    private var rows: some View {
+    var rows: some View {
         let a = latestByTag(on: dateA)
         let b = latestByTag(on: dateB)
         let ids = orderedTagIds(a, b)
@@ -203,7 +228,7 @@ struct ProgressPhotoComparisonView: View {
         }
     }
 
-    private func tagRow(tagId: UUID, leftMeta: ProgressPhotoMetadata?, rightMeta: ProgressPhotoMetadata?) -> some View {
+    func tagRow(tagId: UUID, leftMeta: ProgressPhotoMetadata?, rightMeta: ProgressPhotoMetadata?) -> some View {
         let name = tagStore.tag(id: tagId)?.name ?? "Tag"
         return VStack(alignment: .leading, spacing: 8) {
             Text(name)
@@ -218,7 +243,7 @@ struct ProgressPhotoComparisonView: View {
     }
 
     @ViewBuilder
-    private func comparisonSlot(meta: ProgressPhotoMetadata?, tagName: String) -> some View {
+    func comparisonSlot(meta: ProgressPhotoMetadata?, tagName: String) -> some View {
         if let meta {
             ComparisonPhotoCell(
                 meta: meta,
@@ -229,29 +254,6 @@ struct ProgressPhotoComparisonView: View {
         } else {
             ComparisonPlaceholder()
         }
-    }
-
-    private func reload() async {
-        isLoading = true
-        let lo = min(dateA, dateB)
-        let hi = max(dateA, dateB)
-        await store.reconcile(from: lo, to: hi)
-        await loadWeights()
-        if !Task.isCancelled { isLoading = false }
-    }
-
-    /// Fetches the logged weight for each side's date in parallel, tolerating a
-    /// missing entry (the column then shows "no weight"). Skips applying results
-    /// when the surrounding reload was cancelled by a newer date change.
-    /// - Returns: nothing; updates `weightA` / `weightB` in place.
-    private func loadWeights() async {
-        guard let client = auth.makeClient() else { return }
-        async let a = try? client.getWeight(date: dateA)
-        async let b = try? client.getWeight(date: dateB)
-        let (resultA, resultB) = await (a, b)
-        if Task.isCancelled { return }
-        weightA = resultA
-        weightB = resultB
     }
 }
 
