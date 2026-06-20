@@ -80,10 +80,12 @@ struct ProgressPhotoComparisonView: View {
             }
         }
         .task {
-            isLoading = true
             await tagStore.reload()
-            await reload()
-            isLoading = false
+            // Route the initial load through the same tracked task as date
+            // changes, so a date change during this first reload cancels it
+            // (an untracked initial reload could land after a newer one and
+            // overwrite fresh weights/photos with stale values).
+            scheduleReload()
         }
         .refreshable { await reload() }
         .onChange(of: dateA) { _, _ in scheduleReload() }
@@ -143,6 +145,10 @@ struct ProgressPhotoComparisonView: View {
         return "\(day) · no weight"
     }
 
+    /// Reconciles the stored photos for the selected date range and refreshes
+    /// both sides' weights. Leaves `isLoading` set when cancelled by a newer
+    /// reload so the in-flight successor owns clearing it.
+    /// - Returns: nothing; updates `store.photos` and `weightA` / `weightB`.
     private func reload() async {
         isLoading = true
         let lo = min(dateA, dateB)
@@ -152,18 +158,37 @@ struct ProgressPhotoComparisonView: View {
         if !Task.isCancelled { isLoading = false }
     }
 
-    /// Fetches the logged weight for each side's date in parallel, tolerating a
-    /// missing entry (the column then shows "no weight"). Skips applying results
-    /// when the surrounding reload was cancelled by a newer date change.
+    /// Fetches the logged weight for each side's date in parallel. A genuinely
+    /// missing entry (`.notFound`) clears that side to "no weight"; any other
+    /// error (network, auth, decoding) keeps the side's current value so a
+    /// transient failure can't render a false "no weight". Skips applying
+    /// results when the surrounding reload was cancelled by a newer date change.
     /// - Returns: nothing; updates `weightA` / `weightB` in place.
     private func loadWeights() async {
         guard let client = auth.makeClient() else { return }
-        async let a = try? client.getWeight(date: dateA)
-        async let b = try? client.getWeight(date: dateB)
+        async let a = fetchWeight(for: dateA, client: client, keep: weightA)
+        async let b = fetchWeight(for: dateB, client: client, keep: weightB)
         let (resultA, resultB) = await (a, b)
         if Task.isCancelled { return }
         weightA = resultA
         weightB = resultB
+    }
+
+    /// Resolves one side's weight, distinguishing "no entry" from a fetch error.
+    /// - Parameters:
+    ///   - date: the date to fetch the logged weight for.
+    ///   - client: the API client to fetch through.
+    ///   - keep: the side's current value, returned unchanged on a non-`.notFound`
+    ///     error so a transient failure doesn't overwrite a real weight with nil.
+    /// - Returns: the fetched entry, nil when none is logged, or `keep` on error.
+    private func fetchWeight(for date: Date, client: PulseClient, keep: WeightEntry?) async -> WeightEntry? {
+        do {
+            return try await client.getWeight(date: date)
+        } catch PulseError.notFound {
+            return nil
+        } catch {
+            return keep
+        }
     }
 }
 

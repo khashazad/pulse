@@ -91,14 +91,10 @@ struct LogView: View {
 struct DatePickerSheet: View {
     let onOpen: (Date) -> Void
     @Environment(\.dismiss) private var dismiss
-    // Start at midnight so the graphical picker's own start-of-day
-    // normalization on first layout doesn't fire `onChange` and flip
-    // `hasPicked` before the user has actually tapped a day.
+    // Start at midnight so the row reads as a clean calendar day. Today is the
+    // default selection, so "Open" is meaningful immediately — the sheet always
+    // has a valid date to open.
     @State private var selected: Date = Calendar.current.startOfDay(for: Date())
-    /// Whether the user has actively tapped a day in the calendar yet. The
-    /// "Open" action only surfaces after a real pick so the toolbar stays
-    /// clean until there is a date to open.
-    @State private var hasPicked = false
 
     var body: some View {
         NavigationStack {
@@ -113,7 +109,6 @@ struct DatePickerSheet: View {
                     .datePickerStyle(.graphical)
                     .tint(Theme.CTP.mauve)
                     .padding(.horizontal, 12)
-                    .onChange(of: selected) { _, _ in hasPicked = true }
 
                     Spacer()
                 }
@@ -129,14 +124,11 @@ struct DatePickerSheet: View {
                         .foregroundStyle(Theme.CTP.mauve)
                 }
                 // Sits beside "Cancel" on the navigation bar so the user never
-                // has to scroll past the calendar to confirm. Shown only once a
-                // day has actually been selected.
-                if hasPicked {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button("Open") { onOpen(selected) }
-                            .fontWeight(.semibold)
-                            .foregroundStyle(Theme.CTP.mauve)
-                    }
+                // has to scroll past the calendar to confirm.
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Open") { onOpen(selected) }
+                        .fontWeight(.semibold)
+                        .foregroundStyle(Theme.CTP.mauve)
                 }
             }
         }
