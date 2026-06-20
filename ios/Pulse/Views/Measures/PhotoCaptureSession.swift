@@ -15,6 +15,9 @@ struct PhotoCaptureSession: View {
     @Environment(ProgressPhotoStore.self) private var store
     @Environment(ProgressPhotoTagStore.self) private var tagStore
     @Environment(\.dismiss) private var dismiss
+    /// Reads the auto-tag preference so capture can pre-fill tags in pose order.
+    @AppStorage(ProgressPhotoTag.autoTagEnabledKey)
+    private var autoTagEnabled = ProgressPhotoTag.defaultAutoTagEnabled
     let date: Date
 
     /// Identity-stable wrapper around a captured `UIImage` plus its
@@ -80,6 +83,7 @@ struct PhotoCaptureSession: View {
                 CameraCaptureView(
                     onCapture: { image in
                         captured.append(CapturedPhoto(image: image))
+                        autoAssignTags()
                         showCamera = false
                     },
                     onCancel: { showCamera = false }
@@ -89,7 +93,10 @@ struct PhotoCaptureSession: View {
             .onChange(of: pickerItems) { _, items in
                 Task { await loadPickerSelection(items) }
             }
-            .task { await tagStore.reload() }
+            .task {
+                await tagStore.reload()
+                autoAssignTags()
+            }
         }
     }
 
@@ -319,7 +326,23 @@ struct PhotoCaptureSession: View {
                 await MainActor.run { captured.append(CapturedPhoto(image: img)) }
             }
         }
+        await MainActor.run { autoAssignTags() }
         pickerItems = []
+    }
+
+    /// Pre-fills untagged captured photos with tags in sort order when auto-tag is
+    /// enabled. No-op when disabled. Preserves any manual assignment and never
+    /// reuses a tag, delegating the ordering rule to `AutoTagAssignment`.
+    /// Outputs: nothing; mutates `captured[*].tagId` in place.
+    private func autoAssignTags() {
+        guard autoTagEnabled else { return }
+        let assigned = AutoTagAssignment.assign(
+            current: captured.map { $0.tagId },
+            orderedTags: tagStore.tags.map { $0.id }
+        )
+        for (i, tagId) in assigned.enumerated() where captured[i].tagId != tagId {
+            captured[i].tagId = tagId
+        }
     }
 
     private func createTag() async {
