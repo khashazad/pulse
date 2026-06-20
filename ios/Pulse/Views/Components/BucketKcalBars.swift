@@ -41,17 +41,18 @@ struct BucketKcalBars: View {
                 let plotHeight = geo.size.height - 20
                 let targetY = targetCalories.map { CGFloat($0) / CGFloat(ceiling) * plotHeight } ?? 0
                 ZStack(alignment: .bottomLeading) {
+                    HStack(alignment: .bottom, spacing: 8) {
+                        ForEach(buckets) { bucket in
+                            barColumn(bucket: bucket, plotHeight: plotHeight)
+                        }
+                    }
+                    // Drawn after the bars so the target reference line reads on
+                    // top of them rather than being hidden behind taller bars.
                     if targetCalories != nil {
                         Rectangle()
                             .fill(Theme.targetLine.opacity(0.7))
                             .frame(height: 1)
                             .offset(y: -targetY - 20)
-                            .opacity(0.7)
-                    }
-                    HStack(alignment: .bottom, spacing: 8) {
-                        ForEach(buckets) { bucket in
-                            barColumn(bucket: bucket, plotHeight: plotHeight)
-                        }
                     }
                 }
             }

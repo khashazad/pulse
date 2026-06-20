@@ -206,20 +206,18 @@ final class ViewRenderTests: XCTestCase {
     }
 }
 
-/// Provides a real `Namespace.ID` so `ProgressPhotoCell` can be rendered standalone.
+/// Renders `ProgressPhotoCell` standalone for the render smoke tests.
 private struct PhotoCellWrapper: View {
     let meta: ProgressPhotoMetadata
-    @Namespace private var ns
     var body: some View {
-        ProgressPhotoCell(meta: meta, tagName: "Front", namespace: ns, isExpanded: false, onTap: {})
+        ProgressPhotoCell(meta: meta, tagName: "Front", onTap: {})
     }
 }
 
-/// Provides a real `Namespace.ID` so `ProgressPhotoDetailView` can be rendered standalone.
+/// Renders `ProgressPhotoDetailView` standalone for the render smoke tests.
 private struct PhotoDetailWrapper: View {
     let meta: ProgressPhotoMetadata
-    @Namespace private var ns
     var body: some View {
-        ProgressPhotoDetailView(meta: meta, tagName: "Front", namespace: ns, onClose: {})
+        ProgressPhotoDetailView(meta: meta, tagName: "Front", onClose: {})
     }
 }

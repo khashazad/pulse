@@ -48,13 +48,6 @@ struct DailyKcalBars: View {
                 let plotHeight = geo.size.height - 20 // weekday label below
                 let targetY = targetCalories.map { CGFloat($0) / CGFloat(ceiling) * plotHeight } ?? 0
                 ZStack(alignment: .bottomLeading) {
-                    if targetCalories != nil {
-                        Rectangle()
-                            .fill(Theme.targetLine.opacity(0.7))
-                            .frame(height: 1)
-                            .offset(y: -targetY - 20)
-                            .opacity(0.7)
-                    }
                     HStack(alignment: .bottom, spacing: 8) {
                         ForEach(Array(logs.enumerated()), id: \.element.id) { idx, log in
                             barColumn(
@@ -63,6 +56,14 @@ struct DailyKcalBars: View {
                                 plotHeight: plotHeight
                             )
                         }
+                    }
+                    // Drawn after the bars so the target reference line reads on
+                    // top of them rather than being hidden behind taller bars.
+                    if targetCalories != nil {
+                        Rectangle()
+                            .fill(Theme.targetLine.opacity(0.7))
+                            .frame(height: 1)
+                            .offset(y: -targetY - 20)
                     }
                 }
             }

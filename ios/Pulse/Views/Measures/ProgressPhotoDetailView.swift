@@ -1,26 +1,24 @@
-/// In-place fullscreen viewer for a tapped progress photo.
+/// Fullscreen viewer for a tapped progress photo.
 ///
-/// Hosts `ProgressPhotoDetailView`, rendered as an overlay above
-/// `ProgressPhotosView`'s grid. Uses `matchedGeometryEffect` keyed on
-/// `meta.id` to animate the grid cell into a full-bleed view. Loads the
-/// full-resolution image from `ProgressPhotoStore`, supports pinch-to-zoom,
-/// and exposes a trash action that deletes the photo and dismisses. A tap
-/// anywhere on the backdrop collapses back into the grid.
+/// Presented as a `fullScreenCover` over `ProgressPhotosView` /
+/// `ProgressPhotoComparisonView`, so it covers the entire window — including
+/// the floating tab dock and section chrome — and a dismiss always returns to
+/// the exact grid it came from instead of letting a stray tap switch sections.
+/// Loads the full-resolution image from `ProgressPhotoStore`, supports
+/// pinch-to-zoom, and exposes a trash action that deletes the photo and
+/// dismisses. A tap anywhere on the backdrop closes it.
 import SwiftUI
 import UIKit
 
-/// Fullscreen overlay viewer for one progress photo.
+/// Fullscreen viewer for one progress photo.
 /// - Parameters:
 ///   - `meta`: server metadata for the photo to display.
 ///   - `tagName`: human-readable tag label shown in the header.
-///   - `namespace`: shared `Namespace.ID` used to animate from the
-///     originating `ProgressPhotoCell`.
-///   - `onClose`: invoked to collapse the overlay back into the grid.
+///   - `onClose`: invoked to dismiss the viewer back to the grid.
 struct ProgressPhotoDetailView: View {
     @Environment(ProgressPhotoStore.self) private var store
     let meta: ProgressPhotoMetadata
     let tagName: String
-    let namespace: Namespace.ID
     let onClose: () -> Void
 
     @State private var image: UIImage?
@@ -58,7 +56,6 @@ struct ProgressPhotoDetailView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .matchedGeometryEffect(id: meta.id, in: namespace)
         .onTapGesture { onClose() }
     }
 
