@@ -27,6 +27,8 @@ struct PrepView: View {
     /// Holds a freshly constructed `ApplyBatchModel` set immediately before
     /// `showApplySheet` is set to `true`; nil while the sheet is not presented.
     @State private var applyModel: ApplyBatchModel?
+    /// Drives the destructive Reset confirmation dialog.
+    @State private var showResetConfirm = false
 
     /// Identifies which selection the container picker is fulfilling.
     private enum PickerMode: Identifiable {
@@ -64,6 +66,14 @@ struct PrepView: View {
         .toolbarBackground(Theme.BG.primary, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
         .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                if canReset {
+                    Button { showResetConfirm = true } label: {
+                        Image(systemName: "arrow.counterclockwise")
+                            .foregroundStyle(Theme.CTP.red)
+                    }
+                }
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button { showManager = true } label: {
                     Image(systemName: "slider.horizontal.3")
@@ -118,6 +128,16 @@ struct PrepView: View {
         .onChange(of: model.targets) { _, _ in model.persist() }
         .onChange(of: model.weighIns) { _, _ in model.persist() }
         .onChange(of: model.portionsOverride) { _, _ in model.persist() }
+        .confirmationDialog(
+            "Reset this batch?",
+            isPresented: $showResetConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("Reset batch", role: .destructive) { resetBatch() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Clears containers, weigh-ins, portions, and the foods in this batch.")
+        }
     }
 
     // MARK: - Sections
@@ -398,6 +418,11 @@ struct PrepView: View {
         batchModel.items.contains(where: \.hasSource) && !model.hasUnenteredWeighIns
     }
 
+    /// Whether the page has anything to reset: calculator input or batch foods.
+    private var canReset: Bool {
+        model.isDirty || !batchModel.items.isEmpty
+    }
+
     /// True when Apply is disabled for the single reason that weigh-ins are
     /// incomplete: the batch already carries a source-bearing item, so the only
     /// remaining blocker is unentered weigh-ins. Drives the explanatory caption
@@ -435,6 +460,14 @@ struct PrepView: View {
         pickerMode = .addWeighIn
     }
 
+    /// Full new-batch reset: clears the calculator, batch foods, and applied-days
+    /// memory, then drops the in-memory batch model so the UI reflects the wipe.
+    /// Outputs: nothing.
+    private func resetBatch() {
+        model.resetAll()
+        batchModel = BatchCompositionModel()
+    }
+
     /// Removes a target entry by id.
     /// Inputs:
     ///   - id: the target entry's id.
@@ -467,10 +500,13 @@ struct PrepView: View {
         }
     }
 
-    // MARK: - Reusable views
+}
 
+// MARK: - Reusable views
+
+private extension PrepView {
     /// A thin separator used between card rows.
-    private var divider: some View {
+    var divider: some View {
         Rectangle().fill(Theme.separator).frame(height: 0.5)
     }
 
@@ -478,7 +514,7 @@ struct PrepView: View {
     /// Inputs:
     ///   - text: the placeholder message.
     /// Outputs: a styled row `View`.
-    private func emptyRow(_ text: String) -> some View {
+    func emptyRow(_ text: String) -> some View {
         HStack {
             Text(text)
                 .font(.system(size: 13))
@@ -494,7 +530,7 @@ struct PrepView: View {
     ///   - title: the button label.
     ///   - action: the tap handler.
     /// Outputs: a styled button `View`.
-    private func addButton(_ title: String, action: @escaping () -> Void) -> some View {
+    func addButton(_ title: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 6) {
                 Image(systemName: "plus.circle.fill")
@@ -516,7 +552,7 @@ struct PrepView: View {
     ///   - label: left-aligned descriptive label.
     ///   - value: optional gram value; renders an em-dash placeholder when nil.
     /// Outputs: a styled row `View`.
-    private func resultRow(_ label: String, value: Double?) -> some View {
+    func resultRow(_ label: String, value: Double?) -> some View {
         HStack {
             Text(label)
                 .font(.system(size: 14, weight: .medium))

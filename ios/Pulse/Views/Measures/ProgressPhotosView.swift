@@ -16,12 +16,14 @@ struct ProgressPhotosView: View {
     @State private var showCapture = false
     @State private var showManageTags = false
     @State private var showCompare = false
-    @State private var expandedId: UUID?
+    /// The photo shown in the fullscreen viewer, or nil when the grid is
+    /// showing. Drives a `fullScreenCover` so the viewer covers the whole
+    /// window (dock + chrome included) and dismissing always returns here.
+    @State private var expandedMeta: ProgressPhotoMetadata?
     /// In-flight date-change reload. Stored so a rapid date change can cancel
     /// the previous reload — otherwise a slow earlier response could land
     /// after (and overwrite) a newer one. Same pattern as `FoodSearchModel`.
     @State private var reloadTask: Task<Void, Never>?
-    @Namespace private var photoNS
 
     private let gridColumns = [
         GridItem(.flexible(), spacing: 12),
@@ -42,18 +44,13 @@ struct ProgressPhotosView: View {
                 .padding(.horizontal, 16)
                 .padding(.top, 8)
             }
-
-            if let id = expandedId,
-               let meta = sortedPhotos.first(where: { $0.id == id }) {
-                ProgressPhotoDetailView(
-                    meta: meta,
-                    tagName: tagName(for: meta.tagId),
-                    namespace: photoNS,
-                    onClose: { withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) { expandedId = nil } }
-                )
-                .transition(.opacity)
-                .zIndex(1)
-            }
+        }
+        .fullScreenCover(item: $expandedMeta) { meta in
+            ProgressPhotoDetailView(
+                meta: meta,
+                tagName: tagName(for: meta.tagId),
+                onClose: { expandedMeta = nil }
+            )
         }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -147,13 +144,7 @@ struct ProgressPhotosView: View {
                         ProgressPhotoCell(
                             meta: meta,
                             tagName: tagName(for: meta.tagId),
-                            namespace: photoNS,
-                            isExpanded: expandedId == meta.id,
-                            onTap: {
-                                withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
-                                    expandedId = meta.id
-                                }
-                            }
+                            onTap: { expandedMeta = meta }
                         )
                     }
                 }

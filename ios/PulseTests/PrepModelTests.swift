@@ -200,4 +200,49 @@ final class PrepModelTests: XCTestCase {
         m.saveBatchItems([])
         XCTAssertEqual(m.loadAppliedDates(), [])
     }
+
+    /// isDirty is false on a fresh model and true once any input is set.
+    func testIsDirtyReflectsInputs() {
+        let m = PrepModel()
+        XCTAssertFalse(m.isDirty)
+        let c = mkContainer(tare: 10)
+        m.targets = [target(c, 1)]
+        XCTAssertTrue(m.isDirty)
+        m.targets = []
+        XCTAssertFalse(m.isDirty)
+        m.weighIns = [weighIn(c, 100)]
+        XCTAssertTrue(m.isDirty)
+        m.weighIns = []
+        m.portionsOverride = 4
+        XCTAssertTrue(m.isDirty)
+    }
+
+    /// resetAll clears calculator inputs, batch items, and applied-days memory.
+    func testResetAllClearsEverything() {
+        let d = UserDefaults(suiteName: "test.prep.\(UUID().uuidString)")!
+        let store = PrepStatePersistence(defaults: d)
+        let m = PrepModel(store: store)
+        let c = mkContainer(tare: 10)
+        m.targets = [target(c, 2)]
+        m.weighIns = [weighIn(c, 200)]
+        m.portionsOverride = 3
+        let item = BatchFoodItem(
+            id: UUID(), displayName: "White rice", usdaFdcId: 169756, usdaDescription: "Rice",
+            customFoodId: nil,
+            nutrition: FoodNutrition(basis: .per100g, servingSize: nil, servingSizeUnit: nil,
+                                     caloriesPerBasis: 130, proteinGPerBasis: 2.7, carbsGPerBasis: 28, fatGPerBasis: 0.3),
+            quantity: .typed(value: 200, unit: .grams), containerId: nil,
+            macros: MacroTotals(calories: 260, proteinG: 5.4, carbsG: 56, fatG: 0.6))
+        m.saveBatchItems([item])
+        m.recordAppliedDates(["2026-06-20"])
+
+        m.resetAll()
+
+        XCTAssertTrue(m.targets.isEmpty)
+        XCTAssertTrue(m.weighIns.isEmpty)
+        XCTAssertNil(m.portionsOverride)
+        XCTAssertFalse(m.isDirty)
+        XCTAssertTrue(m.loadBatchItems().isEmpty)
+        XCTAssertTrue(m.loadAppliedDates().isEmpty)
+    }
 }

@@ -20,6 +20,10 @@ struct SettingsView: View {
     @State private var showDiscardDialog = false
     @AppStorage(WeightUnit.displayPreferenceKey)
     private var displayUnitRaw: String = WeightUnit.defaultDisplayUnit.rawValue
+    /// Whether progress photos are auto-tagged in pose order on upload. Instant
+    /// local preference, mirroring the display-unit toggle (no server sync).
+    @AppStorage(ProgressPhotoTag.autoTagEnabledKey)
+    private var autoTagEnabled = ProgressPhotoTag.defaultAutoTagEnabled
 
     /// The user's persisted weight display preference, used to seed the
     /// weight-goal entry unit so the sheet opens in the unit they expect.
@@ -44,6 +48,7 @@ struct SettingsView: View {
                             weightGoalSection
                         }
                         displayUnitSection
+                        autoTagSection
                     }
                     .padding(.vertical, 16)
                 }
@@ -317,6 +322,17 @@ struct SettingsView: View {
                 }
                 .pickerStyle(.segmented)
                 .frame(width: 110)
+            }
+        }
+    }
+
+    /// Progress-photo card: instant local toggle for auto-tagging on upload.
+    private var autoTagSection: some View {
+        SectionCard(header: "Progress photos", headerHorizontalPadding: 16) {
+            row(label: "Auto-tag on upload") {
+                Toggle("", isOn: $autoTagEnabled)
+                    .labelsHidden()
+                    .tint(Theme.CTP.mauve)
             }
         }
     }

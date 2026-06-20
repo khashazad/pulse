@@ -89,6 +89,14 @@ struct WeeklyMacroBars: View {
             let plotHeight = geo.size.height - labelSpace
             let avgKcal = group.avgKcal
             ZStack(alignment: .bottomLeading) {
+                HStack(alignment: .bottom, spacing: 8) {
+                    ForEach(group.days) { day in
+                        barColumn(day: day, plotHeight: plotHeight)
+                    }
+                }
+                // Reference lines are drawn after the bars so the target and
+                // week-average lines read on top of them rather than being
+                // hidden behind taller bars.
                 if let target = targetCalories, target > 0 {
                     Rectangle()
                         .fill(Theme.targetLine.opacity(0.75))
@@ -102,11 +110,6 @@ struct WeeklyMacroBars: View {
                         .frame(maxWidth: .infinity)
                         .frame(height: 2)
                         .offset(y: referenceOffset(value: avgKcal, plotHeight: plotHeight, labelSpace: labelSpace))
-                }
-                HStack(alignment: .bottom, spacing: 8) {
-                    ForEach(group.days) { day in
-                        barColumn(day: day, plotHeight: plotHeight)
-                    }
                 }
             }
         }

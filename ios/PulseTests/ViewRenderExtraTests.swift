@@ -589,40 +589,35 @@ private struct BackdateSelectorHarness: View {
     }
 }
 
-/// Provides a real `Namespace.ID` so `ProgressPhotoCell` renders standalone, in
-/// both the normal (badge + thumbnail) and expanded (placeholder) states.
+/// Renders `ProgressPhotoCell` standalone (badge + thumbnail state).
 private struct PhotoCellHarness: View {
     let meta: ProgressPhotoMetadata
     let tagName: String
-    @Namespace private var ns
     var body: some View {
         VStack {
-            ProgressPhotoCell(meta: meta, tagName: tagName, namespace: ns, isExpanded: false, onTap: {})
-            ProgressPhotoCell(meta: meta, tagName: tagName, namespace: ns, isExpanded: true, onTap: {})
+            ProgressPhotoCell(meta: meta, tagName: tagName, onTap: {})
         }
     }
 }
 
-/// Renders `ComparisonPhotoCell` (normal + expanded) and the dashed
-/// `ComparisonPlaceholder` used by the comparison grid.
+/// Renders `ComparisonPhotoCell` and the dashed `ComparisonPlaceholder` used by
+/// the comparison grid.
 private struct ComparisonCellHarness: View {
     let meta: ProgressPhotoMetadata
     var body: some View {
         VStack {
-            ComparisonPhotoCell(meta: meta, isExpanded: false, onTap: {})
-            ComparisonPhotoCell(meta: meta, isExpanded: true, onTap: {})
+            ComparisonPhotoCell(meta: meta, onTap: {})
             ComparisonPlaceholder()
         }
     }
 }
 
-/// Provides a real `Namespace.ID` so `ProgressPhotoDetailView` renders standalone.
+/// Renders `ProgressPhotoDetailView` standalone.
 private struct PhotoDetailHarness: View {
     let meta: ProgressPhotoMetadata
     let tagName: String
-    @Namespace private var ns
     var body: some View {
-        ProgressPhotoDetailView(meta: meta, tagName: tagName, namespace: ns, onClose: {})
+        ProgressPhotoDetailView(meta: meta, tagName: tagName, onClose: {})
     }
 }
 

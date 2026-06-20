@@ -91,7 +91,10 @@ struct LogView: View {
 struct DatePickerSheet: View {
     let onOpen: (Date) -> Void
     @Environment(\.dismiss) private var dismiss
-    @State private var selected: Date = Date()
+    // Start at midnight so the row reads as a clean calendar day. Today is the
+    // default selection, so "Open" is meaningful immediately — the sheet always
+    // has a valid date to open.
+    @State private var selected: Date = Calendar.current.startOfDay(for: Date())
 
     var body: some View {
         NavigationStack {
@@ -107,19 +110,6 @@ struct DatePickerSheet: View {
                     .tint(Theme.CTP.mauve)
                     .padding(.horizontal, 12)
 
-                    Button {
-                        onOpen(selected)
-                    } label: {
-                        Text("Open")
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(Theme.CTP.mauve)
-                            .padding(.horizontal, 24)
-                            .padding(.vertical, 10)
-                            .background(Capsule().fill(Theme.CTP.mauve.opacity(0.16)))
-                            .overlay(Capsule().strokeBorder(Theme.CTP.mauve.opacity(0.30), lineWidth: 0.5))
-                    }
-                    .buttonStyle(.plain)
-
                     Spacer()
                 }
                 .padding(.top, 4)
@@ -131,6 +121,13 @@ struct DatePickerSheet: View {
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Cancel") { dismiss() }
+                        .foregroundStyle(Theme.CTP.mauve)
+                }
+                // Sits beside "Cancel" on the navigation bar so the user never
+                // has to scroll past the calendar to confirm.
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Open") { onOpen(selected) }
+                        .fontWeight(.semibold)
                         .foregroundStyle(Theme.CTP.mauve)
                 }
             }
