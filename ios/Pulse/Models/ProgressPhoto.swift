@@ -28,7 +28,7 @@ extension ProgressPhotoTag {
     /// UserDefaults key gating auto-tagging of progress photos on upload.
     static let autoTagEnabledKey = "progress_photo_auto_tag_enabled"
     /// Default state for auto-tagging: off.
-    static var defaultAutoTagEnabled: Bool { false }
+    static let defaultAutoTagEnabled = false
 }
 
 /// Server-side metadata for one stored progress photo.
