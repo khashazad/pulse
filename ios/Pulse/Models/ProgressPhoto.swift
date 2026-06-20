@@ -23,6 +23,14 @@ struct ProgressPhotoTag: Codable, Hashable, Identifiable {
     }
 }
 
+/// Auto-tag preference helpers for progress photos.
+extension ProgressPhotoTag {
+    /// UserDefaults key gating auto-tagging of progress photos on upload.
+    static let autoTagEnabledKey = "progress_photo_auto_tag_enabled"
+    /// Default state for auto-tagging: off.
+    static var defaultAutoTagEnabled: Bool { false }
+}
+
 /// Server-side metadata for one stored progress photo.
 struct ProgressPhotoMetadata: Codable, Hashable, Identifiable {
     let id: UUID
