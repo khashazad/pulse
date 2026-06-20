@@ -12,6 +12,11 @@ struct QuantityEntryView: View {
     let result: FoodSearchResult
     /// Containers available for weighing / labeling (for tare lookup).
     let containers: [Container]
+    /// Pre-fills the typed-quantity field (in the food's `typeUnit`) and starts
+    /// in Type mode — used when editing an existing item's quantity so the user
+    /// tweaks the current value instead of re-entering from scratch. `nil` (the
+    /// default, used by the add-food flow) leaves the field empty.
+    var initialTypedValue: Double?
     /// Called with the assembled batch item when the user confirms.
     let onAdd: (BatchFoodItem) -> Void
 
@@ -25,8 +30,11 @@ struct QuantityEntryView: View {
     @State private var grossText: String = ""
     @State private var typedText: String = ""
 
-    /// Whether weighing is offered for this food's basis.
-    private var canWeigh: Bool { result.nutrition.allowsWeighing }
+    /// Whether weighing is offered: the food's basis must allow it AND there must
+    /// be at least one container to tare against (weighing is impossible without
+    /// one, and offering it with no containers — or before they finish loading —
+    /// is a dead end).
+    private var canWeigh: Bool { result.nutrition.allowsWeighing && !containers.isEmpty }
 
     /// The selected container, if any.
     private var container: Container? { containers.first { $0.id == selectedContainerId } }
@@ -137,7 +145,16 @@ struct QuantityEntryView: View {
                         .foregroundStyle(Theme.FG.secondary)
                 }
             }
-            .onAppear { if canWeigh { mode = .weigh } }
+            .onAppear {
+                if let initial = initialTypedValue {
+                    // Editing an existing quantity: seed the current value and
+                    // stay in Type mode so the user can tweak it directly.
+                    typedText = NumericInput.formatBare(initial)
+                    mode = .type
+                } else if canWeigh {
+                    mode = .weigh
+                }
+            }
         }
         .preferredColorScheme(.dark)
     }

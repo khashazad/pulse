@@ -137,3 +137,74 @@ enum FoodSearchMerge {
         return ranked + usdaResults
     }
 }
+
+extension FoodSearchResult {
+    /// Normalized units whose quantity can be faithfully re-entered and rescaled
+    /// in `QuantityEntryView`: each maps to a `FoodBasis` and to a typed-quantity
+    /// `QuantityUnit`. Items stored with any other unit (e.g. "ml", "cup") can't
+    /// round-trip through that pipeline — re-saving them would silently relabel
+    /// the quantity to "units" — so they are not quantity-editable.
+    private static let rescalableUnits: Set<String> = [
+        "g", "gram", "grams", "serving", "servings", "unit", "units"
+    ]
+
+    /// Whether a meal item's quantity can be edited via the rescale flow: it must
+    /// have a positive normalized value and a unit that maps to a basis. Both the
+    /// synthesizing initializer below and the detail view's tap guard use this, so
+    /// the two stay in lockstep (a tappable row always yields a non-nil result).
+    /// Inputs:
+    ///   - item: the saved item to test.
+    /// Outputs: true when the item can be opened in the quantity editor.
+    static func isQuantityEditable(_ item: MealItem) -> Bool {
+        guard let value = item.normalizedQuantityValue, value > 0 else { return false }
+        return rescalableUnits.contains((item.normalizedQuantityUnit ?? "").lowercased())
+    }
+
+    /// Synthesizes a pickable result from an existing meal item so its quantity
+    /// can be re-entered and rescaled in `QuantityEntryView` without a network
+    /// call. Per-basis macros are the item's stored macros divided by its
+    /// normalized quantity value; the basis is derived from the stored unit
+    /// ("g" → per-100g, "serving" → per-serving, "unit" → per-unit).
+    /// Returns nil when the item is not quantity-editable (see `isQuantityEditable`):
+    /// no positive normalized value, or a unit that can't be faithfully rescaled.
+    /// Inputs:
+    ///   - mealItem: the saved item being edited.
+    /// Outputs: a pickable result whose `nutrition` reproduces the item's macros
+    ///   at its current quantity, or nil when the item is not quantity-editable.
+    init?(mealItem: MealItem) {
+        guard Self.isQuantityEditable(mealItem),
+              let value = mealItem.normalizedQuantityValue else { return nil }
+        let unit = (mealItem.normalizedQuantityUnit ?? "").lowercased()
+        let basis: FoodBasis
+        let perBasisFactor: Double   // multiply (macro / value) by this to get per-basis
+        switch unit {
+        case "g", "gram", "grams":
+            basis = .per100g
+            perBasisFactor = 100
+        case "serving", "servings":
+            basis = .perServing
+            perBasisFactor = 1
+        default:   // "unit" / "units" — other units are excluded by isQuantityEditable
+            basis = .perUnit
+            perBasisFactor = 1
+        }
+        let scale = perBasisFactor / value
+        self.id = "mealitem:\(mealItem.id.uuidString)"
+        self.source = .myFood
+        self.displayName = mealItem.displayName
+        self.usdaFdcId = mealItem.usdaFdcId
+        self.usdaDescription = mealItem.usdaDescription
+        self.usdaDataType = nil
+        self.usdaBrandOwner = nil
+        self.customFoodId = mealItem.customFoodId
+        self.nutrition = FoodNutrition(
+            basis: basis,
+            servingSize: nil,
+            servingSizeUnit: nil,
+            caloriesPerBasis: Int((Double(mealItem.calories) * scale).rounded()),
+            proteinGPerBasis: mealItem.proteinG * scale,
+            carbsGPerBasis: mealItem.carbsG * scale,
+            fatGPerBasis: mealItem.fatG * scale)
+        self.matchTerms = [mealItem.displayName.lowercased()]
+    }
+}

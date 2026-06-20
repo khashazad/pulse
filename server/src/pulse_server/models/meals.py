@@ -14,7 +14,7 @@ from __future__ import annotations
 from datetime import datetime as DateTimeValue
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from pulse_server.models.common import MacroFields
 
@@ -54,6 +54,54 @@ class MealItemResponse(BaseModel):
     carbs_g: float
     fat_g: float
     created_at: DateTimeValue
+
+
+class MealItemUpdate(BaseModel):
+    """Request body for ``PATCH /meals/{id}/items/{item_id}`` — partial item update.
+
+    All fields optional; only the mutable fields are accepted. The food source
+    (``usda_fdc_id`` / ``custom_food_id``) cannot be changed in place — delete
+    and re-add to switch sources.
+    """
+
+    display_name: str | None = None
+    quantity_text: str | None = None
+    normalized_quantity_value: float | None = None
+    normalized_quantity_unit: str | None = None
+    calories: int | None = Field(default=None, ge=0)
+    protein_g: float | None = Field(default=None, ge=0)
+    carbs_g: float | None = Field(default=None, ge=0)
+    fat_g: float | None = Field(default=None, ge=0)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_explicit_null_non_nullable(cls, data: object) -> object:
+        """Reject an explicit JSON ``null`` for the non-nullable ``display_name``
+        and ``quantity_text`` columns, while still allowing those keys to be
+        absent (absent means "leave unchanged" under the partial-update contract).
+
+        Inputs:
+            data (object): The raw input passed to the model before field
+                validation. Typically a ``dict`` of incoming JSON, but may be any
+                object (e.g. an already-constructed model instance).
+
+        Outputs:
+            object: The unchanged ``data`` when validation passes, so normal field
+                validation can proceed.
+
+        Raises:
+            ValueError: If ``data`` is a ``dict`` and contains ``display_name`` or
+                ``quantity_text`` present with a value of ``None`` (an explicit
+                null), since those columns are ``NOT NULL`` in the database.
+                FastAPI surfaces this as a 422 response.
+        """
+        if isinstance(data, dict):
+            for field in ("display_name", "quantity_text"):
+                if field in data and data[field] is None:
+                    raise ValueError(
+                        f"{field} cannot be null; omit the field to leave it unchanged"
+                    )
+        return data
 
 
 class MealCreate(BaseModel):
