@@ -20,12 +20,13 @@ final class TagProgressionModelTests: XCTestCase {
         return try Data(contentsOf: url)
     }
 
-    /// Builds a signed-in AuthSession whose client returns the multi-tag photo
+    /// Builds a signed-in AuthSession whose client returns the named photo
     /// fixture (200) for any `/measures/photos` GET, retained for the test.
+    /// - Parameter fixtureName: fixture file name (without `.json`) to serve.
     /// - Returns: the signed-in session.
     /// - Throws: when the fixture cannot be loaded.
-    private func makeAuth() throws -> AuthSession {
-        let photos = try fixture("progress_photos_multitag")
+    private func makeAuth(fixtureName: String = "progress_photos_multitag") throws -> AuthSession {
+        let photos = try fixture(fixtureName)
         let stub = StubURLProtocol.makeSession { req in
             let body: Data = req.url?.path == "/measures/photos" ? photos : Data()
             return (HTTPURLResponse(url: req.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, body)
@@ -46,7 +47,9 @@ final class TagProgressionModelTests: XCTestCase {
         activeStubs.forEach { $0.invalidate() }
         activeStubs = []
         retainedAuths = []
+        keychainAccounts.forEach { _ = KeychainStore.delete(service: testService, account: $0) }
         keychainAccounts = []
+        super.tearDown()
     }
 
     /// A tag struct for the "front" tag id used in the fixture.
@@ -74,5 +77,20 @@ final class TagProgressionModelTests: XCTestCase {
 
         // Only the two "front" photos survive the filter, newest-first.
         XCTAssertEqual(model.photos.map(\.sha256), ["front-newer", "front-older"])
+    }
+
+    func testSameDaySortedByUpdatedAtDescending() async throws {
+        let auth = try makeAuth(fixtureName: "progress_photos_tiebreak")
+        let store = ProgressPhotoStore(
+            auth: auth,
+            queueFileURL: URL.temporaryDirectory.appendingPathComponent("q-\(UUID()).json"),
+            cacheDirectory: URL.temporaryDirectory.appendingPathComponent("c-\(UUID())")
+        )
+        let model = TagProgressionModel(tag: frontTag(), auth: auth, store: store)
+
+        await model.load()
+
+        // Same date → later updatedAt sorts first.
+        XCTAssertEqual(model.photos.map(\.sha256), ["tie-late", "tie-early"])
     }
 }

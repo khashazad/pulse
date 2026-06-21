@@ -63,6 +63,8 @@ final class TagProgressionModel {
             state = .loaded(mine)
         } catch let error as PulseError {
             state = .failed(error)
+        } catch let urlError as URLError {
+            state = .failed(.network(urlError))
         } catch {
             state = .failed(.network(URLError(.unknown)))
         }
