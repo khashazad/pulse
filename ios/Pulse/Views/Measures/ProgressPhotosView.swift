@@ -16,6 +16,9 @@ struct ProgressPhotosView: View {
     @State private var showCapture = false
     @State private var showManageTags = false
     @State private var showCompare = false
+    /// Non-nil while a tag's all-time progression gallery is pushed; set by the
+    /// gallery-button menu and cleared when the pushed view pops.
+    @State private var galleryTag: ProgressPhotoTag?
     /// The photo shown in the fullscreen viewer, or nil when the grid is
     /// showing. Drives a `fullScreenCover` so the viewer covers the whole
     /// window (dock + chrome included) and dismissing always returns here.
@@ -35,7 +38,6 @@ struct ProgressPhotosView: View {
             Theme.BG.primary.ignoresSafeArea()
             ScrollView {
                 VStack(spacing: Theme.Layout.sectionSpacing) {
-                    tagStrip
                     dateStrip
                     grid
                     addButton
@@ -79,33 +81,8 @@ struct ProgressPhotosView: View {
         .sheet(isPresented: $showCompare) {
             NavigationStack { ProgressPhotoComparisonView(initialDate: selectedDate) }
         }
-        .navigationDestination(for: ProgressPhotoTag.self) { tag in
+        .navigationDestination(item: $galleryTag) { tag in
             TagProgressionGalleryView(tag: tag)
-        }
-    }
-
-    // MARK: tag progression strip
-
-    /// Horizontal row of tag chips; tapping one pushes that tag's all-time
-    /// progression gallery. Hidden when the user has no tags yet.
-    @ViewBuilder
-    private var tagStrip: some View {
-        if !tagStore.tags.isEmpty {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(tagStore.tags) { tag in
-                        NavigationLink(value: tag) {
-                            Text(tag.name)
-                                .font(.system(size: 12, weight: .semibold))
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 7)
-                                .background(Theme.BG.secondary, in: Capsule())
-                                .foregroundStyle(Theme.CTP.mauve)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-            }
         }
     }
 
@@ -115,6 +92,7 @@ struct ProgressPhotosView: View {
         HStack(spacing: 8) {
             chip("Today") { selectedDate = Calendar.current.startOfDay(for: Date()) }
             compareButton
+            galleryButton
             Spacer()
             DatePicker("", selection: $selectedDate, displayedComponents: .date)
                 .labelsHidden()
@@ -142,6 +120,26 @@ struct ProgressPhotosView: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Compare two days")
+    }
+
+    /// Opens a menu of the user's tags; choosing one pushes that tag's all-time
+    /// progression gallery. Disabled until at least one tag exists.
+    private var galleryButton: some View {
+        Menu {
+            ForEach(tagStore.tags) { tag in
+                Button(tag.name) { galleryTag = tag }
+            }
+        } label: {
+            Image(systemName: "photo.stack")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Theme.CTP.mauve)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(Theme.BG.secondary, in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .disabled(tagStore.tags.isEmpty)
+        .accessibilityLabel("View a tag's progression gallery")
     }
 
     // MARK: grid
