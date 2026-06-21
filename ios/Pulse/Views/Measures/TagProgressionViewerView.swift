@@ -80,8 +80,8 @@ struct TagProgressionViewerView: View {
     /// closes the viewer when the set is now empty.
     /// - Returns: Void.
     private func deleteCurrent() {
-        guard let meta = model.photos.first(where: { $0.id == selection }),
-              let idx = model.photos.firstIndex(where: { $0.id == meta.id }) else { return }
+        guard let idx = model.photos.firstIndex(where: { $0.id == selection }) else { return }
+        let meta = model.photos[idx]
         Task {
             await model.delete(meta)
             let remaining = model.photos
@@ -100,6 +100,7 @@ private struct PageImage: View {
 
     @State private var image: UIImage?
     @State private var scale: CGFloat = 1.0
+    @State private var baseScale: CGFloat = 1.0
 
     var body: some View {
         Group {
@@ -110,8 +111,8 @@ private struct PageImage: View {
                     .scaleEffect(scale)
                     .gesture(
                         MagnificationGesture()
-                            .onChanged { scale = max(1.0, min(4.0, $0)) }
-                            .onEnded { _ in withAnimation { if scale < 1.0 { scale = 1.0 } } }
+                            .onChanged { scale = max(1.0, min(4.0, baseScale * $0)) }
+                            .onEnded { _ in baseScale = scale }
                     )
             } else {
                 ProgressView().tint(.white)
@@ -119,6 +120,10 @@ private struct PageImage: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onTapGesture { onClose() }
-        .task(id: meta.id) { image = await loader() }
+        .task(id: meta.id) {
+            scale = 1.0
+            baseScale = 1.0
+            image = await loader()
+        }
     }
 }
