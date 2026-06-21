@@ -84,6 +84,7 @@ struct WeightTrendsView: View {
             VStack(spacing: Theme.Layout.sectionSpacing) {
                 weightOverTimeCard(entries: model?.entries ?? [], target: model?.targetWeightLb, unit: displayUnit)
                 analyticsCard(result: result, unit: displayUnit)
+                FluctuationCard(entries: model?.entries ?? [], unit: displayUnit)
                 Spacer(minLength: Theme.Layout.dockClearance)
             }
             .padding(.horizontal, 16)
