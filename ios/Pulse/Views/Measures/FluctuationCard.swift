@@ -68,7 +68,8 @@ struct FluctuationCard: View {
                     .font(.system(size: 12)).foregroundStyle(Theme.FG.tertiary)
                 sparkline(result.series)
                 if let lo = result.min, let hi = result.max {
-                    Text("ranged \(WeightFormatter.entryString(lo)) – \(WeightFormatter.entryString(hi)) \(unit.rawValue) · \(result.sampleCount) windows")
+                    let range = "\(WeightFormatter.entryString(lo)) – \(WeightFormatter.entryString(hi)) \(unit.rawValue)"
+                    Text("ranged \(range) · \(result.sampleCount) windows")
                         .font(.system(size: 11)).foregroundStyle(Theme.FG.tertiary)
                 }
             } else {
