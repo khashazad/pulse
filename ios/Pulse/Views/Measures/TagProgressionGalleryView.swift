@@ -71,7 +71,7 @@ struct TagProgressionGalleryView: View {
                 EmptyStateView(
                     icon: "photo.on.rectangle",
                     title: "No photos yet",
-                    description: "No photos tagged \"\(tag.name)\" yet."
+                    description: "No photos for this tag yet."
                 )
             } else {
                 grid(photos)
