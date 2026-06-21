@@ -3,8 +3,8 @@
 /// Presented as a `fullScreenCover` over `TagProgressionGalleryView` so it
 /// covers the entire window (dock + chrome included). Pages horizontally across
 /// the whole tag set via a `TabView`, loads each full-resolution image from the
-/// shared store through `TagProgressionModel`, supports pinch-to-zoom, and
-/// exposes a delete that removes the photo and advances (or closes when empty).
+/// shared `ProgressPhotoStore`, supports pinch-to-zoom, and exposes a delete
+/// that removes the photo and advances (or closes when empty).
 /// A tap on the backdrop closes it.
 import SwiftUI
 import UIKit
@@ -38,7 +38,7 @@ struct TagProgressionViewerView: View {
 
             TabView(selection: $selection) {
                 ForEach(model.photos) { meta in
-                    PageImage(meta: meta, loader: { await model.full(meta) }, onClose: onClose)
+                    PageImage(meta: meta, onClose: onClose)
                         .tag(meta.id)
                 }
             }
@@ -76,26 +76,25 @@ struct TagProgressionViewerView: View {
         return "\(model.tag.name) · \(dateStr)"
     }
 
-    /// Deletes the selected photo, then advances selection to a neighbor or
-    /// closes the viewer when the set is now empty.
+    /// Deletes the selected photo, then advances selection to the neighbor the
+    /// model reports, or closes the viewer when the set is now empty.
     /// - Returns: Void.
     private func deleteCurrent() {
-        guard let idx = model.photos.firstIndex(where: { $0.id == selection }) else { return }
-        let meta = model.photos[idx]
         Task {
-            await model.delete(meta)
-            let remaining = model.photos
-            if remaining.isEmpty { onClose(); return }
-            let nextIdx = min(idx, remaining.count - 1)
-            selection = remaining[nextIdx].id
+            if let next = await model.deleteAndAdvance(from: selection) {
+                selection = next
+            } else {
+                onClose()
+            }
         }
     }
 }
 
-/// One full-resolution page inside the paged viewer.
+/// One full-resolution page inside the paged viewer. Loads its image straight
+/// from the shared `ProgressPhotoStore` cache, keyed on the photo id.
 private struct PageImage: View {
+    @Environment(ProgressPhotoStore.self) private var store
     let meta: ProgressPhotoMetadata
-    let loader: () async -> UIImage?
     let onClose: () -> Void
 
     @State private var image: UIImage?
@@ -123,7 +122,7 @@ private struct PageImage: View {
         .task(id: meta.id) {
             scale = 1.0
             baseScale = 1.0
-            image = await loader()
+            image = await store.full(meta)
         }
     }
 }

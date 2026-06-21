@@ -6,7 +6,6 @@
 /// Role: main-actor observable injected into the tag-progression screens.
 import Foundation
 import Observation
-import UIKit
 
 /// Main-actor observable owning one tag's full-history photo list.
 @Observable
@@ -70,20 +69,6 @@ final class TagProgressionModel {
         }
     }
 
-    /// Returns the thumbnail image for a photo, via the shared store's cache.
-    /// - Parameter meta: the photo whose thumbnail is requested.
-    /// - Returns: the thumbnail image, or nil if unavailable.
-    func thumb(_ meta: ProgressPhotoMetadata) async -> UIImage? {
-        await store.thumb(meta)
-    }
-
-    /// Returns the full-size image for a photo, via the shared store's cache.
-    /// - Parameter meta: the photo whose full image is requested.
-    /// - Returns: the full-size image, or nil if unavailable.
-    func full(_ meta: ProgressPhotoMetadata) async -> UIImage? {
-        await store.full(meta)
-    }
-
     /// Drops a photo from the local list without a network call (used after the
     /// shared store has already deleted it server-side).
     /// - Parameter meta: the photo to remove from the loaded list.
@@ -101,5 +86,18 @@ final class TagProgressionModel {
     func delete(_ meta: ProgressPhotoMetadata) async {
         await store.delete(meta)
         remove(meta)
+    }
+
+    /// Deletes the photo identified by `selectionId` and reports which photo a
+    /// viewer should advance to: the neighbor at the same position (clamped to
+    /// the new bounds), or `nil` when no photos remain or the id is unknown.
+    /// - Parameter selectionId: id of the currently shown photo to delete.
+    /// - Returns: the next photo id to select, or `nil` if the list is now empty.
+    func deleteAndAdvance(from selectionId: UUID) async -> UUID? {
+        guard let idx = photos.firstIndex(where: { $0.id == selectionId }) else { return nil }
+        await delete(photos[idx])
+        let remaining = photos
+        guard !remaining.isEmpty else { return nil }
+        return remaining[min(idx, remaining.count - 1)].id
     }
 }

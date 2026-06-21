@@ -93,4 +93,32 @@ final class TagProgressionModelTests: XCTestCase {
         // Same date → later updatedAt sorts first.
         XCTAssertEqual(model.photos.map(\.sha256), ["tie-late", "tie-early"])
     }
+
+    func testDeleteAdvancesToNeighborThenClosesWhenEmpty() async throws {
+        let auth = try makeAuth()
+        let store = ProgressPhotoStore(
+            auth: auth,
+            queueFileURL: URL.temporaryDirectory.appendingPathComponent("q-\(UUID()).json"),
+            cacheDirectory: URL.temporaryDirectory.appendingPathComponent("c-\(UUID())")
+        )
+        let model = TagProgressionModel(tag: frontTag(), auth: auth, store: store)
+        await model.load()
+        // Loaded newest-first: [front-newer, front-older].
+        let newer = try XCTUnwrap(model.photos.first { $0.sha256 == "front-newer" })
+        let older = try XCTUnwrap(model.photos.first { $0.sha256 == "front-older" })
+
+        // Deleting the newer (index 0) advances to the remaining neighbor.
+        let next = await model.deleteAndAdvance(from: newer.id)
+        XCTAssertEqual(next, older.id)
+        XCTAssertEqual(model.photos.map(\.sha256), ["front-older"])
+
+        // Deleting the last remaining photo reports nil (viewer should close).
+        let afterLast = await model.deleteAndAdvance(from: older.id)
+        XCTAssertNil(afterLast)
+        XCTAssertTrue(model.photos.isEmpty)
+
+        // An unknown id is a no-op that also reports nil.
+        let unknown = await model.deleteAndAdvance(from: UUID())
+        XCTAssertNil(unknown)
+    }
 }

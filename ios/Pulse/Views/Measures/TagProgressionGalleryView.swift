@@ -15,13 +15,9 @@ struct TagProgressionGalleryView: View {
     let tag: ProgressPhotoTag
 
     @State private var model: TagProgressionModel?
-    @State private var viewer: ViewerTarget?
+    @State private var viewer: ProgressPhotoMetadata?
 
-    private let columns = [
-        GridItem(.flexible(), spacing: 10),
-        GridItem(.flexible(), spacing: 10),
-        GridItem(.flexible(), spacing: 10)
-    ]
+    private let columns = Array(repeating: GridItem(.flexible(), spacing: 10), count: 3)
 
     /// Builds the gallery for a single tag.
     /// - Parameter tag: the progress-photo tag whose full history this view shows.
@@ -44,11 +40,11 @@ struct TagProgressionGalleryView: View {
             }
         }
         .refreshable { await model?.load() }
-        .fullScreenCover(item: $viewer) { target in
+        .fullScreenCover(item: $viewer) { meta in
             if let model {
                 TagProgressionViewerView(
                     model: model,
-                    initialPhotoId: target.id,
+                    initialPhotoId: meta.id,
                     onClose: { viewer = nil }
                 )
             }
@@ -88,7 +84,7 @@ struct TagProgressionGalleryView: View {
                 ForEach(photos) { meta in
                     TagProgressionCell(
                         meta: meta,
-                        onTap: { viewer = ViewerTarget(id: meta.id) },
+                        onTap: { viewer = meta },
                         onDelete: { Task { await model?.delete(meta) } }
                     )
                 }
@@ -101,11 +97,6 @@ struct TagProgressionGalleryView: View {
 }
 
 // MARK: - Private helpers
-
-/// Thin `Identifiable` wrapper for `UUID` so it can drive `fullScreenCover(item:)`.
-private struct ViewerTarget: Identifiable {
-    let id: UUID
-}
 
 /// One tile in the tag-progression grid: square thumbnail + date caption.
 private struct TagProgressionCell: View {
