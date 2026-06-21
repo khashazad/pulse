@@ -18,14 +18,21 @@ enum WeightFluctuation {
         var id: Date { date }
     }
 
-    /// Output bundle: headline average, observed range, sample count, and the
-    /// per-window series for the sparkline.
+    /// Output bundle: headline average, sample count, and the per-window series
+    /// for the sparkline. The observed range (`min`/`max`) is derived from
+    /// `series` rather than stored, so it can never drift out of sync.
     struct Result: Hashable {
         let average: Double?
-        let min: Double?
-        let max: Double?
         let sampleCount: Int
         let series: [Point]
+
+        /// Smallest window fluctuation in `series`, or nil when empty.
+        var min: Double? { series.map(\.value).min() }
+        /// Largest window fluctuation in `series`, or nil when empty.
+        var max: Double? { series.map(\.value).max() }
+
+        /// The no-valid-windows result.
+        static let empty = Result(average: nil, sampleCount: 0, series: [])
     }
 
     /// Computes average within-window spread over a rolling lookback period.
@@ -45,9 +52,7 @@ enum WeightFluctuation {
     ) -> Result {
         let cal = Calendar(identifier: .gregorian)
         let endDay = cal.startOfDay(for: today)
-        guard windowDays >= 1, periodDays >= 1 else {
-            return Result(average: nil, min: nil, max: nil, sampleCount: 0, series: [])
-        }
+        guard windowDays >= 1, periodDays >= 1 else { return .empty }
 
         // Index display-unit weights by start-of-day for O(1) per-day lookup.
         var byDay: [Date: Double] = [:]
@@ -55,25 +60,34 @@ enum WeightFluctuation {
             byDay[cal.startOfDay(for: e.date)] = WeightFormatter.fromLb(e.weightLb, to: unit)
         }
 
-        var values: [Point] = []
-        for offset in 0..<periodDays {
-            guard let windowEnd = cal.date(byAdding: .day, value: -offset, to: endDay) else { continue }
-            var inWindow: [Double] = []
-            for back in 0..<windowDays {
-                guard let day = cal.date(byAdding: .day, value: -back, to: windowEnd) else { continue }
-                if let w = byDay[day] { inWindow.append(w) }
-            }
-            guard inWindow.count >= 2, let lo = inWindow.min(), let hi = inWindow.max() else { continue }
-            values.append(Point(date: windowEnd, value: hi - lo))
+        // Precompute the descending (newest-first) day sequence once, rather
+        // than calling Calendar date math inside the window loop. The oldest
+        // window end still looks back windowDays-1 days, so the sequence runs
+        // periodDays + windowDays - 1 long to cover that overhang.
+        var days: [Date] = []
+        days.reserveCapacity(periodDays + windowDays - 1)
+        var day = endDay
+        for _ in 0..<(periodDays + windowDays - 1) {
+            days.append(day)
+            guard let prev = cal.date(byAdding: .day, value: -1, to: day) else { break }
+            day = prev
         }
 
-        guard !values.isEmpty else {
-            return Result(average: nil, min: nil, max: nil, sampleCount: 0, series: [])
+        // Each window ends at days[i] and spans the next windowDays-1 older days.
+        var values: [Point] = []
+        for i in 0..<Swift.min(periodDays, days.count) {
+            var inWindow: [Double] = []
+            for j in i..<Swift.min(i + windowDays, days.count) {
+                if let w = byDay[days[j]] { inWindow.append(w) }
+            }
+            guard inWindow.count >= 2, let lo = inWindow.min(), let hi = inWindow.max() else { continue }
+            values.append(Point(date: days[i], value: hi - lo))
         }
-        let series = values.sorted { $0.date < $1.date }
-        let vals = series.map(\.value)
-        let avg = vals.reduce(0, +) / Double(vals.count)
-        return Result(average: avg, min: vals.min(), max: vals.max(),
-                      sampleCount: series.count, series: series)
+
+        guard !values.isEmpty else { return .empty }
+        // `values` is built newest-first; reverse for an ascending-by-date series.
+        let series = Array(values.reversed())
+        let avg = series.map(\.value).reduce(0, +) / Double(series.count)
+        return Result(average: avg, sampleCount: series.count, series: series)
     }
 }

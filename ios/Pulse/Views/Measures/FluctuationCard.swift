@@ -58,7 +58,7 @@ struct FluctuationCard: View {
 
             if let avg = result.average, result.sampleCount >= WeightFluctuation.minValidWindows {
                 HStack(alignment: .firstTextBaseline, spacing: 4) {
-                    Text(String(format: "%.1f", avg))
+                    Text(WeightFormatter.entryString(avg))
                         .font(.system(size: 32, weight: .bold, design: .rounded))
                         .foregroundStyle(Theme.FG.primary)
                     Text(unit.rawValue).foregroundStyle(Theme.FG.tertiary)
@@ -68,7 +68,7 @@ struct FluctuationCard: View {
                     .font(.system(size: 12)).foregroundStyle(Theme.FG.tertiary)
                 sparkline(result.series)
                 if let lo = result.min, let hi = result.max {
-                    Text("ranged \(String(format: "%.1f", lo)) – \(String(format: "%.1f", hi)) \(unit.rawValue) · \(result.sampleCount) windows")
+                    Text("ranged \(WeightFormatter.entryString(lo)) – \(WeightFormatter.entryString(hi)) \(unit.rawValue) · \(result.sampleCount) windows")
                         .font(.system(size: 11)).foregroundStyle(Theme.FG.tertiary)
                 }
             } else {
