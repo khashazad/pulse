@@ -16,13 +16,19 @@ struct TagProgressionGalleryView: View {
 
     @State private var model: TagProgressionModel?
     @State private var viewer: ProgressPhotoMetadata?
+    @State private var isSelecting: Bool
+    @State private var selectedIds: Set<UUID> = []
+    @State private var comparePair: PhotoPair?
 
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 10), count: 3)
 
     /// Builds the gallery for a single tag.
-    /// - Parameter tag: the progress-photo tag whose full history this view shows.
-    init(tag: ProgressPhotoTag) {
+    /// - Parameters:
+    ///   - tag: the progress-photo tag whose full history this view shows.
+    ///   - initiallySelecting: initial selection-mode state; defaults to normal browsing.
+    init(tag: ProgressPhotoTag, initiallySelecting: Bool = false) {
         self.tag = tag
+        _isSelecting = State(initialValue: initiallySelecting)
     }
 
     var body: some View {
@@ -32,6 +38,26 @@ struct TagProgressionGalleryView: View {
         }
         .navigationTitle(tag.name)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                if isSelecting {
+                    Button("Compare") { compareSelected() }
+                        .disabled(selectedIds.count != 2)
+                        .foregroundStyle(Theme.CTP.mauve)
+                }
+                Button(isSelecting ? "Cancel" : "Select") {
+                    setSelecting(!isSelecting)
+                }
+                .foregroundStyle(Theme.CTP.mauve)
+            }
+        }
+        .navigationDestination(item: $comparePair) { pair in
+            PhotoPairComparisonView(
+                older: pair.older,
+                newer: pair.newer,
+                tagName: pair.tagName
+            )
+        }
         .task {
             if model == nil {
                 let m = TagProgressionModel(tag: tag, auth: auth, store: store)
@@ -80,49 +106,146 @@ struct TagProgressionGalleryView: View {
     /// - Returns: a `ScrollView` containing the `LazyVGrid`.
     private func grid(_ photos: [ProgressPhotoMetadata]) -> some View {
         ScrollView {
-            LazyVGrid(columns: columns, spacing: 12) {
-                ForEach(photos) { meta in
-                    TagProgressionCell(
-                        meta: meta,
-                        onTap: { viewer = meta },
-                        onDelete: { Task { await model?.delete(meta) } }
-                    )
+            VStack(spacing: 12) {
+                if isSelecting {
+                    Text("\(selectedIds.count) selected")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Theme.FG.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                LazyVGrid(columns: columns, spacing: 12) {
+                    ForEach(photos) { meta in
+                        TagProgressionCell(
+                            meta: meta,
+                            isSelecting: isSelecting,
+                            isSelected: selectedIds.contains(meta.id),
+                            onTap: { viewer = meta },
+                            onToggle: { toggleSelection(meta) },
+                            onDelete: { Task { await model?.delete(meta) } }
+                        )
+                    }
                 }
             }
             .padding(.horizontal, 16)
             .padding(.top, 8)
             .padding(.bottom, Theme.Layout.dockClearance)
         }
+        .onChange(of: photos.map(\.id)) { _, ids in
+            selectedIds = selectedIds.intersection(Set(ids))
+        }
+    }
+
+    /// Enters or exits selection mode, clearing stale checks on exit.
+    /// - Parameter value: target selection-mode state.
+    private func setSelecting(_ value: Bool) {
+        isSelecting = value
+        if !value { selectedIds.removeAll() }
+    }
+
+    /// Toggles one photo's selected state.
+    /// - Parameter meta: selected-grid photo metadata.
+    private func toggleSelection(_ meta: ProgressPhotoMetadata) {
+        if selectedIds.contains(meta.id) {
+            selectedIds.remove(meta.id)
+        } else {
+            selectedIds.insert(meta.id)
+        }
+    }
+
+    /// Resolves the selected metadata, orders it chronologically, and pushes the
+    /// focused pair comparison when exactly two selected photos still exist.
+    private func compareSelected() {
+        let selected = model?.photos.filter { selectedIds.contains($0.id) } ?? []
+        guard selected.count == 2 else { return }
+        let pair = orderedPair(selected[0], selected[1])
+        comparePair = PhotoPair(older: pair.older, newer: pair.newer, tagName: tag.name)
     }
 }
 
 // MARK: - Private helpers
+
+private struct PhotoPair: Hashable, Identifiable {
+    let id: UUID
+    let older: ProgressPhotoMetadata
+    let newer: ProgressPhotoMetadata
+    let tagName: String
+
+    /// Builds a stable navigation identity from the two photo ids.
+    /// - Parameters:
+    ///   - older: older selected photo.
+    ///   - newer: newer selected photo.
+    ///   - tagName: shared tag display name.
+    init(older: ProgressPhotoMetadata, newer: ProgressPhotoMetadata, tagName: String) {
+        self.older = older
+        self.newer = newer
+        self.tagName = tagName
+        self.id = Self.derivedId(older.id, newer.id)
+    }
+
+    /// XORs the photo UUID bytes into a stable pair UUID.
+    /// - Parameters:
+    ///   - lhs: first photo id.
+    ///   - rhs: second photo id.
+    /// - Returns: deterministic pair id.
+    private static func derivedId(_ lhs: UUID, _ rhs: UUID) -> UUID {
+        let a = lhs.uuid
+        let b = rhs.uuid
+        return UUID(uuid: (
+            a.0 ^ b.0, a.1 ^ b.1, a.2 ^ b.2, a.3 ^ b.3,
+            a.4 ^ b.4, a.5 ^ b.5, a.6 ^ b.6, a.7 ^ b.7,
+            a.8 ^ b.8, a.9 ^ b.9, a.10 ^ b.10, a.11 ^ b.11,
+            a.12 ^ b.12, a.13 ^ b.13, a.14 ^ b.14, a.15 ^ b.15
+        ))
+    }
+}
 
 /// One tile in the tag-progression grid: square thumbnail + date caption.
 private struct TagProgressionCell: View {
     @Environment(ProgressPhotoStore.self) private var store
 
     let meta: ProgressPhotoMetadata
+    let isSelecting: Bool
+    let isSelected: Bool
     let onTap: () -> Void
+    let onToggle: () -> Void
     let onDelete: () -> Void
 
     @State private var thumb: UIImage?
 
     var body: some View {
         VStack(spacing: 6) {
-            thumbnail
+            interactiveThumbnail
                 .aspectRatio(4.0 / 5.0, contentMode: .fit)
                 .contentShape(RoundedRectangle(cornerRadius: 12))
-                .onTapGesture { if thumb != nil { onTap() } }
-                .contextMenu {
-                    Button("Delete", systemImage: "trash", role: .destructive, action: onDelete)
-                }
             Text(meta.date.formatted(.dateTime.month(.abbreviated).day().year()))
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(Theme.FG.secondary)
                 .lineLimit(1)
         }
         .task(id: meta.sha256) { thumb = await store.thumb(meta) }
+    }
+
+    @ViewBuilder
+    private var interactiveThumbnail: some View {
+        if isSelecting {
+            thumbnailWithSelectionBadge
+                .onTapGesture(perform: onToggle)
+        } else {
+            thumbnailWithSelectionBadge
+                .onTapGesture { if thumb != nil { onTap() } }
+                .contextMenu {
+                    Button("Delete", systemImage: "trash", role: .destructive, action: onDelete)
+                }
+        }
+    }
+
+    private var thumbnailWithSelectionBadge: some View {
+        thumbnail
+            .overlay(alignment: .topTrailing) {
+                if isSelecting {
+                    selectionBadge
+                }
+            }
     }
 
     @ViewBuilder
@@ -137,5 +260,14 @@ private struct TagProgressionCell: View {
                 .fill(Theme.BG.secondary)
                 .overlay { ProgressView().tint(Theme.FG.tertiary) }
         }
+    }
+
+    private var selectionBadge: some View {
+        Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+            .font(.system(size: 22, weight: .semibold))
+            .foregroundStyle(isSelected ? Theme.CTP.mauve : Theme.FG.secondary)
+            .padding(6)
+            .background(Circle().fill(Theme.BG.primary.opacity(0.82)))
+            .padding(6)
     }
 }

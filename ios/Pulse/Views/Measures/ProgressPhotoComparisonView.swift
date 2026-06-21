@@ -35,10 +35,6 @@ struct ProgressPhotoComparisonView: View {
         let tagName: String
     }
 
-    /// Caption date style ("Jun 13"), hoisted out of the render path so the
-    /// `FormatStyle` isn't rebuilt on every pass while a picker is scrubbed.
-    private static let dayFormat: Date.FormatStyle = .dateTime.month(.abbreviated).day()
-
     /// Builds the comparison view with sensible default dates.
     /// - Parameter initialDate: anchor date used for side B; side A defaults
     ///   to seven days earlier.
@@ -122,27 +118,13 @@ struct ProgressPhotoComparisonView: View {
             DatePicker("", selection: date, displayedComponents: .date)
                 .labelsHidden()
                 .tint(Theme.CTP.mauve)
-            Text(caption(date: date.wrappedValue, weight: weight))
+            Text(weightCaption(date: date.wrappedValue, weight: weight, unitRaw: displayUnitRaw))
                 .font(.system(size: 12, weight: .medium, design: .monospaced))
                 .foregroundStyle(Theme.FG.secondary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
         }
         .frame(maxWidth: .infinity, alignment: .center)
-    }
-
-    /// Builds the "<date> · <weight>" caption shown under a date picker.
-    /// - Parameters:
-    ///   - date: the column's selected date.
-    ///   - weight: the weight entry logged on `date`, if any.
-    /// - Returns: a single-line caption string.
-    private func caption(date: Date, weight: WeightEntry?) -> String {
-        let day = date.formatted(Self.dayFormat)
-        let unit = WeightUnit(rawValue: displayUnitRaw) ?? .lb
-        if let weight {
-            return "\(day) · \(WeightFormatter.display(lb: weight.weightLb, in: unit))"
-        }
-        return "\(day) · no weight"
     }
 
     /// Reconciles the stored photos for the selected date range and refreshes
@@ -172,23 +154,6 @@ struct ProgressPhotoComparisonView: View {
         if Task.isCancelled { return }
         weightA = resultA
         weightB = resultB
-    }
-
-    /// Resolves one side's weight, distinguishing "no entry" from a fetch error.
-    /// - Parameters:
-    ///   - date: the date to fetch the logged weight for.
-    ///   - client: the API client to fetch through.
-    ///   - keep: the side's current value, returned unchanged on a non-`.notFound`
-    ///     error so a transient failure doesn't overwrite a real weight with nil.
-    /// - Returns: the fetched entry, nil when none is logged, or `keep` on error.
-    private func fetchWeight(for date: Date, client: PulseClient, keep: WeightEntry?) async -> WeightEntry? {
-        do {
-            return try await client.getWeight(date: date)
-        } catch PulseError.notFound {
-            return nil
-        } catch {
-            return keep
-        }
     }
 }
 
