@@ -186,6 +186,15 @@ final class ViewRenderTests: XCTestCase {
         render(ManageTagsView())
         render(PhotoCellWrapper(meta: sampleMeta()))
         render(PhotoDetailWrapper(meta: sampleMeta()))
+        let sampleTag = ProgressPhotoTag(
+            id: UUID(),
+            name: "front",
+            normalizedName: "front",
+            sortOrder: 0,
+            createdAt: Date(timeIntervalSince1970: 0),
+            updatedAt: Date(timeIntervalSince1970: 0)
+        )
+        render(TagProgressionGalleryView(tag: sampleTag))
     }
 
     func test_render_settings() {
