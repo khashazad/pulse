@@ -19,6 +19,9 @@ struct TagProgressionViewerView: View {
     let onClose: () -> Void
 
     @State private var selection: UUID
+    /// Guards the trash action so a rapid double-tap can't spawn two concurrent
+    /// delete tasks (which would fire a redundant DELETE and race the advance).
+    @State private var isDeleting = false
 
     /// Builds the viewer starting on a chosen photo.
     /// - Parameters:
@@ -63,6 +66,7 @@ struct TagProgressionViewerView: View {
                     .padding(8)
                     .background(.black.opacity(0.55), in: Circle())
             }
+            .disabled(isDeleting)
         }
         .padding(.horizontal, 16)
         .padding(.top, 8)
@@ -80,12 +84,15 @@ struct TagProgressionViewerView: View {
     /// model reports, or closes the viewer when the set is now empty.
     /// - Returns: Void.
     private func deleteCurrent() {
+        guard !isDeleting else { return }
+        isDeleting = true
         Task {
             if let next = await model.deleteAndAdvance(from: selection) {
                 selection = next
             } else {
                 onClose()
             }
+            isDeleting = false
         }
     }
 }
