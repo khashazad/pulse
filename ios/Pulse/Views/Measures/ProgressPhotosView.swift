@@ -35,6 +35,7 @@ struct ProgressPhotosView: View {
             Theme.BG.primary.ignoresSafeArea()
             ScrollView {
                 VStack(spacing: Theme.Layout.sectionSpacing) {
+                    tagStrip
                     dateStrip
                     grid
                     addButton
@@ -77,6 +78,34 @@ struct ProgressPhotosView: View {
         }
         .sheet(isPresented: $showCompare) {
             NavigationStack { ProgressPhotoComparisonView(initialDate: selectedDate) }
+        }
+        .navigationDestination(for: ProgressPhotoTag.self) { tag in
+            TagProgressionGalleryView(tag: tag)
+        }
+    }
+
+    // MARK: tag progression strip
+
+    /// Horizontal row of tag chips; tapping one pushes that tag's all-time
+    /// progression gallery. Hidden when the user has no tags yet.
+    @ViewBuilder
+    private var tagStrip: some View {
+        if !tagStore.tags.isEmpty {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(tagStore.tags) { tag in
+                        NavigationLink(value: tag) {
+                            Text(tag.name)
+                                .font(.system(size: 12, weight: .semibold))
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 7)
+                                .background(Theme.BG.secondary, in: Capsule())
+                                .foregroundStyle(Theme.CTP.mauve)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
         }
     }
 
