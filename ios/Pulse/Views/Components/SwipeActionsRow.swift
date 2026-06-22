@@ -96,10 +96,9 @@ struct SwipeActionsRow<Content: View>: View {
                         }
                         .onEnded { _ in
                             let open = offset < -revealWidth / 2
-                            withAnimation(.easeOut(duration: 0.2)) {
-                                offset = open ? -revealWidth : 0
-                            }
-                            startOffset = offset
+                            let destination: CGFloat = open ? -revealWidth : 0
+                            withAnimation(.easeOut(duration: 0.2)) { offset = destination }
+                            startOffset = destination
                         }
                 )
         }
