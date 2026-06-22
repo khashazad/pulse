@@ -17,6 +17,8 @@ final class DayMacroModel {
     private(set) var deleteState: DeleteState = .idle
     /// Outcome of the most recent "confirm pending entries" action.
     private(set) var confirmState: ConfirmState = .idle
+    /// Outcome of the most recent "make pending" (unconfirm) action.
+    private(set) var pendingState: PendingState = .idle
     private weak var auth: AuthSession?
 
     /// Discrete states of a copy-entries action, kept separate from `state` so the
@@ -56,6 +58,16 @@ final class DayMacroModel {
         case idle
         case confirming
         case finished(confirmed: Int)
+        case failed(PulseError)
+    }
+
+    /// Discrete states of a make-pending (unconfirm) action — the inverse of
+    /// confirm. One atomic `POST /entries/unconfirm` over all selected ids, so
+    /// there is no partial-failure remainder to track.
+    enum PendingState: Equatable {
+        case idle
+        case working
+        case finished(count: Int)
         case failed(PulseError)
     }
 
@@ -245,6 +257,44 @@ final class DayMacroModel {
     /// - Returns: Nothing.
     func resetConfirmState() {
         confirmState = .idle
+    }
+
+    /// Moves the given confirmed entries back to pending in one atomic `POST
+    /// /entries/unconfirm`, then reloads the day so the now-pending entries drop
+    /// out of the totals. The inverse of `confirmEntries`. Routes a 401 through
+    /// `AuthSession`. A no-op (empty input) finishes immediately without a
+    /// request.
+    /// - Parameters:
+    ///   - entries: The confirmed entries to make pending.
+    /// - Returns: Nothing; updates `pendingState` and, on success, reloads `state`.
+    func makePending(_ entries: [FoodEntry]) async {
+        guard let client = auth?.makeClient() else {
+            pendingState = .failed(.notSignedIn)
+            return
+        }
+        let ids = entries.map(\.id)
+        guard !ids.isEmpty else {
+            pendingState = .finished(count: 0)
+            return
+        }
+        pendingState = .working
+        do {
+            let response = try await client.makePending(ids: ids)
+            pendingState = .finished(count: response.entries.count)
+            await load()
+        } catch let error as PulseError {
+            if error == .unauthorized { auth?.handleUnauthorized() }
+            pendingState = .failed(error)
+        } catch {
+            pendingState = .failed(.server(status: -1))
+        }
+    }
+
+    /// Resets the make-pending action back to idle so stale success/failure state
+    /// doesn't leak across presentations.
+    /// - Returns: Nothing.
+    func resetPendingState() {
+        pendingState = .idle
     }
 
     /// Builds a `FoodEntryCreate` that reproduces an existing entry on a new day.
