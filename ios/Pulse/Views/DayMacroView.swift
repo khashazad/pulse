@@ -36,8 +36,10 @@ struct DayMacroView: View {
     @State private var pendingExpanded = false
     /// Whether the meal-group delete confirmation dialog is presented.
     @State private var showMealDeleteConfirm = false
-    /// The meal group queued for deletion, pending dialog confirmation.
-    @State private var mealPendingDeletion: MealGroup?
+    /// The meal-group entries queued for deletion, pending dialog confirmation.
+    /// Holds the exact items to remove: the whole group from a confirmed cluster
+    /// row, or only the pending subset from the pending panel.
+    @State private var mealDeletion: [FoodEntry] = []
 
     var body: some View {
         ZStack {
@@ -124,15 +126,15 @@ struct DayMacroView: View {
         }
         .transientConfirmation($savedMealName)
         .confirmationDialog(
-            "Delete this meal's \(mealPendingDeletion?.items.count ?? 0) entries? This can't be undone.",
+            "Delete this meal's \(mealDeletion.count) entries? This can't be undone.",
             isPresented: $showMealDeleteConfirm,
             titleVisibility: .visible
         ) {
             Button("Delete", role: .destructive) {
-                if let group = mealPendingDeletion { model?.requestDelete(group.items) }
-                mealPendingDeletion = nil
+                model?.requestDelete(mealDeletion)
+                mealDeletion = []
             }
-            Button("Cancel", role: .cancel) { mealPendingDeletion = nil }
+            Button("Cancel", role: .cancel) { mealDeletion = [] }
         }
         .undoSnackbar(
             isPresented: model?.pendingDelete != nil,
@@ -143,8 +145,9 @@ struct DayMacroView: View {
     }
 
     /// Snackbar text for the current buffered delete (singular/plural aware).
+    /// Returns an empty string when there is no buffered delete.
     private var undoMessage: String {
-        let count = model?.pendingDelete?.entries.count ?? 0
+        guard let count = model?.pendingDelete?.entries.count else { return "" }
         return count == 1 ? "Entry deleted" : "\(count) entries deleted"
     }
 
@@ -392,8 +395,8 @@ struct DayMacroView: View {
                 switch row {
                 case .single(let entry):
                     model?.requestDelete([entry])
-                case .meal(let group):
-                    mealPendingDeletion = group
+                case .meal:
+                    mealDeletion = pendingItems
                     showMealDeleteConfirm = true
                 }
             },
@@ -579,7 +582,7 @@ struct DayMacroView: View {
                 case .single(let entry):
                     model?.requestDelete([entry])
                 case .meal(let group):
-                    mealPendingDeletion = group
+                    mealDeletion = group.items
                     showMealDeleteConfirm = true
                 }
             },
