@@ -41,6 +41,10 @@ struct DayMacroView: View {
     /// Holds the exact items to remove: the whole group from a confirmed cluster
     /// row, or only the pending subset from the pending panel.
     @State private var mealDeletion: [FoodEntry] = []
+    /// Entries to retry making pending after a failed make-pending (retry input).
+    @State private var pendingRetry: [FoodEntry] = []
+    /// Whether the make-pending-failure alert (with Retry) is presented.
+    @State private var showPendingFailure = false
 
     var body: some View {
         ZStack {
@@ -125,9 +129,21 @@ struct DayMacroView: View {
                 Text(error.userMessage)
             }
         }
+        .alert("Couldn't move entries to pending", isPresented: $showPendingFailure) {
+            Button("Retry") {
+                Task { await runMakePending(pendingRetry) }
+            }
+            Button("Cancel", role: .cancel) {
+                pendingRetry = []
+            }
+        } message: {
+            if case .failed(let error) = model?.pendingState {
+                Text(error.userMessage)
+            }
+        }
         .transientConfirmation($savedMealName)
         .confirmationDialog(
-            "Delete this meal's \(mealDeletion.count) entries? This can't be undone.",
+            "Delete this meal's \(mealDeletion.count) entries?",
             isPresented: $showMealDeleteConfirm,
             titleVisibility: .visible
         ) {
@@ -595,14 +611,21 @@ struct DayMacroView: View {
         ]
     }
 
-    /// Runs a make-pending action and surfaces failure through the existing
-    /// confirm-failure alert channel (reused for symmetry).
+    /// Runs a make-pending action and, on failure, stores the entries and raises
+    /// the make-pending retry alert (mirroring how `runConfirm` surfaces confirm
+    /// failures). On success the model has already reloaded the day.
     /// - Parameter entries: The entries to make pending.
-    /// - Returns: Nothing.
+    /// - Returns: Nothing; mutates view state on failure.
     private func runMakePending(_ entries: [FoodEntry]) async {
         guard let model else { return }
         model.resetPendingState()
         await model.makePending(entries)
+        if case .failed = model.pendingState {
+            pendingRetry = entries
+            showPendingFailure = true
+        } else {
+            pendingRetry = []
+        }
     }
 
     /// Body for the failed state. Renders a "no targets set" hint for `.notFound`,

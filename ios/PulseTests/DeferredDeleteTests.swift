@@ -124,8 +124,7 @@ final class DeferredDeleteTests: XCTestCase {
         let b = entry(bId, kcal: 400)
         // Expect a fire-and-forget DELETE for entry A when B supersedes it.
         let aDeleteExpectation = expectation(description: "DELETE for entry A fires")
-        let auth = signedInAuth { [weak self] req in
-            guard let self else { return (self!.http(req, 204), Data()) }
+        let auth = signedInAuth { req in
             if req.httpMethod == "DELETE", req.url?.path.contains(aId.uuidString.lowercased()) == true {
                 aDeleteExpectation.fulfill()
             }
