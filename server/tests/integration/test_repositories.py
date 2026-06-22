@@ -600,6 +600,16 @@ async def test_unconfirm_entries_rejects_cross_day(session: AsyncSession) -> Non
     with pytest.raises(ValueError):
         await unconfirm_entries(session=session, user_key=user_key, entry_ids=ids)
 
+    # The cross-day unconfirm rolled back: both entries are still confirmed.
+    day_a = DateValue(2026, 6, 21)
+    day_b = DateValue(2026, 6, 22)
+    log_a = canonical_daily_log_id(user_key, day_a)
+    log_b = canonical_daily_log_id(user_key, day_b)
+    rows_a = await entries_repo.list_entries_by_daily_log_id(log_a)
+    rows_b = await entries_repo.list_entries_by_daily_log_id(log_b)
+    assert rows_a[0]["confirmed"] is True
+    assert rows_b[0]["confirmed"] is True
+
 
 @pytest.mark.asyncio
 @pytest.mark.integration

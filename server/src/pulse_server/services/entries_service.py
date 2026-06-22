@@ -224,7 +224,7 @@ async def unconfirm_entries(
       day_rows)`` — the rows actually moved to pending, and all entries on the
       affected daily log for recomputing the day's confirmed total.
 
-    **Raises:**
+    **Exceptions:**
     - ValueError: Raised when the changed entries span more than one daily log;
       the single ``daily_totals`` field in the response can only represent one
       day, so a cross-day request is rejected (and rolled back).
