@@ -418,12 +418,18 @@ final class DayMacroModel {
             let prior = outstanding.entries
             Task { await self.sendBufferedDeletes(prior) }
         }
+        // When superseding a still-buffered delete, `current` is the already-optimistically
+        // trimmed summary (the prior delete was just sent to the server), so undo restores
+        // to that intermediate state, not the original pre-any-delete summary. This is correct.
         deleteSnapshot = current
         state = .loaded(Self.summary(current, removing: entries))
         pendingDelete = BufferedDelete(entries: entries)
         deleteCommitTask = Task { [undoWindow] in
-            try? await Task.sleep(for: undoWindow)
-            guard !Task.isCancelled else { return }
+            do {
+                try await Task.sleep(for: undoWindow)
+            } catch {
+                return  // cancelled by undoDelete() or a superseding delete — do not commit
+            }
             await self.commitPendingDelete()
         }
     }
@@ -463,11 +469,40 @@ final class DayMacroModel {
     }
 
     /// Fires the buffered server deletes without touching view state (used when a
-    /// new delete supersedes a still-pending one). Delegates to `deleteEntries`,
-    /// which treats 404 as already-deleted.
+    /// new delete supersedes a still-pending one, or when the undo window expires).
+    /// Delegates to `deleteEntriesQuietly`, which issues the same per-entry DELETEs
+    /// as `deleteEntries` but intentionally does not read or write `deleteState` —
+    /// avoiding clobbering the multi-select confirmation flow's state.
     /// - Parameter entries: The entries to delete on the server.
     /// - Returns: Nothing.
     private func sendBufferedDeletes(_ entries: [FoodEntry]) async {
-        _ = await deleteEntries(entries)
+        await deleteEntriesQuietly(entries)
+    }
+
+    /// Deletes entries on the server one `DELETE /entries/{id}` at a time without
+    /// touching `deleteState`. This is the deferred-delete commit path: it runs
+    /// after the undo window expires or when a superseding delete is started, and
+    /// must not clobber the multi-select confirmation flow's `deleteState`. A
+    /// `.notFound` (404) response counts as a successful delete (entry already gone).
+    /// A `.unauthorized` error is routed through `AuthSession`. Any other error
+    /// causes an early return (best-effort; the next `load()` reconciles any
+    /// inconsistency). If not signed in, returns immediately with no network call.
+    /// - Parameter entries: The entries to delete on the server.
+    /// - Returns: Nothing.
+    private func deleteEntriesQuietly(_ entries: [FoodEntry]) async {
+        guard let client = auth?.makeClient() else { return }
+        for entry in entries {
+            do {
+                try await client.deleteEntry(id: entry.id)
+            } catch PulseError.notFound {
+                // Already gone on the server — treat as success and continue.
+                continue
+            } catch let error as PulseError {
+                if error == .unauthorized { auth?.handleUnauthorized() }
+                return
+            } catch {
+                return
+            }
+        }
     }
 }
