@@ -134,3 +134,24 @@ class EntriesConfirmResponse(BaseModel):
 
     entries: list[FoodEntryResponse]
     daily_totals: MacroTotals
+
+
+class EntriesPendingRequest(BaseModel):
+    """Request body for ``POST /entries/unconfirm`` — the ids to move back to pending.
+
+    Sent for a single-entry "make pending" (one id) or several at once. At least
+    one id is required.
+    """
+
+    ids: list[UUID] = Field(min_length=1)
+
+
+class EntriesPendingResponse(BaseModel):
+    """Response body for ``POST /entries/unconfirm`` — changed rows plus the day total.
+
+    ``daily_totals`` is the affected day's confirmed total recomputed after the
+    change, so the client can update the day view without a second request.
+    """
+
+    entries: list[FoodEntryResponse]
+    daily_totals: MacroTotals
