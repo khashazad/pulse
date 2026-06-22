@@ -201,6 +201,48 @@ async def confirm_pending_entries(
     return confirmed_rows, day_rows
 
 
+async def unconfirm_entries(
+    session: AsyncSession,
+    user_key: str,
+    entry_ids: Sequence[UUID],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Move confirmed entries back to pending and return them plus their day's rows.
+
+    The inverse of :func:`confirm_pending_entries`. Flips ``confirmed`` to
+    ``False`` for the owned, currently-confirmed ids inside a transaction, then
+    re-reads every entry on the affected daily log so the caller can recompute
+    that day's confirmed totals. Already-pending or non-matching ids are silently
+    skipped (idempotent).
+
+    **Inputs:**
+    - session (AsyncSession): Active SQLAlchemy session used for the transaction.
+    - user_key (str): User identifier owning the entries.
+    - entry_ids (Sequence[UUID]): Food-entry ids to make pending.
+
+    **Outputs:**
+    - tuple[list[dict[str, Any]], list[dict[str, Any]]]: ``(changed_rows,
+      day_rows)`` — the rows actually moved to pending, and all entries on the
+      affected daily log for recomputing the day's confirmed total.
+
+    **Raises:**
+    - ValueError: Raised when the changed entries span more than one daily log;
+      the single ``daily_totals`` field in the response can only represent one
+      day, so a cross-day request is rejected (and rolled back).
+    - sqlalchemy.exc.SQLAlchemyError: Raised when any SQL operation fails; the
+      transaction is rolled back.
+    """
+    entries_repo = EntriesRepository(session)
+    async with transaction(session):
+        changed_rows = await entries_repo.unconfirm_entries(entry_ids, user_key)
+        affected_logs = {row["daily_log_id"] for row in changed_rows}
+        if len(affected_logs) > 1:
+            raise ValueError("Pending ids must all belong to the same day")
+        day_rows: list[dict[str, Any]] = []
+        for log_id in affected_logs:
+            day_rows.extend(await entries_repo.list_entries_by_daily_log_id(str(log_id)))
+    return changed_rows, day_rows
+
+
 def _effective_log_date(
     item_consumed_at: DateTimeValue | None,
     now: DateTimeValue,

@@ -31,6 +31,7 @@ from pulse_server.repositories.targets import TargetsRepository
 from pulse_server.services.entries_service import (
     confirm_pending_entries,
     create_entries_with_side_effects,
+    unconfirm_entries,
 )
 from pulse_server.services.summary_service import build_daily_summary
 
@@ -569,3 +570,63 @@ async def test_confirm_pending_entries_rejects_cross_day(session: AsyncSession) 
     rows_b = await entries_repo.list_entries_by_daily_log_id(log_b)
     assert rows_a[0]["confirmed"] is False
     assert rows_b[0]["confirmed"] is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_unconfirm_entries_rejects_cross_day(session: AsyncSession) -> None:
+    """``unconfirm_entries`` rejects ids spanning more than one day."""
+    user_key = f"user-{uuid.uuid4()}"
+    entries_repo = EntriesRepository(session)
+    ids: list[uuid.UUID] = []
+    async with transaction(session):
+        for day in (DateValue(2026, 6, 21), DateValue(2026, 6, 22)):
+            log_id = canonical_daily_log_id(user_key, day)
+            await entries_repo.ensure_daily_log(log_id, user_key, day)
+            entry_id = uuid.uuid4()
+            ids.append(entry_id)
+            await entries_repo.create_food_entry(
+                FoodEntryPayload(
+                    entry_id=entry_id, daily_log_id=log_id, user_key=user_key,
+                    entry_group_id=uuid.uuid4(), display_name="Bowl", quantity_text="1",
+                    normalized_quantity_value=None, normalized_quantity_unit=None,
+                    usda_fdc_id=1, usda_description="Bowl", custom_food_id=None,
+                    calories=100, protein_g=1, carbs_g=1, fat_g=1,
+                    consumed_at=DateTimeValue(day.year, day.month, day.day, 12, 0),
+                    meal_id=None, meal_name=None, confirmed=True,
+                )
+            )
+
+    with pytest.raises(ValueError):
+        await unconfirm_entries(session=session, user_key=user_key, entry_ids=ids)
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_unconfirm_entries_returns_changed_and_day_rows(session: AsyncSession) -> None:
+    """``unconfirm_entries`` returns the changed rows plus the day's full rows."""
+    user_key = f"user-{uuid.uuid4()}"
+    entries_repo = EntriesRepository(session)
+    day = DateValue(2026, 6, 22)
+    log_id = canonical_daily_log_id(user_key, day)
+    keep_id, flip_id = uuid.uuid4(), uuid.uuid4()
+    async with transaction(session):
+        await entries_repo.ensure_daily_log(log_id, user_key, day)
+        for entry_id, kcal in ((keep_id, 300), (flip_id, 700)):
+            await entries_repo.create_food_entry(
+                FoodEntryPayload(
+                    entry_id=entry_id, daily_log_id=log_id, user_key=user_key,
+                    entry_group_id=uuid.uuid4(), display_name="Bowl", quantity_text="1",
+                    normalized_quantity_value=None, normalized_quantity_unit=None,
+                    usda_fdc_id=1, usda_description="Bowl", custom_food_id=None,
+                    calories=kcal, protein_g=1, carbs_g=1, fat_g=1,
+                    consumed_at=DateTimeValue(2026, 6, 22, 12, 0),
+                    meal_id=None, meal_name=None, confirmed=True,
+                )
+            )
+
+    changed, day_rows = await unconfirm_entries(
+        session=session, user_key=user_key, entry_ids=[flip_id]
+    )
+    assert len(changed) == 1 and changed[0]["id"] == flip_id
+    assert len(day_rows) == 2
