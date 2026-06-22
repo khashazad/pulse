@@ -32,6 +32,12 @@ struct DayMacroView: View {
     @State private var showSaveMealSheet = false
     /// Name of a just-saved meal, shown as a transient confirmation; nil hides it.
     @State private var savedMealName: String?
+    /// Whether the pending-items panel (behind the count pill) is expanded.
+    @State private var pendingExpanded = false
+    /// Whether the meal-group delete confirmation dialog is presented.
+    @State private var showMealDeleteConfirm = false
+    /// The meal group queued for deletion, pending dialog confirmation.
+    @State private var mealPendingDeletion: MealGroup?
 
     var body: some View {
         ZStack {
@@ -117,6 +123,29 @@ struct DayMacroView: View {
             }
         }
         .transientConfirmation($savedMealName)
+        .confirmationDialog(
+            "Delete this meal's \(mealPendingDeletion?.items.count ?? 0) entries? This can't be undone.",
+            isPresented: $showMealDeleteConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) {
+                if let group = mealPendingDeletion { model?.requestDelete(group.items) }
+                mealPendingDeletion = nil
+            }
+            Button("Cancel", role: .cancel) { mealPendingDeletion = nil }
+        }
+        .undoSnackbar(
+            isPresented: model?.pendingDelete != nil,
+            message: undoMessage,
+            onUndo: { model?.undoDelete() }
+        )
+        .onDisappear { Task { await model?.flushPendingDelete() } }
+    }
+
+    /// Snackbar text for the current buffered delete (singular/plural aware).
+    private var undoMessage: String {
+        let count = model?.pendingDelete?.entries.count ?? 0
+        return count == 1 ? "Entry deleted" : "\(count) entries deleted"
     }
 
     /// Toolbar toggle that enters/exits multi-select. Only meaningful once the
@@ -138,6 +167,17 @@ struct DayMacroView: View {
     private func exitSelection() {
         isSelecting = false
         selectedIds = []
+    }
+
+    /// The underlying `FoodEntry`s for a grouped row (one for a single, all
+    /// items for a meal group).
+    /// - Parameter row: The grouped day row.
+    /// - Returns: Its entries.
+    private func entries(of row: DayRow) -> [FoodEntry] {
+        switch row {
+        case .single(let entry): return [entry]
+        case .meal(let group): return group.items
+        }
     }
 
     /// Resolves the currently selected ids back into their `FoodEntry` values from
@@ -242,8 +282,12 @@ struct DayMacroView: View {
                     .padding(.horizontal, 16)
 
                 if !isSelecting, !pendingRows.isEmpty {
-                    pendingSection(pendingRows, allPending: pending)
+                    pendingPill(count: pending.count)
                         .padding(.horizontal, 16)
+                    if pendingExpanded {
+                        pendingPanel(pendingRows, allPending: pending)
+                            .padding(.horizontal, 16)
+                    }
                 }
 
                 if summary.entries.isEmpty {
@@ -280,34 +324,47 @@ struct DayMacroView: View {
         }
     }
 
-    /// Pinned "Pending" section shown at the top of the day when unconfirmed
-    /// entries exist. Lists each pending row (single food or meal group) with an
-    /// inline confirm control, followed by a "Confirm all" action.
-    /// Inputs:
-    ///   - rows: the pending entries already folded into `DayRow`s.
-    ///   - allPending: the flat list of pending entries (for "Confirm all").
-    /// Outputs: composed section view.
-    private func pendingSection(_ rows: [DayRow], allPending: [FoodEntry]) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text("Pending")
-                    .font(.system(size: 11, weight: .semibold))
-                    .tracking(0.8)
-                    .textCase(.uppercase)
-                    .foregroundStyle(Theme.pending)
+    /// Tappable count pill summarizing pending items; toggles the panel.
+    /// - Parameter count: Number of pending entries.
+    /// - Returns: The pill view.
+    private func pendingPill(count: Int) -> some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.2)) { pendingExpanded.toggle() }
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "clock.badge.exclamationmark")
+                    .font(.system(size: 13, weight: .semibold))
+                Text("\(count) pending")
+                    .font(.system(size: 13, weight: .semibold))
                 Spacer()
-                Text("\(allPending.count) awaiting confirm")
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(Theme.FG.tertiary)
+                Image(systemName: pendingExpanded ? "chevron.up" : "chevron.down")
+                    .font(.system(size: 12, weight: .semibold))
             }
-            .padding(.horizontal, 4)
+            .foregroundStyle(Theme.pending)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Theme.pending.opacity(0.12)))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(count) pending items, tap to \(pendingExpanded ? "collapse" : "expand")")
+    }
 
+    /// Expanded panel listing each pending row, swipeable to Approve or Delete,
+    /// with an "Approve all" action.
+    /// - Parameters:
+    ///   - rows: The pending rows.
+    ///   - allPending: The flat pending entries (for "Approve all").
+    /// - Returns: The panel view.
+    private func pendingPanel(_ rows: [DayRow], allPending: [FoodEntry]) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
             VStack(spacing: 0) {
                 ForEach(Array(rows.enumerated()), id: \.element.id) { idx, row in
-                    Group {
+                    SwipeActionsRow(actions: pendingRowActions(row)) {
                         switch row {
-                        case .single(let entry): pendingSingleRow(entry)
-                        case .meal(let group):   pendingMealRow(group)
+                        case .single(let entry): EntryRow(entry: entry)
+                        case .meal(let group):   MealGroupRow(group: group)
                         }
                     }
                     if idx < rows.count - 1 {
@@ -320,6 +377,27 @@ struct DayMacroView: View {
 
             confirmAllBar(allPending)
         }
+    }
+
+    /// Swipe actions for a pending row: Approve (confirm) and Delete (deferred).
+    /// - Parameter row: The pending grouped row.
+    /// - Returns: The trailing swipe actions.
+    private func pendingRowActions(_ row: DayRow) -> [SwipeAction] {
+        let pendingItems = entries(of: row).filter { !$0.isConfirmed }
+        return [
+            SwipeAction(label: "Approve", systemImage: "checkmark.circle", tint: Theme.CTP.green) {
+                Task { await runConfirm(pendingItems) }
+            },
+            SwipeAction(label: "Delete", systemImage: "trash", tint: Theme.CTP.red, role: .destructive) {
+                switch row {
+                case .single(let entry):
+                    model?.requestDelete([entry])
+                case .meal(let group):
+                    mealPendingDeletion = group
+                    showMealDeleteConfirm = true
+                }
+            },
+        ]
     }
 
     /// Flat, selectable list of the day's individual entries shown in multi-select
@@ -467,12 +545,14 @@ struct DayMacroView: View {
     private func clusterCard(_ cluster: DayCluster, tinted: Bool) -> some View {
         VStack(spacing: 0) {
             ForEach(Array(cluster.rows.enumerated()), id: \.element.id) { idx, row in
-                Group {
+                SwipeActionsRow(actions: confirmedRowActions(row)) {
                     // Rows here are confirmed-only; pending entries render in the
-                    // pinned "Pending" section above.
-                    switch row {
-                    case .single(let entry): EntryRow(entry: entry)
-                    case .meal(let group):   MealGroupRow(group: group)
+                    // pending panel behind the count pill above.
+                    Group {
+                        switch row {
+                        case .single(let entry): EntryRow(entry: entry)
+                        case .meal(let group):   MealGroupRow(group: group)
+                        }
                     }
                 }
                 if idx < cluster.rows.count - 1 {
@@ -484,47 +564,36 @@ struct DayMacroView: View {
         .ctpCard(tint: tinted ? Theme.CTP.mauve.opacity(0.10) : nil)
     }
 
-    /// A pending single entry rendered with a trailing confirm button, so the
-    /// user can confirm just that one entry without confirming the whole day.
-    /// Inputs:
-    ///   - entry: the pending `FoodEntry`.
-    /// Outputs: composed row with an inline confirm control.
-    private func pendingSingleRow(_ entry: FoodEntry) -> some View {
-        HStack(spacing: 10) {
-            EntryRow(entry: entry)
-            Button {
-                Task { await runConfirm([entry]) }
-            } label: {
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 22))
-                    .foregroundStyle(Theme.CTP.green)
-            }
-            .buttonStyle(.plain)
-            .disabled(model?.confirmState == .confirming)
-            .accessibilityLabel("Confirm \(entry.displayName)")
-        }
+    /// Swipe actions for a confirmed row: Make Pending and Delete. A single-food
+    /// delete defers immediately (with undo); a meal-group delete first asks for
+    /// confirmation (it removes several entries at once).
+    /// - Parameter row: The confirmed grouped row.
+    /// - Returns: The trailing swipe actions.
+    private func confirmedRowActions(_ row: DayRow) -> [SwipeAction] {
+        [
+            SwipeAction(label: "Pending", systemImage: "clock.arrow.circlepath", tint: Theme.pending) {
+                Task { await runMakePending(entries(of: row)) }
+            },
+            SwipeAction(label: "Delete", systemImage: "trash", tint: Theme.CTP.red, role: .destructive) {
+                switch row {
+                case .single(let entry):
+                    model?.requestDelete([entry])
+                case .meal(let group):
+                    mealPendingDeletion = group
+                    showMealDeleteConfirm = true
+                }
+            },
+        ]
     }
 
-    /// A pending meal group (e.g. a multi-food prep batch applied to a future
-    /// day) rendered with a trailing confirm button that confirms all of the
-    /// group's unconfirmed entries at once.
-    /// Inputs:
-    ///   - group: the `MealGroup` whose items are (at least partly) pending.
-    /// Outputs: composed row with an inline confirm control.
-    private func pendingMealRow(_ group: MealGroup) -> some View {
-        HStack(spacing: 10) {
-            MealGroupRow(group: group)
-            Button {
-                Task { await runConfirm(group.items.filter { !$0.isConfirmed }) }
-            } label: {
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 22))
-                    .foregroundStyle(Theme.CTP.green)
-            }
-            .buttonStyle(.plain)
-            .disabled(model?.confirmState == .confirming)
-            .accessibilityLabel("Confirm \(group.displayName)")
-        }
+    /// Runs a make-pending action and surfaces failure through the existing
+    /// confirm-failure alert channel (reused for symmetry).
+    /// - Parameter entries: The entries to make pending.
+    /// - Returns: Nothing.
+    private func runMakePending(_ entries: [FoodEntry]) async {
+        guard let model else { return }
+        model.resetPendingState()
+        await model.makePending(entries)
     }
 
     /// Body for the failed state. Renders a "no targets set" hint for `.notFound`,
