@@ -71,14 +71,42 @@ final class DayMacroModel {
         case failed(PulseError)
     }
 
+    /// Entries removed optimistically and awaiting the deferred `DELETE`; `nil`
+    /// when no delete is pending. The view shows the undo snackbar while set.
+    private(set) var pendingDelete: BufferedDelete?
+    /// Pre-delete summary restored on undo.
+    private var deleteSnapshot: DailySummary?
+    /// The in-flight 10s commit task, cancelled by undo / replaced by a new delete.
+    private var deleteCommitTask: Task<Void, Never>?
+    /// How long the undo window stays open before the delete commits.
+    private let undoWindow: Duration
+
+    /// A buffered, not-yet-committed delete shown behind the undo snackbar.
+    struct BufferedDelete: Equatable {
+        let entries: [FoodEntry]
+    }
+
     /// Initializes the model for a specific calendar day.
     /// Inputs:
     ///   - date: the day whose summary will be fetched.
     ///   - auth: auth session used to construct an authenticated client.
-    init(date: Date, auth: AuthSession) {
+    ///   - undoWindow: how long swipe-delete stays undoable before committing
+    ///     (default 10s; tests pass a long value to drive commit explicitly).
+    init(date: Date, auth: AuthSession, undoWindow: Duration = .seconds(10)) {
         self.date = date
         self.auth = auth
+        self.undoWindow = undoWindow
     }
+
+    #if DEBUG
+    /// Test-only setter for `state` so deferred-delete tests can preload a day
+    /// without stubbing the summary fetch. Not used in production code.
+    /// - Parameter newState: the state to install.
+    /// - Returns: Nothing.
+    func setStateForTesting(_ newState: LoadState<DailySummary>) {
+        state = newState
+    }
+    #endif
 
     /// Fetches the daily summary and updates `state`; routes 401 through AuthSession.
     func load() async {
@@ -339,5 +367,107 @@ final class DayMacroModel {
             )
         }
         return nil
+    }
+
+    /// Returns a copy of `summary` with `entries` removed and the totals
+    /// recomputed. Only **confirmed** removed entries reduce `consumed`
+    /// (pending entries never counted), and `remaining` is recomputed from the
+    /// unchanged targets.
+    /// - Parameters:
+    ///   - summary: The current day summary.
+    ///   - entries: The entries being removed.
+    /// - Returns: A new `DailySummary` reflecting the removal.
+    static func summary(_ summary: DailySummary, removing entries: [FoodEntry]) -> DailySummary {
+        let removedIds = Set(entries.map(\.id))
+        let kept = summary.entries.filter { !removedIds.contains($0.id) }
+        let removedConfirmed = entries.filter(\.isConfirmed)
+        let calories = removedConfirmed.reduce(0) { $0 + $1.calories }
+        let protein = removedConfirmed.reduce(0.0) { $0 + $1.proteinG }
+        let carbs = removedConfirmed.reduce(0.0) { $0 + $1.carbsG }
+        let fat = removedConfirmed.reduce(0.0) { $0 + $1.fatG }
+        let consumed = MacroTotals(
+            calories: summary.consumed.calories - calories,
+            proteinG: summary.consumed.proteinG - protein,
+            carbsG: summary.consumed.carbsG - carbs,
+            fatG: summary.consumed.fatG - fat
+        )
+        let remaining = MacroTotals(
+            calories: summary.target.calories - consumed.calories,
+            proteinG: summary.target.proteinG - consumed.proteinG,
+            carbsG: summary.target.carbsG - consumed.carbsG,
+            fatG: summary.target.fatG - consumed.fatG
+        )
+        return DailySummary(
+            date: summary.date, target: summary.target,
+            consumed: consumed, remaining: remaining, entries: kept
+        )
+    }
+
+    /// Optimistically removes `entries` from the loaded day and opens an undo
+    /// window before the actual `DELETE`s fire. The rows disappear and the totals
+    /// adjust immediately; nothing is sent to the server until the window
+    /// expires (or `flushPendingDelete` is called). Starting a new delete while
+    /// one is buffered commits the previous one first. No-op when not loaded or
+    /// `entries` is empty.
+    /// - Parameter entries: The entries to delete.
+    /// - Returns: Nothing; mutates `state` and `pendingDelete`.
+    func requestDelete(_ entries: [FoodEntry]) {
+        guard !entries.isEmpty, case .loaded(let current) = state else { return }
+        if let outstanding = pendingDelete {
+            deleteCommitTask?.cancel()
+            let prior = outstanding.entries
+            Task { await self.sendBufferedDeletes(prior) }
+        }
+        deleteSnapshot = current
+        state = .loaded(Self.summary(current, removing: entries))
+        pendingDelete = BufferedDelete(entries: entries)
+        deleteCommitTask = Task { [undoWindow] in
+            try? await Task.sleep(for: undoWindow)
+            guard !Task.isCancelled else { return }
+            await self.commitPendingDelete()
+        }
+    }
+
+    /// Cancels the pending delete and restores the pre-delete summary. No server
+    /// request is ever sent for the buffered entries.
+    /// - Returns: Nothing; mutates `state` and clears the buffer.
+    func undoDelete() {
+        deleteCommitTask?.cancel()
+        deleteCommitTask = nil
+        if let snapshot = deleteSnapshot {
+            state = .loaded(snapshot)
+        }
+        deleteSnapshot = nil
+        pendingDelete = nil
+    }
+
+    /// Commits the buffered delete: fires the actual `DELETE`s then reloads the
+    /// day to reconcile (any rows that failed to delete reappear on reload).
+    /// No-op when nothing is buffered.
+    /// - Returns: Nothing; clears the buffer and reloads `state`.
+    func commitPendingDelete() async {
+        guard let buffered = pendingDelete else { return }
+        deleteCommitTask?.cancel()
+        deleteCommitTask = nil
+        pendingDelete = nil
+        deleteSnapshot = nil
+        await sendBufferedDeletes(buffered.entries)
+        await load()
+    }
+
+    /// Commits any buffered delete immediately. Call from `.onDisappear` /
+    /// scenephase background so a pending delete is not silently dropped.
+    /// - Returns: Nothing.
+    func flushPendingDelete() async {
+        await commitPendingDelete()
+    }
+
+    /// Fires the buffered server deletes without touching view state (used when a
+    /// new delete supersedes a still-pending one). Delegates to `deleteEntries`,
+    /// which treats 404 as already-deleted.
+    /// - Parameter entries: The entries to delete on the server.
+    /// - Returns: Nothing.
+    private func sendBufferedDeletes(_ entries: [FoodEntry]) async {
+        _ = await deleteEntries(entries)
     }
 }
