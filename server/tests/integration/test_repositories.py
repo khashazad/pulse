@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from pulse_server.db import to_sqlalchemy_url, transaction
 from pulse_server.models import FoodEntryCreate
+from pulse_server.log_ids import daily_log_id as canonical_daily_log_id
 from pulse_server.repositories.entries import EntriesRepository, FoodEntryPayload
 from pulse_server.repositories.logs import LogsRepository
 from pulse_server.repositories.targets import TargetsRepository
@@ -461,6 +462,39 @@ async def test_confirm_entries_flips_scoped_and_idempotent(session: AsyncSession
 
     rows = await entries_repo.list_entries_by_daily_log_id(log_id)
     assert rows[0]["confirmed"] is True
+
+
+@pytest.mark.asyncio
+async def test_unconfirm_entries_flips_scoped_and_idempotent(session: AsyncSession) -> None:
+    """``unconfirm_entries`` flips confirmed→pending, is user-scoped, and is idempotent."""
+    user_key = "khash"
+    other_user = "intruder"
+    entries_repo = EntriesRepository(session)
+    log_date = DateValue(2026, 6, 22)
+    log_id = canonical_daily_log_id(user_key, log_date)
+    await entries_repo.ensure_daily_log(log_id, user_key, log_date)
+    entry_id = uuid.uuid4()
+    await entries_repo.create_food_entry(
+        FoodEntryPayload(
+            entry_id=entry_id, daily_log_id=log_id, user_key=user_key,
+            entry_group_id=uuid.uuid4(), display_name="Bowl", quantity_text="1",
+            normalized_quantity_value=None, normalized_quantity_unit=None,
+            usda_fdc_id=1, usda_description="Bowl", custom_food_id=None,
+            calories=600, protein_g=50, carbs_g=40, fat_g=20,
+            consumed_at=DateTimeValue(2026, 6, 22, 12, 0), meal_id=None,
+            meal_name=None, confirmed=True,
+        )
+    )
+
+    # Another user cannot unconfirm it.
+    assert await entries_repo.unconfirm_entries([entry_id], other_user) == []
+
+    changed = await entries_repo.unconfirm_entries([entry_id], user_key)
+    assert len(changed) == 1
+    assert changed[0]["confirmed"] is False
+
+    # Idempotent: already-pending rows are skipped.
+    assert await entries_repo.unconfirm_entries([entry_id], user_key) == []
 
 
 @pytest.mark.asyncio
