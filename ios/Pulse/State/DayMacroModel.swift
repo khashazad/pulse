@@ -416,7 +416,7 @@ final class DayMacroModel {
         if let outstanding = pendingDelete {
             deleteCommitTask?.cancel()
             let prior = outstanding.entries
-            Task { await self.sendBufferedDeletes(prior) }
+            Task { await self.deleteEntriesQuietly(prior) }
         }
         // When superseding a still-buffered delete, `current` is the already-optimistically
         // trimmed summary (the prior delete was just sent to the server), so undo restores
@@ -457,7 +457,7 @@ final class DayMacroModel {
         deleteCommitTask = nil
         pendingDelete = nil
         deleteSnapshot = nil
-        await sendBufferedDeletes(buffered.entries)
+        await deleteEntriesQuietly(buffered.entries)
         await load()
     }
 
@@ -466,17 +466,6 @@ final class DayMacroModel {
     /// - Returns: Nothing.
     func flushPendingDelete() async {
         await commitPendingDelete()
-    }
-
-    /// Fires the buffered server deletes without touching view state (used when a
-    /// new delete supersedes a still-pending one, or when the undo window expires).
-    /// Delegates to `deleteEntriesQuietly`, which issues the same per-entry DELETEs
-    /// as `deleteEntries` but intentionally does not read or write `deleteState` —
-    /// avoiding clobbering the multi-select confirmation flow's state.
-    /// - Parameter entries: The entries to delete on the server.
-    /// - Returns: Nothing.
-    private func sendBufferedDeletes(_ entries: [FoodEntry]) async {
-        await deleteEntriesQuietly(entries)
     }
 
     /// Deletes entries on the server one `DELETE /entries/{id}` at a time without
