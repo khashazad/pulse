@@ -90,7 +90,23 @@ menu — user explicitly asked for swipe.
    Mirrors `confirmEntries` / `ConfirmState`: a `PendingState` enum
    (`idle | working | finished(count:) | failed(PulseError)`), an atomic call
    over the entries' ids, route 401 through `AuthSession`, reload the day on
-   success. Empty input is a no-op. Delete continues to reuse `deleteEntries`.
+   success. Empty input is a no-op.
+
+   **Deferred-delete buffer (new).** Add `requestDelete(_ entries:)`,
+   `undoDelete()`, and a published `pendingDelete` (the buffered entries +
+   remaining-seconds, `nil` when none) that the view observes to show the undo
+   snackbar:
+   - `requestDelete`: first flush any outstanding deferred delete, snapshot the
+     current loaded `DailySummary`, optimistically mutate the loaded summary
+     (remove the rows; subtract each **confirmed** entry's macros from
+     `consumed` — pending entries don't affect `consumed`), then start a 10s
+     cancellable commit `Task`.
+   - On expiry the task calls the existing `deleteEntries` then `load()` to
+     reconcile; partial-failure handling stays as today (the existing retry
+     alert).
+   - `undoDelete`: cancel the task, restore the snapshot, clear `pendingDelete`.
+   - A `flushPendingDelete()` is invoked on `.onDisappear` / scenephase
+     background so a deferred delete commits rather than silently vanishing.
 
 ### iOS UI
 
@@ -105,7 +121,13 @@ menu — user explicitly asked for swipe.
 8. **Confirmed rows (cluster cards in `clusterCard`)** wrap each `EntryRow` /
    `MealGroupRow` in `SwipeActionsRow` with actions:
    - **Make Pending** (tint mauve/pending) → `model.makePending(entries(of: row))`
-   - **Delete** (tint red, destructive) → `model.deleteEntries(entries(of: row))`
+   - **Delete** (tint red, destructive) → single food row: `model.requestDelete(
+     [entry])` directly (no dialog). Meal-group row: present the destructive
+     confirmation dialog; on confirm → `model.requestDelete(group.items)`.
+
+   An **undo snackbar** (new lightweight component, sibling to the existing
+   `TransientConfirmation`) is shown whenever `model.pendingDelete != nil`,
+   with a 10s countdown and an **Undo** button calling `model.undoDelete()`.
 
 9. **Replace the always-visible pending section with a count pill + expandable
    panel.**
@@ -114,7 +136,8 @@ menu — user explicitly asked for swipe.
      `pendingRows` is non-empty. Tapping toggles a `@State` expansion flag.
    - When expanded, render an inline panel listing the pending rows. Each row is
      a `SwipeActionsRow` with actions **Approve** (→ `model.confirmEntries`) and
-     **Delete** (→ `model.deleteEntries`). Panel keeps an **Approve all** action
+     **Delete** (→ `model.requestDelete`, same deferred-delete + undo path).
+     Panel keeps an **Approve all** action
      (the existing `confirmAllBar` behavior). Collapsing the panel = "leave
      them."
    - Partition is unchanged: `groupDayEntries(summary.entries)` → rows with
@@ -124,13 +147,39 @@ menu — user explicitly asked for swipe.
     to the relevant subset where it matters (Approve acts on the group's
     unconfirmed items, matching today's `pendingMealRow` behavior).
 
-### Delete confirmation (open question for spec review)
+### Delete behavior: no confirm for single rows, confirm for meals, 10s undo
 
-Multi-select delete shows a confirmation dialog. For a **single** swipe-delete,
-the lean is **no dialog** — the swipe-reveal plus button tap is already two
-deliberate actions, and "Make Pending" now exists as the safe, reversible
-alternative. Meal-group swipe-delete (removes several entries at once) may still
-warrant a confirmation dialog. To be finalized at review.
+Resolved:
+
+- **Single food row** swipe-delete: **no confirmation dialog**.
+- **Meal-group** swipe-delete (removes several entries at once): show a
+  **confirmation dialog** first (reusing the existing destructive-dialog style).
+- **All** swipe-deletes (single and, after the meal dialog is confirmed,
+  meal-group) then enter a **10-second undo window**.
+
+**Mechanism — deferred (optimistic) delete.** The server `DELETE` is a *hard*
+delete with no trash table, so undo cannot un-delete after the fact. Instead the
+delete is deferred:
+
+1. On delete, the model optimistically removes the entries from its in-memory
+   `DailySummary` (drops the rows **and** subtracts their macros from `consumed`
+   so the ring, `MacroTotalsRow`, list, and pending pill all update at once) and
+   snapshots the pre-delete summary. No server call yet.
+2. An **undo snackbar** appears with a countdown / **Undo** button for 10s.
+3. **Undo** within the window: restore the snapshot, cancel the commit. No
+   server request was ever sent.
+4. **Window expires** (or the user triggers another delete, or the view
+   disappears / app backgrounds — all flush the buffer): fire the actual
+   `DELETE /entries/{id}` per entry via the existing `deleteEntries`, then
+   reload the day to reconcile.
+
+Only one outstanding deferred-delete at a time: starting a new delete commits the
+previous one first.
+
+Note: if the app is force-killed inside the 10s window, the entries survive on
+the server (the `DELETE` never fired) — acceptable and fail-safe.
+
+"Make Pending" needs no undo: it is already reversible via Approve.
 
 ## Data flow
 
@@ -142,6 +191,11 @@ warrant a confirmation dialog. To be finalized at review.
    pending pill count increments. Hero ring / `MacroTotalsRow` drop its macros.
 5. Approve (in the panel or via swipe) is the inverse via the existing
    `confirmEntries` → `POST /entries/confirm`.
+
+**Delete flow:** swipe **Delete** → (meal: confirm dialog →) `requestDelete`
+optimistically removes rows + adjusts totals locally and shows the undo
+snackbar; after 10s the buffered `DELETE`s fire and the day reloads, or **Undo**
+restores the snapshot with no request sent.
 
 ## Testing
 
@@ -157,6 +211,10 @@ warrant a confirmation dialog. To be finalized at review.
   `EntryWriteResponse` (new fixture).
 - `DayMacroModel.makePending` transitions `pendingState` and reloads;
   unauthorized routes through `AuthSession`; empty input is a no-op.
+- `DayMacroModel` deferred delete: `requestDelete` optimistically removes rows
+  and subtracts only confirmed entries' macros from `consumed`; `undoDelete`
+  restores the snapshot and sends **no** request; expiry/flush commits the
+  `DELETE`s and reloads; a second `requestDelete` flushes the first.
 - `SwipeActionsRow`: actions fire their handlers (logic-level test of the action
   list / handler wiring where feasible; visual behavior covered manually).
 
