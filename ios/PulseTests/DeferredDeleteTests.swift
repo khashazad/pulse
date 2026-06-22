@@ -113,6 +113,58 @@ final class DeferredDeleteTests: XCTestCase {
         XCTAssertFalse(called)
     }
 
+    /// A second `requestDelete` while one is buffered supersedes the first:
+    /// the prior delete fires fire-and-forget; the buffer holds only the second
+    /// delete; the optimistic summary has both entries removed; undo restores to
+    /// the intermediate state (first entry gone, second entry back).
+    func test_requestDelete_supersedePriorDelete() async {
+        let aId = UUID()
+        let bId = UUID()
+        let a = entry(aId, kcal: 300)
+        let b = entry(bId, kcal: 400)
+        // Expect a fire-and-forget DELETE for entry A when B supersedes it.
+        let aDeleteExpectation = expectation(description: "DELETE for entry A fires")
+        let auth = signedInAuth { [weak self] req in
+            guard let self else { return (self!.http(req, 204), Data()) }
+            if req.httpMethod == "DELETE", req.url?.path.contains(aId.uuidString.lowercased()) == true {
+                aDeleteExpectation.fulfill()
+            }
+            return (self.http(req, 204), Data())
+        }
+        let model = DayMacroModel(date: Date(), auth: auth, undoWindow: .seconds(600))
+        model.setStateForTesting(.loaded(summary([a, b], consumed: 700)))
+
+        // First delete: buffers A.
+        model.requestDelete([a])
+        // Second delete: supersedes A → fires A's DELETE fire-and-forget, buffers B.
+        model.requestDelete([b])
+
+        // Buffer now holds only B.
+        XCTAssertEqual(model.pendingDelete, DayMacroModel.BufferedDelete(entries: [b]))
+
+        // Optimistic summary has BOTH A and B removed.
+        if case .loaded(let s) = model.state {
+            XCTAssertFalse(s.entries.contains(where: { $0.id == aId }), "A must be optimistically removed")
+            XCTAssertFalse(s.entries.contains(where: { $0.id == bId }), "B must be optimistically removed")
+        } else {
+            XCTFail("expected loaded state after supersede")
+        }
+
+        // Undo restores to the intermediate snapshot: B back, A still absent
+        // (A's DELETE was already sent fire-and-forget when B superseded it).
+        model.undoDelete()
+        XCTAssertNil(model.pendingDelete)
+        if case .loaded(let s) = model.state {
+            XCTAssertFalse(s.entries.contains(where: { $0.id == aId }), "A remains absent (already sent)")
+            XCTAssertTrue(s.entries.contains(where: { $0.id == bId }), "B is restored by undo")
+        } else {
+            XCTFail("expected loaded state after undo")
+        }
+
+        // Confirm A's DELETE did fire (may be async — give it a short window).
+        await fulfillment(of: [aDeleteExpectation], timeout: 2.0)
+    }
+
     /// `flushPendingDelete` fires the buffered DELETE and clears the buffer.
     func test_flushPendingDelete_firesDeleteAndClears() async {
         var deletePaths: [String] = []

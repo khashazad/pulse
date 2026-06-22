@@ -194,6 +194,7 @@ final class EntryWriteClientTests: XCTestCase {
         let ids = try XCTUnwrap(obj["ids"] as? [String])
         XCTAssertEqual(ids.map { $0.uppercased() }, [id1.uuidString, id2.uuidString])
         XCTAssertEqual(resp.entries.count, 1)
+        XCTAssertEqual(resp.dailyTotals.calories, 205)
     }
 
     func test_logMeal_postsConsumedAtAndDecodes() async throws {

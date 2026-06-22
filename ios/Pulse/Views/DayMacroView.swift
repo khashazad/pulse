@@ -8,6 +8,7 @@ import SwiftUI
 struct DayMacroView: View {
     let date: Date
     @Environment(AuthSession.self) private var auth
+    @Environment(\.scenePhase) private var scenePhase
     @State private var model: DayMacroModel?
     /// Whether the entries list is in multi-select mode.
     @State private var isSelecting = false
@@ -142,6 +143,11 @@ struct DayMacroView: View {
             onUndo: { model?.undoDelete() }
         )
         .onDisappear { Task { await model?.flushPendingDelete() } }
+        .onChange(of: scenePhase) { _, newPhase in
+            if newPhase == .background {
+                Task { await model?.flushPendingDelete() }
+            }
+        }
     }
 
     /// Snackbar text for the current buffered delete (singular/plural aware).

@@ -573,7 +573,6 @@ async def test_confirm_pending_entries_rejects_cross_day(session: AsyncSession) 
 
 
 @pytest.mark.asyncio
-@pytest.mark.integration
 async def test_unconfirm_entries_rejects_cross_day(session: AsyncSession) -> None:
     """``unconfirm_entries`` rejects ids spanning more than one day."""
     user_key = f"user-{uuid.uuid4()}"
@@ -612,7 +611,6 @@ async def test_unconfirm_entries_rejects_cross_day(session: AsyncSession) -> Non
 
 
 @pytest.mark.asyncio
-@pytest.mark.integration
 async def test_unconfirm_entries_returns_changed_and_day_rows(session: AsyncSession) -> None:
     """``unconfirm_entries`` returns the changed rows plus the day's full rows."""
     user_key = f"user-{uuid.uuid4()}"
