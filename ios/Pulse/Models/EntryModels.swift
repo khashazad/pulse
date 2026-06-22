@@ -204,3 +204,11 @@ struct EntryWriteResponse: Decodable, Equatable {
 struct EntriesConfirmRequest: Encodable, Equatable {
     let ids: [UUID]
 }
+
+/// Request body for `POST /entries/unconfirm` — the confirmed entry ids to move
+/// back to pending (excluded from the day's totals). Mirrors
+/// `EntriesConfirmRequest`; the server response reuses `EntryWriteResponse`
+/// (the changed entries plus the affected day's recomputed totals).
+struct EntriesPendingRequest: Encodable, Equatable {
+    let ids: [UUID]
+}
