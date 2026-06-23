@@ -92,7 +92,10 @@ extension DayMacroView {
         VStack(alignment: .leading, spacing: 10) {
             VStack(spacing: 0) {
                 ForEach(Array(rows.enumerated()), id: \.element.id) { idx, row in
-                    SwipeActionsRow(actions: pendingRowActions(row)) {
+                    SwipeActionsRow(
+                        actions: pendingRowActions(row),
+                        surfaceTint: Theme.pending.opacity(0.08)
+                    ) {
                         switch row {
                         case .single(let entry): EntryRow(entry: entry)
                         case .meal(let group):   MealGroupRow(group: group)

@@ -488,7 +488,10 @@ struct DayMacroView: View {
     private func clusterCard(_ cluster: DayCluster, tinted: Bool) -> some View {
         VStack(spacing: 0) {
             ForEach(Array(cluster.rows.enumerated()), id: \.element.id) { idx, row in
-                SwipeActionsRow(actions: confirmedRowActions(row)) {
+                SwipeActionsRow(
+                    actions: confirmedRowActions(row),
+                    surfaceTint: tinted ? Theme.CTP.mauve.opacity(0.10) : nil
+                ) {
                     // Rows here are confirmed-only; pending entries render in the
                     // pending panel behind the count pill above.
                     Group {
