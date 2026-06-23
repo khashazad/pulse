@@ -27,6 +27,8 @@ from pulse_server.models import (
     EntriesCreateRequest,
     EntriesCreateResponse,
     EntriesListResponse,
+    EntriesPendingRequest,
+    EntriesPendingResponse,
     FoodEntryResponse,
 )
 from pulse_server.repositories.entries import EntriesRepository
@@ -34,6 +36,7 @@ from pulse_server.services.custom_foods_service import CrossTenantReferenceError
 from pulse_server.services.entries_service import (
     confirm_pending_entries,
     create_entries_with_side_effects,
+    unconfirm_entries,
 )
 
 settings = get_settings()
@@ -128,6 +131,49 @@ async def confirm_entries(
     day_entries = [FoodEntryResponse(**row) for row in day_rows]
     return EntriesConfirmResponse(
         entries=confirmed,
+        daily_totals=sum_food_entry_macros(confirmed_entries(day_entries)),
+    )
+
+
+@router.post("/entries/unconfirm", response_model=EntriesPendingResponse)
+async def make_entries_pending(
+    request: Request,
+    body: EntriesPendingRequest,
+    session: AsyncSession = Depends(get_session_dependency),
+) -> EntriesPendingResponse:
+    """Move confirmed food entries back to pending so they stop counting toward totals.
+
+    The inverse of ``POST /entries/confirm``. Used by the iOS day view's swipe
+    "Make Pending" action. Idempotent — ids that are already pending or not owned
+    by the user are ignored.
+
+    **Inputs:**
+    - request (Request): Active request providing ``user_key``.
+    - body (EntriesPendingRequest): The entry ids to make pending (at least one).
+    - session (AsyncSession): DB session dependency.
+
+    **Outputs:**
+    - EntriesPendingResponse: The newly pending entries plus the affected day's
+      recomputed confirmed totals.
+
+    **Exceptions:**
+    - HTTPException(422): Raised when the ids span more than one day (the single
+      ``daily_totals`` field can only represent one day).
+    - RuntimeError: Raised when the database pool is not initialized.
+    - sqlalchemy.exc.SQLAlchemyError: Raised when SQL execution fails.
+    """
+    try:
+        changed_rows, day_rows = await unconfirm_entries(
+            session=session,
+            user_key=request.state.user_key,
+            entry_ids=body.ids,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    changed = [FoodEntryResponse(**row) for row in changed_rows]
+    day_entries = [FoodEntryResponse(**row) for row in day_rows]
+    return EntriesPendingResponse(
+        entries=changed,
         daily_totals=sum_food_entry_macros(confirmed_entries(day_entries)),
     )
 

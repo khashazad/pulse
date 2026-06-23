@@ -327,3 +327,37 @@ class EntriesRepository:
         )
         result = await self._session.execute(stmt)
         return [dict(row) for row in result.mappings().all()]
+
+    async def unconfirm_entries(
+        self, entry_ids: Sequence[UUID], user_key: str
+    ) -> list[dict[str, Any]]:
+        """Move confirmed food entries back to pending and return the updated rows.
+
+        Flips ``confirmed`` from ``True`` to ``False`` for the given entry ids
+        owned by ``user_key`` (the inverse of :meth:`confirm_entries`). Already-
+        pending or non-matching ids are skipped, so the operation is idempotent
+        and only rows actually changed are returned.
+
+        **Inputs:**
+        - entry_ids (Sequence[UUID]): Food-entry primary keys to make pending.
+        - user_key (str): Owning user identifier used to scope the update.
+
+        **Outputs:**
+        - list[dict[str, Any]]: The rows moved to pending (response column
+          projection); empty when no row matched or all were already pending.
+
+        **Raises:**
+        - sqlalchemy.exc.SQLAlchemyError: Raised when SQL execution fails.
+        """
+        if not entry_ids:
+            return []
+        stmt = (
+            update(food_entries)
+            .where(food_entries.c.id.in_(list(entry_ids)))
+            .where(food_entries.c.user_key == user_key)
+            .where(food_entries.c.confirmed.is_(True))
+            .values(confirmed=False)
+            .returning(*_food_entry_response_columns())
+        )
+        result = await self._session.execute(stmt)
+        return [dict(row) for row in result.mappings().all()]

@@ -23,6 +23,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from pulse_server.db import to_sqlalchemy_url, transaction
+from pulse_server.log_ids import daily_log_id as canonical_daily_log_id
 from pulse_server.models import FoodEntryCreate
 from pulse_server.repositories.entries import EntriesRepository, FoodEntryPayload
 from pulse_server.repositories.logs import LogsRepository
@@ -30,6 +31,7 @@ from pulse_server.repositories.targets import TargetsRepository
 from pulse_server.services.entries_service import (
     confirm_pending_entries,
     create_entries_with_side_effects,
+    unconfirm_entries,
 )
 from pulse_server.services.summary_service import build_daily_summary
 
@@ -464,6 +466,51 @@ async def test_confirm_entries_flips_scoped_and_idempotent(session: AsyncSession
 
 
 @pytest.mark.asyncio
+async def test_unconfirm_entries_flips_scoped_and_idempotent(session: AsyncSession) -> None:
+    """``unconfirm_entries`` flips confirmed→pending, is user-scoped, and is idempotent."""
+    user_key = "khash"
+    other_user = "intruder"
+    entries_repo = EntriesRepository(session)
+    log_date = DateValue(2026, 6, 22)
+    log_id = canonical_daily_log_id(user_key, log_date)
+    await entries_repo.ensure_daily_log(log_id, user_key, log_date)
+    entry_id = uuid.uuid4()
+    await entries_repo.create_food_entry(
+        FoodEntryPayload(
+            entry_id=entry_id,
+            daily_log_id=log_id,
+            user_key=user_key,
+            entry_group_id=uuid.uuid4(),
+            display_name="Bowl",
+            quantity_text="1",
+            normalized_quantity_value=None,
+            normalized_quantity_unit=None,
+            usda_fdc_id=1,
+            usda_description="Bowl",
+            custom_food_id=None,
+            calories=600,
+            protein_g=50,
+            carbs_g=40,
+            fat_g=20,
+            consumed_at=DateTimeValue(2026, 6, 22, 12, 0),
+            meal_id=None,
+            meal_name=None,
+            confirmed=True,
+        )
+    )
+
+    # Another user cannot unconfirm it.
+    assert await entries_repo.unconfirm_entries([entry_id], other_user) == []
+
+    changed = await entries_repo.unconfirm_entries([entry_id], user_key)
+    assert len(changed) == 1
+    assert changed[0]["confirmed"] is False
+
+    # Idempotent: already-pending rows are skipped.
+    assert await entries_repo.unconfirm_entries([entry_id], user_key) == []
+
+
+@pytest.mark.asyncio
 async def test_daily_summary_consumed_excludes_pending_but_lists_it(session: AsyncSession) -> None:
     """``build_daily_summary`` excludes pending from ``consumed`` yet still returns the pending entry flagged."""
     user_key = f"user-{uuid.uuid4()}"
@@ -535,3 +582,95 @@ async def test_confirm_pending_entries_rejects_cross_day(session: AsyncSession) 
     rows_b = await entries_repo.list_entries_by_daily_log_id(log_b)
     assert rows_a[0]["confirmed"] is False
     assert rows_b[0]["confirmed"] is False
+
+
+@pytest.mark.asyncio
+async def test_unconfirm_entries_rejects_cross_day(session: AsyncSession) -> None:
+    """``unconfirm_entries`` rejects ids spanning more than one day."""
+    user_key = f"user-{uuid.uuid4()}"
+    entries_repo = EntriesRepository(session)
+    ids: list[uuid.UUID] = []
+    async with transaction(session):
+        for day in (DateValue(2026, 6, 21), DateValue(2026, 6, 22)):
+            log_id = canonical_daily_log_id(user_key, day)
+            await entries_repo.ensure_daily_log(log_id, user_key, day)
+            entry_id = uuid.uuid4()
+            ids.append(entry_id)
+            await entries_repo.create_food_entry(
+                FoodEntryPayload(
+                    entry_id=entry_id,
+                    daily_log_id=log_id,
+                    user_key=user_key,
+                    entry_group_id=uuid.uuid4(),
+                    display_name="Bowl",
+                    quantity_text="1",
+                    normalized_quantity_value=None,
+                    normalized_quantity_unit=None,
+                    usda_fdc_id=1,
+                    usda_description="Bowl",
+                    custom_food_id=None,
+                    calories=100,
+                    protein_g=1,
+                    carbs_g=1,
+                    fat_g=1,
+                    consumed_at=DateTimeValue(day.year, day.month, day.day, 12, 0),
+                    meal_id=None,
+                    meal_name=None,
+                    confirmed=True,
+                )
+            )
+
+    with pytest.raises(ValueError):
+        await unconfirm_entries(session=session, user_key=user_key, entry_ids=ids)
+
+    # The cross-day unconfirm rolled back: both entries are still confirmed.
+    day_a = DateValue(2026, 6, 21)
+    day_b = DateValue(2026, 6, 22)
+    log_a = canonical_daily_log_id(user_key, day_a)
+    log_b = canonical_daily_log_id(user_key, day_b)
+    rows_a = await entries_repo.list_entries_by_daily_log_id(log_a)
+    rows_b = await entries_repo.list_entries_by_daily_log_id(log_b)
+    assert rows_a[0]["confirmed"] is True
+    assert rows_b[0]["confirmed"] is True
+
+
+@pytest.mark.asyncio
+async def test_unconfirm_entries_returns_changed_and_day_rows(session: AsyncSession) -> None:
+    """``unconfirm_entries`` returns the changed rows plus the day's full rows."""
+    user_key = f"user-{uuid.uuid4()}"
+    entries_repo = EntriesRepository(session)
+    day = DateValue(2026, 6, 22)
+    log_id = canonical_daily_log_id(user_key, day)
+    keep_id, flip_id = uuid.uuid4(), uuid.uuid4()
+    async with transaction(session):
+        await entries_repo.ensure_daily_log(log_id, user_key, day)
+        for entry_id, kcal in ((keep_id, 300), (flip_id, 700)):
+            await entries_repo.create_food_entry(
+                FoodEntryPayload(
+                    entry_id=entry_id,
+                    daily_log_id=log_id,
+                    user_key=user_key,
+                    entry_group_id=uuid.uuid4(),
+                    display_name="Bowl",
+                    quantity_text="1",
+                    normalized_quantity_value=None,
+                    normalized_quantity_unit=None,
+                    usda_fdc_id=1,
+                    usda_description="Bowl",
+                    custom_food_id=None,
+                    calories=kcal,
+                    protein_g=1,
+                    carbs_g=1,
+                    fat_g=1,
+                    consumed_at=DateTimeValue(2026, 6, 22, 12, 0),
+                    meal_id=None,
+                    meal_name=None,
+                    confirmed=True,
+                )
+            )
+
+    changed, day_rows = await unconfirm_entries(
+        session=session, user_key=user_key, entry_ids=[flip_id]
+    )
+    assert len(changed) == 1 and changed[0]["id"] == flip_id
+    assert len(day_rows) == 2

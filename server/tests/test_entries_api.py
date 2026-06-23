@@ -233,6 +233,48 @@ def test_confirm_entries_cross_day_returns_422(rest_client: TestClient) -> None:
     assert resp.status_code == 422
 
 
+def test_unconfirm_entries_200(rest_client: TestClient) -> None:
+    """`POST /entries/unconfirm` returns the changed entries plus the refreshed day total."""
+    changed = [_entry_row(700, confirmed=False)]
+    day_rows = [_entry_row(300, confirmed=True), _entry_row(700, confirmed=False)]
+    with patch(
+        "pulse_server.routers.entries.unconfirm_entries",
+        new_callable=AsyncMock,
+    ) as svc:
+        svc.return_value = (changed, day_rows)
+        resp = rest_client.post(
+            "/entries/unconfirm",
+            headers=AUTH_HEADERS,
+            json={"ids": [str(uuid.uuid4())]},
+        )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert len(body["entries"]) == 1
+    # Only the 300-kcal row is still confirmed, so the day total excludes the flipped one.
+    assert body["daily_totals"]["calories"] == 300
+
+
+def test_unconfirm_entries_requires_ids(rest_client: TestClient) -> None:
+    """`POST /entries/unconfirm` rejects an empty id list with 422."""
+    resp = rest_client.post("/entries/unconfirm", headers=AUTH_HEADERS, json={"ids": []})
+    assert resp.status_code == 422
+
+
+def test_unconfirm_entries_cross_day_returns_422(rest_client: TestClient) -> None:
+    """A cross-day request (service raises `ValueError`) surfaces as 422."""
+    with patch(
+        "pulse_server.routers.entries.unconfirm_entries",
+        new_callable=AsyncMock,
+    ) as svc:
+        svc.side_effect = ValueError("Pending ids must all belong to the same day")
+        resp = rest_client.post(
+            "/entries/unconfirm",
+            headers=AUTH_HEADERS,
+            json={"ids": [str(uuid.uuid4()), str(uuid.uuid4())]},
+        )
+    assert resp.status_code == 422
+
+
 def test_delete_entry_204(rest_client: TestClient) -> None:
     """`DELETE /entries/{id}` returns 204 on a successful delete."""
     with patch("pulse_server.routers.entries.EntriesRepository") as MockRepo:

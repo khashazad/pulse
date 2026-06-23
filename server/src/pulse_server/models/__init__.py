@@ -48,6 +48,8 @@ from pulse_server.models.entries import (
     EntriesCreateRequest,
     EntriesCreateResponse,
     EntriesListResponse,
+    EntriesPendingRequest,
+    EntriesPendingResponse,
     FoodEntryCreate,
     FoodEntryResponse,
 )
@@ -104,6 +106,8 @@ __all__ = [
     "EntriesCreateRequest",
     "EntriesCreateResponse",
     "EntriesListResponse",
+    "EntriesPendingRequest",
+    "EntriesPendingResponse",
     "FoodCreate",
     "FoodEntryCreate",
     "FoodEntryResponse",

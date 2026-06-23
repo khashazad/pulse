@@ -114,6 +114,21 @@ extension PulseClient {
         return try await sendJSON(url: url, method: "POST", body: body)
     }
 
+    /// Moves one or more confirmed food entries back to pending (`POST
+    /// /entries/unconfirm`). The inverse of `confirmEntries`: pending entries are
+    /// excluded from the day's totals until confirmed again. Idempotent on the
+    /// server.
+    /// Inputs:
+    ///   - ids: the confirmed `FoodEntry` UUIDs to make pending (at least one).
+    /// Outputs: an `EntryWriteResponse` with the changed entries and the
+    /// affected day's recomputed (confirmed-only) macro totals.
+    /// Exceptions: `PulseError` on transport, status, or decoding failure.
+    func makePending(ids: [UUID]) async throws -> EntryWriteResponse {
+        let url = try http.makeURL(path: "/entries/unconfirm", query: [])
+        let body = try JSONEncoder.pulseDefault().encode(EntriesPendingRequest(ids: ids))
+        return try await sendJSON(url: url, method: "POST", body: body)
+    }
+
     /// Deletes a single food entry (`DELETE /entries/{id}`).
     /// Inputs:
     ///   - id: the `FoodEntry` UUID to delete.

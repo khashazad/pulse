@@ -176,6 +176,27 @@ final class EntryWriteClientTests: XCTestCase {
         XCTAssertEqual(resp.dailyTotals.calories, 205)
     }
 
+    func test_makePending_postsIdsAndDecodes() async throws {
+        let json = try fixture("entries_create")
+        var captured: URLRequest?
+        let (client, stub) = makeClient { req in
+            captured = req
+            return (HTTPURLResponse(url: req.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, json)
+        }
+        let id1 = UUID(uuidString: "11111111-1111-1111-1111-111111111111")!
+        let id2 = UUID(uuidString: "22222222-2222-2222-2222-222222222222")!
+        let resp = try await client.makePending(ids: [id1, id2])
+
+        XCTAssertEqual(captured?.httpMethod, "POST")
+        XCTAssertEqual(captured?.url?.path, "/entries/unconfirm")
+        XCTAssertEqual(captured?.value(forHTTPHeaderField: "Authorization"), "Bearer session-k")
+        let obj = try bodyObject(stub)
+        let ids = try XCTUnwrap(obj["ids"] as? [String])
+        XCTAssertEqual(ids.map { $0.uppercased() }, [id1.uuidString, id2.uuidString])
+        XCTAssertEqual(resp.entries.count, 1)
+        XCTAssertEqual(resp.dailyTotals.calories, 205)
+    }
+
     func test_logMeal_postsConsumedAtAndDecodes() async throws {
         let json = try fixture("meal_log")
         var captured: URLRequest?
