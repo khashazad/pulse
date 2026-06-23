@@ -23,8 +23,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from pulse_server.db import to_sqlalchemy_url, transaction
-from pulse_server.models import FoodEntryCreate
 from pulse_server.log_ids import daily_log_id as canonical_daily_log_id
+from pulse_server.models import FoodEntryCreate
 from pulse_server.repositories.entries import EntriesRepository, FoodEntryPayload
 from pulse_server.repositories.logs import LogsRepository
 from pulse_server.repositories.targets import TargetsRepository
@@ -477,13 +477,25 @@ async def test_unconfirm_entries_flips_scoped_and_idempotent(session: AsyncSessi
     entry_id = uuid.uuid4()
     await entries_repo.create_food_entry(
         FoodEntryPayload(
-            entry_id=entry_id, daily_log_id=log_id, user_key=user_key,
-            entry_group_id=uuid.uuid4(), display_name="Bowl", quantity_text="1",
-            normalized_quantity_value=None, normalized_quantity_unit=None,
-            usda_fdc_id=1, usda_description="Bowl", custom_food_id=None,
-            calories=600, protein_g=50, carbs_g=40, fat_g=20,
-            consumed_at=DateTimeValue(2026, 6, 22, 12, 0), meal_id=None,
-            meal_name=None, confirmed=True,
+            entry_id=entry_id,
+            daily_log_id=log_id,
+            user_key=user_key,
+            entry_group_id=uuid.uuid4(),
+            display_name="Bowl",
+            quantity_text="1",
+            normalized_quantity_value=None,
+            normalized_quantity_unit=None,
+            usda_fdc_id=1,
+            usda_description="Bowl",
+            custom_food_id=None,
+            calories=600,
+            protein_g=50,
+            carbs_g=40,
+            fat_g=20,
+            consumed_at=DateTimeValue(2026, 6, 22, 12, 0),
+            meal_id=None,
+            meal_name=None,
+            confirmed=True,
         )
     )
 
@@ -586,13 +598,25 @@ async def test_unconfirm_entries_rejects_cross_day(session: AsyncSession) -> Non
             ids.append(entry_id)
             await entries_repo.create_food_entry(
                 FoodEntryPayload(
-                    entry_id=entry_id, daily_log_id=log_id, user_key=user_key,
-                    entry_group_id=uuid.uuid4(), display_name="Bowl", quantity_text="1",
-                    normalized_quantity_value=None, normalized_quantity_unit=None,
-                    usda_fdc_id=1, usda_description="Bowl", custom_food_id=None,
-                    calories=100, protein_g=1, carbs_g=1, fat_g=1,
+                    entry_id=entry_id,
+                    daily_log_id=log_id,
+                    user_key=user_key,
+                    entry_group_id=uuid.uuid4(),
+                    display_name="Bowl",
+                    quantity_text="1",
+                    normalized_quantity_value=None,
+                    normalized_quantity_unit=None,
+                    usda_fdc_id=1,
+                    usda_description="Bowl",
+                    custom_food_id=None,
+                    calories=100,
+                    protein_g=1,
+                    carbs_g=1,
+                    fat_g=1,
                     consumed_at=DateTimeValue(day.year, day.month, day.day, 12, 0),
-                    meal_id=None, meal_name=None, confirmed=True,
+                    meal_id=None,
+                    meal_name=None,
+                    confirmed=True,
                 )
             )
 
@@ -623,13 +647,25 @@ async def test_unconfirm_entries_returns_changed_and_day_rows(session: AsyncSess
         for entry_id, kcal in ((keep_id, 300), (flip_id, 700)):
             await entries_repo.create_food_entry(
                 FoodEntryPayload(
-                    entry_id=entry_id, daily_log_id=log_id, user_key=user_key,
-                    entry_group_id=uuid.uuid4(), display_name="Bowl", quantity_text="1",
-                    normalized_quantity_value=None, normalized_quantity_unit=None,
-                    usda_fdc_id=1, usda_description="Bowl", custom_food_id=None,
-                    calories=kcal, protein_g=1, carbs_g=1, fat_g=1,
+                    entry_id=entry_id,
+                    daily_log_id=log_id,
+                    user_key=user_key,
+                    entry_group_id=uuid.uuid4(),
+                    display_name="Bowl",
+                    quantity_text="1",
+                    normalized_quantity_value=None,
+                    normalized_quantity_unit=None,
+                    usda_fdc_id=1,
+                    usda_description="Bowl",
+                    custom_food_id=None,
+                    calories=kcal,
+                    protein_g=1,
+                    carbs_g=1,
+                    fat_g=1,
                     consumed_at=DateTimeValue(2026, 6, 22, 12, 0),
-                    meal_id=None, meal_name=None, confirmed=True,
+                    meal_id=None,
+                    meal_name=None,
+                    confirmed=True,
                 )
             )
 
