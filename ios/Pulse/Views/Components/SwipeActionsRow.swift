@@ -39,10 +39,14 @@ struct SwipeAction: Identifiable {
 /// Wraps `content` and reveals `actions` as trailing buttons on a left drag.
 struct SwipeActionsRow<Content: View>: View {
     private let actions: [SwipeAction]
+    private let surfaceTint: Color?
     private let content: Content
 
-    /// Width of each revealed action button.
-    private static var buttonWidth: CGFloat { 72 }
+    /// Width of each revealed action button (the tap target; the visible pill is
+    /// a smaller circle centered within it).
+    private static var buttonWidth: CGFloat { 64 }
+    /// Diameter of the floating circular icon pill inside each action button.
+    private static var pillDiameter: CGFloat { 40 }
     /// Current horizontal offset of the row content (negative = revealed).
     @State private var offset: CGFloat = 0
     /// Offset captured at gesture start so drags are cumulative.
@@ -51,10 +55,23 @@ struct SwipeActionsRow<Content: View>: View {
     /// Creates a swipeable row.
     /// - Parameters:
     ///   - actions: Trailing actions revealed on swipe (leftmost shown first).
+    ///   - surfaceTint: Translucent wash of the enclosing `ctpCard`, so the
+    ///     content's opaque backing (which hides the action buttons sliding
+    ///     behind it) matches the card surface exactly. Pass the SAME tint the
+    ///     card uses; `nil` (the default) backs with the plain card fill.
     ///   - content: The row content.
-    init(actions: [SwipeAction], @ViewBuilder content: () -> Content) {
+    init(actions: [SwipeAction], surfaceTint: Color? = nil, @ViewBuilder content: () -> Content) {
         self.actions = actions
+        self.surfaceTint = surfaceTint
         self.content = content()
+    }
+
+    /// Opaque backing that reproduces the enclosing `ctpCard` surface (base fill
+    /// plus its translucent tint), so the sliding content reads as part of the
+    /// card rather than a darker inset strip.
+    /// - Returns: The composited surface view drawn behind the row content.
+    private var rowSurface: some View {
+        Theme.BG.tertiary.overlay(surfaceTint ?? Color.clear)
     }
 
     /// Total width the open row reveals.
@@ -68,24 +85,26 @@ struct SwipeActionsRow<Content: View>: View {
                         close()
                         action.handler()
                     } label: {
-                        VStack(spacing: 4) {
-                            Image(systemName: action.systemImage)
-                                .font(.system(size: 16, weight: .semibold))
-                            Text(action.label)
-                                .font(.system(size: 11, weight: .medium))
-                        }
-                        .foregroundStyle(Theme.FG.primary)
-                        .frame(width: Self.buttonWidth)
-                        .frame(maxHeight: .infinity)
-                        .background(action.tint.opacity(action.role == .destructive ? 0.9 : 0.8))
+                        // Floating pill: the SF Symbol in the action's color on a
+                        // soft same-hue circle, sitting on the card surface — no
+                        // full-height color slab. The wider frame is the tap target.
+                        Image(systemName: action.systemImage)
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundStyle(action.tint)
+                            .frame(width: Self.pillDiameter, height: Self.pillDiameter)
+                            .background(Circle().fill(action.tint.opacity(0.20)))
+                            .frame(width: Self.buttonWidth)
+                            .frame(maxHeight: .infinity)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel(action.label)
                 }
             }
             .opacity(offset < 0 ? 1 : 0)
 
             content
-                .background(Theme.BG.primary)
+                .background(rowSurface)
                 .offset(x: offset)
                 .highPriorityGesture(
                     DragGesture(minimumDistance: 12)
