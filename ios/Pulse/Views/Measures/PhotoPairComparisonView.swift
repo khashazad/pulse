@@ -1,20 +1,22 @@
-/// Focused side-by-side comparison for exactly two selected progress photos.
+/// Stacked (top/bottom) comparison of two progress-photo dates, with a tag
+/// switcher. The two dates are fixed by the gallery selection; a chip bar at the
+/// top swaps which tag is compared across those same dates (only tags that have
+/// a photo on both dates are offered). Each photo shows its date's logged weight.
 import SwiftUI
 
-/// Shows two selected same-tag photos chronologically with each date's logged
-/// weight beneath the image.
+/// Two-date comparison with a top tag switcher; photos stacked older-over-newer.
 struct PhotoPairComparisonView: View {
     @Environment(ProgressPhotoStore.self) private var store
+    @Environment(ProgressPhotoTagStore.self) private var tagStore
     @Environment(AuthSession.self) private var auth
     @AppStorage(WeightUnit.displayPreferenceKey)
     private var displayUnitRaw: String = WeightUnit.defaultDisplayUnit.rawValue
 
-    let older: ProgressPhotoMetadata
-    let newer: ProgressPhotoMetadata
-    let tagName: String
+    private let older: ProgressPhotoMetadata
+    private let newer: ProgressPhotoMetadata
+    private let initialTag: ProgressPhotoTag
 
-    @State private var weightOlder: WeightEntry?
-    @State private var weightNewer: WeightEntry?
+    @State private var model: PhotoComparisonModel?
     @State private var expanded: ExpandedPhoto?
 
     private struct ExpandedPhoto: Identifiable, Equatable {
@@ -23,29 +25,36 @@ struct PhotoPairComparisonView: View {
         let tagName: String
     }
 
-    /// Builds a read-only two-photo comparison. Inputs are normalized into
-    /// chronological order even if the caller already sorted them.
+    /// Builds the stacked comparison. The two photos are normalized to
+    /// chronological order; their dates become the fixed comparison axis.
     /// - Parameters:
     ///   - older: one selected photo.
     ///   - newer: the other selected photo.
-    ///   - tagName: shared tag display name.
-    init(older: ProgressPhotoMetadata, newer: ProgressPhotoMetadata, tagName: String) {
+    ///   - initialTag: the tag selected when the pair was chosen.
+    init(older: ProgressPhotoMetadata, newer: ProgressPhotoMetadata, initialTag: ProgressPhotoTag) {
         let pair = orderedPair(older, newer)
         self.older = pair.older
         self.newer = pair.newer
-        self.tagName = tagName
+        self.initialTag = initialTag
     }
 
     var body: some View {
         ZStack {
             Theme.BG.primary.ignoresSafeArea()
             ScrollView {
-                HStack(alignment: .top, spacing: 12) {
-                    comparisonColumn(meta: older, weight: weightOlder)
-                    comparisonColumn(meta: newer, weight: weightNewer)
+                VStack(spacing: 14) {
+                    if let model, model.validTags.count > 1 {
+                        TagChipBar(tags: model.validTags, selectedId: model.selectedTag.id) { model.select($0) }
+                    }
+                    photoBlock(date: model?.olderDate ?? older.date,
+                               photo: model?.olderPhoto,
+                               weight: model?.olderWeight)
+                    photoBlock(date: model?.newerDate ?? newer.date,
+                               photo: model?.newerPhoto,
+                               weight: model?.newerWeight)
                 }
                 .padding(.horizontal, 16)
-                .padding(.top, 12)
+                .padding(.top, 8)
                 .padding(.bottom, Theme.Layout.dockClearance)
             }
         }
@@ -57,42 +66,50 @@ struct PhotoPairComparisonView: View {
                 onClose: { expanded = nil }
             )
         }
-        .navigationTitle(tagName)
+        .navigationTitle(model?.selectedTag.name ?? initialTag.name)
         .navigationBarTitleDisplayMode(.inline)
-        .task { await loadWeights() }
+        .task {
+            if tagStore.tags.isEmpty { await tagStore.reload() }
+            if model == nil {
+                let m = PhotoComparisonModel(
+                    initialTag: initialTag,
+                    olderDate: older.date,
+                    newerDate: newer.date,
+                    allTags: tagStore.tags,
+                    auth: auth
+                )
+                model = m
+                await m.load()
+            }
+        }
     }
 
-    /// Renders one side of the selected pair with photo tile and weight caption.
+    /// One stacked comparison row: the tag's photo for `date` (or a placeholder
+    /// while loading / absent) with the date + weight caption beneath.
     /// - Parameters:
-    ///   - meta: photo metadata for this side.
-    ///   - weight: fetched weight entry for this photo's date.
-    /// - Returns: a comparison column.
-    private func comparisonColumn(meta: ProgressPhotoMetadata, weight: WeightEntry?) -> some View {
+    ///   - date: the fixed comparison date for this row.
+    ///   - photo: the selected tag's photo on that date, if resolved.
+    ///   - weight: that date's logged weight, if any.
+    /// - Returns: the composed row.
+    @ViewBuilder
+    private func photoBlock(date: Date, photo: ProgressPhotoMetadata?, weight: WeightEntry?) -> some View {
         VStack(spacing: 8) {
-            ComparisonPhotoCell(
-                meta: meta,
-                onTap: {
-                    expanded = ExpandedPhoto(id: meta.id, meta: meta, tagName: tagName)
+            if let photo {
+                ComparisonPhotoCell(meta: photo) {
+                    expanded = ExpandedPhoto(
+                        id: photo.id, meta: photo,
+                        tagName: model?.selectedTag.name ?? initialTag.name
+                    )
                 }
-            )
-            Text(weightCaption(date: meta.date, weight: weight, unitRaw: displayUnitRaw))
-                .font(.system(size: 12, weight: .medium, design: .monospaced))
+            } else {
+                ComparisonPlaceholder()
+            }
+            Text(weightCaption(date: date, weight: weight, unitRaw: displayUnitRaw))
+                .font(.system(size: 13, weight: .medium, design: .monospaced))
                 .foregroundStyle(Theme.FG.secondary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
         }
-        .frame(maxWidth: .infinity, alignment: .top)
-    }
-
-    /// Fetches each photo date's logged weight in parallel.
-    /// - Returns: nothing; updates `weightOlder` and `weightNewer`.
-    private func loadWeights() async {
-        guard let client = auth.makeClient() else { return }
-        async let left = fetchWeight(for: older.date, client: client, keep: weightOlder)
-        async let right = fetchWeight(for: newer.date, client: client, keep: weightNewer)
-        let (olderWeight, newerWeight) = await (left, right)
-        if Task.isCancelled { return }
-        weightOlder = olderWeight
-        weightNewer = newerWeight
+        .frame(maxWidth: .infinity)
     }
 }

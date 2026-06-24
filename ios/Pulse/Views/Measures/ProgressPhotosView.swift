@@ -16,9 +16,8 @@ struct ProgressPhotosView: View {
     @State private var showCapture = false
     @State private var showManageTags = false
     @State private var showCompare = false
-    /// Non-nil while a tag's all-time progression gallery is pushed; set by the
-    /// gallery-button menu and cleared when the pushed view pops.
-    @State private var galleryTag: ProgressPhotoTag?
+    /// Whether the multi-tag progression gallery is pushed.
+    @State private var showGallery = false
     /// The photo shown in the fullscreen viewer, or nil when the grid is
     /// showing. Drives a `fullScreenCover` so the viewer covers the whole
     /// window (dock + chrome included) and dismissing always returns here.
@@ -81,8 +80,8 @@ struct ProgressPhotosView: View {
         .sheet(isPresented: $showCompare) {
             NavigationStack { ProgressPhotoComparisonView(initialDate: selectedDate) }
         }
-        .navigationDestination(item: $galleryTag) { tag in
-            TagProgressionGalleryView(tag: tag)
+        .navigationDestination(isPresented: $showGallery) {
+            ProgressGalleryView()
         }
     }
 
@@ -122,14 +121,10 @@ struct ProgressPhotosView: View {
         .accessibilityLabel("Compare two days")
     }
 
-    /// Opens a menu of the user's tags; choosing one pushes that tag's all-time
-    /// progression gallery. Disabled until at least one tag exists.
+    /// Pushes the multi-tag progression gallery (tag switcher + grid). Disabled
+    /// until at least one tag exists.
     private var galleryButton: some View {
-        Menu {
-            ForEach(tagStore.tags) { tag in
-                Button(tag.name) { galleryTag = tag }
-            }
-        } label: {
+        Button { showGallery = true } label: {
             Image(systemName: "photo.stack")
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(Theme.CTP.mauve)
@@ -139,7 +134,7 @@ struct ProgressPhotosView: View {
         }
         .buttonStyle(.plain)
         .disabled(tagStore.tags.isEmpty)
-        .accessibilityLabel("View a tag's progression gallery")
+        .accessibilityLabel("Open progress gallery")
     }
 
     // MARK: grid

@@ -194,8 +194,7 @@ final class ViewRenderTests: XCTestCase {
             createdAt: Date(timeIntervalSince1970: 0),
             updatedAt: Date(timeIntervalSince1970: 0)
         )
-        render(TagProgressionGalleryView(tag: sampleTag))
-        render(TagProgressionGalleryView(tag: sampleTag, initiallySelecting: true))
+        render(ProgressGalleryView())
         let older = ProgressPhotoMetadata(
             id: UUID(),
             date: DateOnly.formatter.date(from: "2026-05-01")!,
@@ -214,7 +213,7 @@ final class ViewRenderTests: XCTestCase {
             sha256: "newer",
             updatedAt: Date(timeIntervalSince1970: 1)
         )
-        render(PhotoPairComparisonView(older: older, newer: newer, tagName: sampleTag.name))
+        render(PhotoPairComparisonView(older: older, newer: newer, initialTag: sampleTag))
     }
 
     func test_render_settings() {
