@@ -3,6 +3,13 @@
 /// (List-only) is unavailable; this wraps any row content and reveals trailing
 /// action buttons on a leftward drag. Every action requires an explicit tap —
 /// there is no full-swipe auto-trigger.
+///
+/// Implemented as a nested **horizontal** `ScrollView` (one per row) rather than
+/// a hand-rolled `DragGesture`: a custom drag gesture attached to content inside
+/// a vertical `ScrollView` swallows the touch and blocks vertical scrolling over
+/// the row body (even via `simultaneousGesture`). Nested scroll views instead let
+/// UIKit disambiguate by direction — vertical pans scroll the list, horizontal
+/// pans reveal the actions — so the two never conflict.
 import SwiftUI
 
 /// One trailing action shown when a `SwipeActionsRow` is open.
@@ -36,7 +43,7 @@ struct SwipeAction: Identifiable {
     }
 }
 
-/// Wraps `content` and reveals `actions` as trailing buttons on a left drag.
+/// Wraps `content` and reveals `actions` as trailing buttons on a left swipe.
 struct SwipeActionsRow<Content: View>: View {
     private let actions: [SwipeAction]
     private let surfaceTint: Color?
@@ -47,18 +54,15 @@ struct SwipeActionsRow<Content: View>: View {
     private static var buttonWidth: CGFloat { 64 }
     /// Diameter of the floating circular icon pill inside each action button.
     private static var pillDiameter: CGFloat { 40 }
-    /// Current horizontal offset of the row content (negative = revealed).
-    @State private var offset: CGFloat = 0
-    /// Offset captured at gesture start so drags are cumulative.
-    @State private var startOffset: CGFloat = 0
+    /// Stable id for the content cell, used to scroll the row closed after a tap.
+    private static var contentID: String { "content" }
 
     /// Creates a swipeable row.
     /// - Parameters:
     ///   - actions: Trailing actions revealed on swipe (leftmost shown first).
-    ///   - surfaceTint: Translucent wash of the enclosing `ctpCard`, so the
-    ///     content's opaque backing (which hides the action buttons sliding
-    ///     behind it) matches the card surface exactly. Pass the SAME tint the
-    ///     card uses; `nil` (the default) backs with the plain card fill.
+    ///   - surfaceTint: Translucent wash of the enclosing `ctpCard`, so the row
+    ///     content's opaque backing matches the card surface exactly. Pass the
+    ///     SAME tint the card uses; `nil` (the default) backs with the plain fill.
     ///   - content: The row content.
     init(actions: [SwipeAction], surfaceTint: Color? = nil, @ViewBuilder content: () -> Content) {
         self.actions = actions
@@ -66,68 +70,79 @@ struct SwipeActionsRow<Content: View>: View {
         self.content = content()
     }
 
+    /// Total width the open row reveals.
+    private var revealWidth: CGFloat { CGFloat(actions.count) * Self.buttonWidth }
+
     /// Opaque backing that reproduces the enclosing `ctpCard` surface (base fill
-    /// plus its translucent tint), so the sliding content reads as part of the
-    /// card rather than a darker inset strip.
+    /// plus its translucent tint), so the row content reads as part of the card.
     /// - Returns: The composited surface view drawn behind the row content.
     private var rowSurface: some View {
         Theme.BG.tertiary.overlay(surfaceTint ?? Color.clear)
     }
 
-    /// Total width the open row reveals.
-    private var revealWidth: CGFloat { CGFloat(actions.count) * Self.buttonWidth }
-
     var body: some View {
-        ZStack(alignment: .trailing) {
-            HStack(spacing: 0) {
-                ForEach(actions) { action in
-                    Button {
-                        close()
-                        action.handler()
-                    } label: {
-                        // Floating pill: the SF Symbol in the action's color on a
-                        // soft same-hue circle, sitting on the card surface — no
-                        // full-height color slab. The wider frame is the tap target.
-                        Image(systemName: action.systemImage)
-                            .font(.system(size: 17, weight: .semibold))
-                            .foregroundStyle(action.tint)
-                            .frame(width: Self.pillDiameter, height: Self.pillDiameter)
-                            .background(Circle().fill(action.tint.opacity(0.20)))
-                            .frame(width: Self.buttonWidth)
-                            .frame(maxHeight: .infinity)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(action.label)
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 0) {
+                    content
+                        .background(rowSurface)
+                        .containerRelativeFrame(.horizontal)
+                        .id(Self.contentID)
+                    actionButtons(proxy)
+                        .frame(width: revealWidth)
+                        .frame(maxHeight: .infinity)
                 }
+                .scrollTargetLayout()
             }
-            .opacity(offset < 0 ? 1 : 0)
-
-            content
-                .background(rowSurface)
-                .offset(x: offset)
-                .highPriorityGesture(
-                    DragGesture(minimumDistance: 12)
-                        .onChanged { value in
-                            guard abs(value.translation.width) > abs(value.translation.height) else { return }
-                            let proposed = startOffset + value.translation.width
-                            offset = min(0, max(-revealWidth, proposed))
-                        }
-                        .onEnded { _ in
-                            let open = offset < -revealWidth / 2
-                            let destination: CGFloat = open ? -revealWidth : 0
-                            withAnimation(.easeOut(duration: 0.2)) { offset = destination }
-                            startOffset = destination
-                        }
-                )
+            .scrollTargetBehavior(SwipeSnapBehavior(revealWidth: revealWidth))
         }
-        .clipped()
     }
 
-    /// Animates the row closed and resets the drag baseline.
-    /// - Returns: Nothing.
-    private func close() {
-        withAnimation(.easeOut(duration: 0.2)) { offset = 0 }
-        startOffset = 0
+    /// The revealed trailing actions: a floating same-color icon pill per action,
+    /// laid out left-to-right. Tapping one scrolls the row closed, then runs the
+    /// handler.
+    /// - Parameter proxy: Scroll proxy used to animate the row closed on tap.
+    /// - Returns: The composed actions strip.
+    private func actionButtons(_ proxy: ScrollViewProxy) -> some View {
+        HStack(spacing: 0) {
+            ForEach(actions) { action in
+                Button {
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        proxy.scrollTo(Self.contentID, anchor: .leading)
+                    }
+                    action.handler()
+                } label: {
+                    // Floating pill: the SF Symbol in the action's color on a soft
+                    // same-hue circle, sitting on the card surface.
+                    Image(systemName: action.systemImage)
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(action.tint)
+                        .frame(width: Self.pillDiameter, height: Self.pillDiameter)
+                        .background(Circle().fill(action.tint.opacity(0.20)))
+                        .frame(width: Self.buttonWidth)
+                        .frame(maxHeight: .infinity)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(action.label)
+            }
+        }
+    }
+}
+
+/// Snaps the row's horizontal scroll to fully closed (0) or fully open
+/// (`revealWidth`) based on where a drag/fling would land, so the row never rests
+/// half-open. Replaces a `DragGesture`'s `onEnded` snap logic.
+private struct SwipeSnapBehavior: ScrollTargetBehavior {
+    /// The open resting offset (sum of the action-button widths).
+    let revealWidth: CGFloat
+
+    /// Rounds the proposed landing offset to the nearer of closed/open.
+    /// - Parameters:
+    ///   - target: The proposed scroll target; its `rect.origin.x` is rewritten.
+    ///   - context: Scroll context (unused).
+    /// - Returns: Nothing; mutates `target` in place.
+    func updateTarget(_ target: inout ScrollTarget, context: TargetContext) {
+        target.rect.origin.x = target.rect.minX > revealWidth / 2 ? revealWidth : 0
     }
 }
