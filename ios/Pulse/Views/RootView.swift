@@ -1,18 +1,17 @@
 /// Top-level app screen.
-/// Owns the four-tab `FloatingDock` selection, one `NavigationStack` per tab,
+/// Owns the three-tab `FloatingDock` selection, one `NavigationStack` per tab,
 /// the settings sheet, and the sign-in sheet gating. Also bootstraps `AuthSession`
 /// once on appear.
 import SwiftUI
 
-/// Root container view. Switches between the four top-level tabs and surfaces the
+/// Root container view. Switches between the three top-level tabs and surfaces the
 /// settings + login sheets at app scope.
 struct RootView: View {
     @Environment(AuthSession.self) private var auth
 
-    @State private var tab: DockTab = .intake
-    @State private var intakePath = NavigationPath()
-    @State private var foodPath = NavigationPath()
-    @State private var prepPath = NavigationPath()
+    @State private var tab: DockTab = .nutrition
+    @State private var nutritionPath = NavigationPath()
+    @State private var activityPath = NavigationPath()
     @State private var measuresPath = NavigationPath()
     @State private var showSettings = false
     @State private var mealsModel: MealsModel?
@@ -24,40 +23,32 @@ struct RootView: View {
 
             Group {
                 switch tab {
-                case .intake:
-                    NavigationStack(path: $intakePath) {
-                        LogView(onOpenDate: { picked in
-                            intakePath.append(picked)
-                        })
+                case .nutrition:
+                    NavigationStack(path: $nutritionPath) {
+                        NutritionTabView(
+                            auth: auth,
+                            mealsModel: mealsModel,
+                            foodsModel: foodsModel,
+                            onOpenDate: { picked in
+                                nutritionPath.append(picked)
+                            },
+                            onOpenMeal: { summary in
+                                nutritionPath.append(FoodRoute.meal(summary))
+                            },
+                            onOpenFood: { food in
+                                nutritionPath.append(FoodRoute.food(food))
+                            },
+                            onOpenPortion: { portionId in
+                                if let cf = foodsModel?.customFood(for: portionId) {
+                                    nutritionPath.append(FoodRoute.food(cf))
+                                }
+                            }
+                        )
                         .toolbar { settingsButton }
                         .navigationDestination(for: Date.self) { date in
                             DayMacroView(date: date)
                                 .toolbar { settingsButton }
                         }
-                    }
-                case .food:
-                    NavigationStack(path: $foodPath) {
-                        Group {
-                            if let mealsModel, let foodsModel {
-                                FoodTabView(
-                                    mealsModel: mealsModel,
-                                    foodsModel: foodsModel,
-                                    onOpenMeal: { summary in foodPath.append(FoodRoute.meal(summary)) },
-                                    onOpenFood: { food in foodPath.append(FoodRoute.food(food)) },
-                                    onOpenPortion: { portionId in
-                                        if let cf = foodsModel.customFood(for: portionId) {
-                                            foodPath.append(FoodRoute.food(cf))
-                                        }
-                                    },
-                                    auth: auth
-                                )
-                            } else {
-                                ProgressView()
-                                    .tint(Theme.CTP.mauve)
-                                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            }
-                        }
-                        .toolbar { settingsButton }
                         .navigationDestination(for: FoodRoute.self) { route in
                             switch route {
                             case .meal(let summary):
@@ -77,10 +68,24 @@ struct RootView: View {
                             }
                         }
                     }
-                case .prep:
-                    NavigationStack(path: $prepPath) {
-                        PrepView()
-                            .toolbar { settingsButton }
+                case .activity:
+                    NavigationStack(path: $activityPath) {
+                        ActivityTabView(
+                            auth: auth,
+                            onOpenWorkout: { id in activityPath.append(ActivityRoute.workout(id)) },
+                            onOpenTrends: { activityPath.append(ActivityRoute.trends) }
+                        )
+                        .toolbar { settingsButton }
+                        .navigationDestination(for: ActivityRoute.self) { route in
+                            switch route {
+                            case let .workout(id):
+                                WorkoutDetailView(id: id, auth: auth)
+                                    .toolbar { settingsButton }
+                            case .trends:
+                                ActivityTrendsView(auth: auth)
+                                    .toolbar { settingsButton }
+                            }
+                        }
                     }
                 case .measures:
                     NavigationStack(path: $measuresPath) {
@@ -113,20 +118,19 @@ struct RootView: View {
     }
 
     /// Whether the floating dock should be visible. Hidden when the current tab has
-    /// pushed at least one screen onto its navigation stack so the dock doesn't overlap
-    /// detail screens.
-    /// Outputs: `true` when the active tab's nav stack is at its root.
+    /// pushed at least one screen onto its navigation stack so the dock does not
+    /// overlap detail screens.
+    /// - Returns: `true` when the active tab's navigation stack is at its root.
     private var dockVisible: Bool {
         switch tab {
-        case .intake: intakePath.isEmpty
-        case .food:   foodPath.isEmpty
-        case .prep:   prepPath.isEmpty
-        case .measures: measuresPath.isEmpty
+        case .nutrition: nutritionPath.isEmpty
+        case .activity:  activityPath.isEmpty
+        case .measures:  measuresPath.isEmpty
         }
     }
 
     /// Shared toolbar item: gear icon that presents the settings sheet.
-    /// Outputs: composed toolbar content.
+    /// - Returns: Composed toolbar content placing a gear button in the trailing bar slot.
     @ToolbarContentBuilder
     private var settingsButton: some ToolbarContent {
         ToolbarItem(placement: .topBarTrailing) {
