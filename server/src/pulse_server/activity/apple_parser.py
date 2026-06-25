@@ -16,6 +16,24 @@ _WORKOUT_PREFIX = "HKWorkoutActivityType"
 _QUANTITY_PREFIX = "HKQuantityTypeIdentifier"
 
 
+def _require(value: str | None, attr: str) -> str:
+    """Return a required XML attribute value, raising if absent.
+
+    **Inputs:**
+    - value (str | None): The raw attribute read from the element.
+    - attr (str): Attribute name, used in the error message.
+
+    **Outputs:**
+    - str: The non-None value.
+
+    **Raises/Throws:**
+    - ValueError: If value is None (attribute missing from element).
+    """
+    if value is None:
+        raise ValueError(f"missing required attribute: {attr}")
+    return value
+
+
 def _parse_apple_time(value: str) -> DateTimeValue:
     """Parse an Apple timestamp with explicit offset.
 
@@ -69,15 +87,20 @@ def _build_workout(elem: Element, user_key: str) -> AppleWorkout:
 
     def stat_sum(name: str) -> float | None:
         s = stats.get(name)
-        return float(s.get("sum")) if s is not None and s.get("sum") else None
+        if s is None:
+            return None
+        sum_raw = s.get("sum")
+        return float(sum_raw) if sum_raw else None
 
     distance = stat_sum("DistanceWalkingRunning")
     if distance is None:
         distance = stat_sum("DistanceCycling")
 
     heart = stats.get("HeartRate")
-    avg_hr = float(heart.get("average")) if heart is not None and heart.get("average") else None
-    max_hr = float(heart.get("maximum")) if heart is not None and heart.get("maximum") else None
+    avg_raw = heart.get("average") if heart is not None else None
+    avg_hr = float(avg_raw) if avg_raw else None
+    max_raw = heart.get("maximum") if heart is not None else None
+    max_hr = float(max_raw) if max_raw else None
 
     steps = stat_sum("StepCount")
     flights = stat_sum("FlightsClimbed")
@@ -97,8 +120,8 @@ def _build_workout(elem: Element, user_key: str) -> AppleWorkout:
         user_key=user_key,
         activity_type=(elem.get("workoutActivityType") or "").removeprefix(_WORKOUT_PREFIX),
         source_name=elem.get("sourceName"),
-        start_time=_parse_apple_time(elem.get("startDate")),
-        end_time=_parse_apple_time(elem.get("endDate")),
+        start_time=_parse_apple_time(_require(elem.get("startDate"), "startDate")),
+        end_time=_parse_apple_time(_require(elem.get("endDate"), "endDate")),
         duration_min=float(duration_raw) if duration_raw else None,
         active_energy_cal=stat_sum("ActiveEnergyBurned"),
         basal_energy_cal=stat_sum("BasalEnergyBurned"),
@@ -129,13 +152,13 @@ def _build_daily(elem: Element, user_key: str) -> DailyActivity:
     """
     return DailyActivity(
         user_key=user_key,
-        date=DateValue.fromisoformat(elem.get("dateComponents")),
-        active_energy_cal=float(elem.get("activeEnergyBurned")),
-        active_energy_goal=float(elem.get("activeEnergyBurnedGoal")),
-        exercise_minutes=int(float(elem.get("appleExerciseTime"))),
-        exercise_goal=int(float(elem.get("appleExerciseTimeGoal"))),
-        stand_hours=int(float(elem.get("appleStandHours"))),
-        stand_goal=int(float(elem.get("appleStandHoursGoal"))),
+        date=DateValue.fromisoformat(_require(elem.get("dateComponents"), "dateComponents")),
+        active_energy_cal=float(_require(elem.get("activeEnergyBurned"), "activeEnergyBurned")),
+        active_energy_goal=float(_require(elem.get("activeEnergyBurnedGoal"), "activeEnergyBurnedGoal")),
+        exercise_minutes=int(float(_require(elem.get("appleExerciseTime"), "appleExerciseTime"))),
+        exercise_goal=int(float(_require(elem.get("appleExerciseTimeGoal"), "appleExerciseTimeGoal"))),
+        stand_hours=int(float(_require(elem.get("appleStandHours"), "appleStandHours"))),
+        stand_goal=int(float(_require(elem.get("appleStandHoursGoal"), "appleStandHoursGoal"))),
     )
 
 
