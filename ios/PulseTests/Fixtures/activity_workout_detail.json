@@ -1,0 +1,31 @@
+{
+  "id": "aaaaaaaa-0000-0000-0000-000000000001",
+  "activity_type": "TraditionalStrengthTraining",
+  "start_time": "2026-06-24T18:00:00+00:00",
+  "end_time": "2026-06-24T18:57:00+00:00",
+  "duration_min": 57.0,
+  "active_energy_cal": 276.0,
+  "basal_energy_cal": 92.0,
+  "avg_heart_rate": 121.0,
+  "max_heart_rate": 158.0,
+  "distance_km": null,
+  "elevation_ascended_m": null,
+  "step_count": null,
+  "flights_climbed": null,
+  "avg_mets": 5.4,
+  "indoor": true,
+  "exercises": [
+    {
+      "exercise_title": "Bench Press",
+      "superset_id": null,
+      "set_count": 2,
+      "volume_lbs": 1950.0,
+      "top_set": { "set_index": 1, "set_type": "normal", "weight_lbs": 145.0, "reps": 6, "rpe": 8.0, "distance_km": null, "duration_seconds": null },
+      "sets": [
+        { "set_index": 0, "set_type": "warmup", "weight_lbs": 135.0, "reps": 8, "rpe": null, "distance_km": null, "duration_seconds": null },
+        { "set_index": 1, "set_type": "normal", "weight_lbs": 145.0, "reps": 6, "rpe": 8.0, "distance_km": null, "duration_seconds": null }
+      ]
+    }
+  ],
+  "strength_totals": { "exercise_count": 1, "set_count": 2, "volume_lbs": 1950.0 }
+}
