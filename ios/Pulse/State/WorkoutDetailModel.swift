@@ -7,6 +7,7 @@ final class WorkoutDetailModel {
     private weak var auth: AuthSession?
     private let workoutId: UUID
 
+    /// Initializes the model for the given workout, retaining the auth session weakly.
     /// - Parameters:
     ///   - id: The workout to load.
     ///   - auth: The signed-in session used to build an authorized client.

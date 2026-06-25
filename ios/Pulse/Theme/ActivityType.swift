@@ -8,7 +8,7 @@ enum ActivityType {
     static func color(_ raw: String) -> Color {
         let k = raw.lowercased()
         if k.contains("strength") { return Theme.CTP.mauve }
-        if k.contains("running") || k.contains("run") { return Theme.CTP.teal }
+        if k.contains("run") { return Theme.CTP.teal }
         if k.contains("cycling") || k.contains("bike") { return Theme.CTP.sky }
         if k.contains("walk") || k.contains("hiking") { return Theme.CTP.green }
         if k.contains("swim") { return Theme.CTP.sapphire }

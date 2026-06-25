@@ -32,6 +32,9 @@ struct WorkoutDetailView: View {
         .task { if case .idle = model.state { await model.load() } }
     }
 
+    /// Scrollable body of the detail screen: header, stats grid, and optional strength section.
+    /// - Parameter d: The fully loaded workout detail to render.
+    /// - Returns: A `ScrollView` containing all workout detail subviews.
     private func content(_ d: ActivityWorkoutDetail) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
@@ -50,6 +53,9 @@ struct WorkoutDetailView: View {
         }
     }
 
+    /// Top section showing the activity type color dot, display name, and formatted start time.
+    /// - Parameter d: The loaded workout detail supplying the activity type and start time.
+    /// - Returns: A left-aligned `VStack` with the workout title and date/time subtitle.
     private func header(_ d: ActivityWorkoutDetail) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
@@ -64,6 +70,9 @@ struct WorkoutDetailView: View {
         .padding(.top, 8)
     }
 
+    /// Three-column grid of Apple Health stat tiles (calories, duration, HR, distance, etc.), skipping nil metrics.
+    /// - Parameter d: The loaded workout detail from which available stats are extracted.
+    /// - Returns: A `LazyVGrid` of `Stat` tiles, one per available metric.
     private func statsGrid(_ d: ActivityWorkoutDetail) -> some View {
         let stats = WorkoutDetailModel.appleStats(d)
         return LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())],
@@ -80,6 +89,9 @@ struct WorkoutDetailView: View {
         }
     }
 
+    /// Header label with total volume and set count, followed by one `ExerciseCard` per exercise.
+    /// - Parameter d: The loaded workout detail containing the exercise list and strength totals.
+    /// - Returns: A `VStack` with the strength summary header and a card for each exercise.
     private func strengthSection(_ d: ActivityWorkoutDetail) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             if let t = d.strengthTotals {

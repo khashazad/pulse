@@ -25,6 +25,8 @@ struct ExerciseCard: View {
         .ctpCard()
     }
 
+    /// Collapsed/expanded header row: exercise title, top-set summary, volume, set count, and chevron.
+    /// - Returns: An `HStack` summarizing the exercise for the collapsed card row.
     private var header: some View {
         HStack(alignment: .firstTextBaseline) {
             VStack(alignment: .leading, spacing: 3) {
@@ -51,6 +53,9 @@ struct ExerciseCard: View {
         }
     }
 
+    /// One row in the expanded set list: index, optional set-type badge, summary, and optional RPE.
+    /// - Parameter set: The individual set to render.
+    /// - Returns: An `HStack` row representing a single set's metrics.
     private func setRow(_ set: WorkoutSet) -> some View {
         HStack {
             Text("\(set.setIndex + 1)")
@@ -87,9 +92,3 @@ struct ExerciseCard: View {
     }
 }
 
-extension Double {
-    /// The value with trailing ".0" stripped for compact display.
-    var clean: String {
-        self == rounded() ? String(Int(self)) : String(format: "%.1f", self)
-    }
-}
