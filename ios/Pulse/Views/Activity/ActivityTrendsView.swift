@@ -1,6 +1,8 @@
 import SwiftUI
 import Charts
 
+private let prBadgeCornerRadius: CGFloat = 5
+
 /// Trends screen: period selector, headline time/frequency/calorie deltas,
 /// a volume-over-time bar chart, a by-type breakdown, and strength top lifts.
 struct ActivityTrendsView: View {
@@ -33,6 +35,9 @@ struct ActivityTrendsView: View {
         .task { if case .idle = model.state { await model.load() } }
     }
 
+    /// Switches on `model.state` to render a loading spinner, an error view, or the
+    /// full summary content (headline deltas, volume chart, by-type card, top lifts).
+    /// - Returns: The view for the current load state.
     @ViewBuilder private var content: some View {
         switch model.state {
         case .idle, .loading:
@@ -142,7 +147,7 @@ struct ActivityTrendsView: View {
                         if lift.isPr {
                             Text("PR").font(.system(size: 10, weight: .bold)).foregroundStyle(Theme.CTP.base)
                                 .padding(.horizontal, 6).padding(.vertical, 2)
-                                .background(RoundedRectangle(cornerRadius: 5).fill(Theme.CTP.yellow))
+                                .background(RoundedRectangle(cornerRadius: prBadgeCornerRadius).fill(Theme.CTP.yellow))
                         }
                         Spacer()
                         Text("\(Int(lift.bestEst1rm.rounded())) lb e1RM")
