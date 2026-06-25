@@ -7,7 +7,9 @@ from __future__ import annotations
 from datetime import date as DateValue
 from datetime import datetime as DateTimeValue
 from pathlib import Path
-from xml.etree.ElementTree import Element, iterparse
+from xml.etree.ElementTree import Element
+
+from defusedxml.ElementTree import iterparse
 
 from pulse_server.activity.models import AppleWorkout, DailyActivity
 
