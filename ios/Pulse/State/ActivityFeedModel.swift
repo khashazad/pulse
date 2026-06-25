@@ -19,6 +19,7 @@ final class ActivityFeedModel {
     private weak var auth: AuthSession?
     private var items: [ActivityWorkoutSummary] = []
     private var seen = Set<UUID>()
+    private var knownTypes: Set<String> = []
     private var nextBefore: String?
     private var nextBeforeId: String?
     private var hasMore = true
@@ -33,8 +34,10 @@ final class ActivityFeedModel {
     /// The currently loaded workouts grouped into week sections (for the list).
     var sections: [WeekSection] { Self.groupByWeek(items) }
 
-    /// The distinct activity types seen so far, for filter chips (sorted).
-    var availableTypes: [String] { Array(Set(items.map(\.activityType))).sorted() }
+    /// All activity types seen across any load (filtered or unfiltered), sorted alphabetically.
+    /// Sourced from `knownTypes`, which is never cleared on reload, so chips remain stable
+    /// while a type filter is active — the user can switch types without tapping "All" first.
+    var availableTypes: [String] { knownTypes.sorted() }
 
     /// Loads the first feed page and the week summary; resets any prior state.
     /// - Returns: Nothing; results publish via `state` and `summary`.
@@ -79,11 +82,16 @@ final class ActivityFeedModel {
         await loadFirst()
     }
 
-    /// Appends a page's items (de-duplicated) and advances the cursor.
+    /// Appends a page's items (de-duplicated by id) and advances the cursor.
+    /// Also records every item's `activityType` into `knownTypes` so filter chips
+    /// remain stable across filtered reloads.
     /// - Parameter page: The freshly fetched feed page.
     private func append(_ page: WorkoutFeedPage) {
-        for w in page.items where !seen.contains(w.id) {
-            seen.insert(w.id); items.append(w)
+        for w in page.items {
+            knownTypes.insert(w.activityType)
+            if !seen.contains(w.id) {
+                seen.insert(w.id); items.append(w)
+            }
         }
         nextBefore = page.nextBefore
         nextBeforeId = page.nextBeforeId
