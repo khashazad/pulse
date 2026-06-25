@@ -22,6 +22,9 @@ Tables defined here:
 - ``progress_photo_tags`` — per-user catalog of progress-photo tag labels.
 - ``progress_photos`` — per-day progress-photo metadata (bytes live in the
   object store under ``storage_key_prefix``), each tagged via FK.
+- ``apple_workouts`` — one row per Apple Health workout session (summary stats only).
+- ``strength_workouts`` / ``strength_sets`` — Hevy session headers and their sets.
+- ``daily_activity`` — per-day Apple activity summary (active energy, exercise, stand).
 
 Every table is scoped by ``user_key`` so the same schema supports the
 multi-user model while the legacy single-user deployment uses one fixed key.
@@ -48,6 +51,7 @@ from sqlalchemy import (
     LargeBinary,
     MetaData,
     Numeric,
+    PrimaryKeyConstraint,
     Table,
     Text,
     UniqueConstraint,
@@ -332,6 +336,88 @@ weight_entries = Table(
     CheckConstraint("source_unit in ('lb','kg')", name="weight_entries_source_unit_check"),
     UniqueConstraint("user_key", "log_date", name="weight_entries_user_key_log_date_key"),
     Index("idx_weight_entries_user_key_log_date", "user_key", "log_date"),
+)
+
+apple_workouts = Table(
+    "apple_workouts",
+    metadata,
+    Column("id", UUID(as_uuid=True), primary_key=True),
+    Column("user_key", Text, nullable=False),
+    Column("activity_type", Text, nullable=False),
+    Column("source_name", Text, nullable=True),
+    Column("start_time", DateTime(timezone=True), nullable=False),
+    Column("end_time", DateTime(timezone=True), nullable=False),
+    Column("duration_min", Numeric, nullable=True),
+    Column("active_energy_cal", Numeric, nullable=True),
+    Column("basal_energy_cal", Numeric, nullable=True),
+    Column("avg_heart_rate", Numeric, nullable=True),
+    Column("max_heart_rate", Numeric, nullable=True),
+    Column("distance_km", Numeric, nullable=True),
+    Column("step_count", Integer, nullable=True),
+    Column("flights_climbed", Integer, nullable=True),
+    Column("indoor", Boolean, nullable=True),
+    Column("elevation_ascended_m", Numeric, nullable=True),
+    Column("avg_mets", Numeric, nullable=True),
+    Column("temperature_f", Numeric, nullable=True),
+    Column("humidity_pct", Numeric, nullable=True),
+    Column("timezone", Text, nullable=True),
+    Column("route_gpx_path", Text, nullable=True),
+    Column("linked_strength_workout_id", UUID(as_uuid=True), nullable=True),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Index("idx_apple_workouts_user_key_start_time", "user_key", "start_time"),
+)
+
+strength_workouts = Table(
+    "strength_workouts",
+    metadata,
+    Column("id", UUID(as_uuid=True), primary_key=True),
+    Column("user_key", Text, nullable=False),
+    Column("title", Text, nullable=False),
+    Column("start_time", DateTime(timezone=True), nullable=False),
+    Column("end_time", DateTime(timezone=True), nullable=False),
+    Column("description", Text, nullable=True),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Index("idx_strength_workouts_user_key_start_time", "user_key", "start_time"),
+)
+
+strength_sets = Table(
+    "strength_sets",
+    metadata,
+    Column("id", UUID(as_uuid=True), primary_key=True),
+    Column(
+        "strength_workout_id",
+        UUID(as_uuid=True),
+        ForeignKey("strength_workouts.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column("user_key", Text, nullable=False),
+    Column("exercise_title", Text, nullable=False),
+    Column("superset_id", Text, nullable=True),
+    Column("exercise_notes", Text, nullable=True),
+    Column("set_index", Integer, nullable=False),
+    Column("set_type", Text, nullable=True),
+    Column("weight_lbs", Numeric, nullable=True),
+    Column("reps", Integer, nullable=True),
+    Column("distance_km", Numeric, nullable=True),
+    Column("duration_seconds", Integer, nullable=True),
+    Column("rpe", Numeric, nullable=True),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Index("idx_strength_sets_workout_id", "strength_workout_id"),
+)
+
+daily_activity = Table(
+    "daily_activity",
+    metadata,
+    Column("user_key", Text, nullable=False),
+    Column("date", Date, nullable=False),
+    Column("active_energy_cal", Numeric, nullable=False),
+    Column("active_energy_goal", Numeric, nullable=False),
+    Column("exercise_minutes", Integer, nullable=False),
+    Column("exercise_goal", Integer, nullable=False),
+    Column("stand_hours", Integer, nullable=False),
+    Column("stand_goal", Integer, nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    PrimaryKeyConstraint("user_key", "date", name="daily_activity_pkey"),
 )
 
 progress_photo_tags = Table(
