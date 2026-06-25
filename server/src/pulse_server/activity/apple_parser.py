@@ -104,7 +104,11 @@ def _build_workout(elem: Element, user_key: str) -> AppleWorkout:
     def stat_sum(name: str) -> float | None:
         return _stat_float(stats.get(name), "sum")
 
-    distance = stat_sum("DistanceWalkingRunning") or stat_sum("DistanceCycling")
+    # Use an explicit None check, not `or`: a genuine 0.0 walking distance must
+    # be kept, not fall through to the cycling stat.
+    distance = stat_sum("DistanceWalkingRunning")
+    if distance is None:
+        distance = stat_sum("DistanceCycling")
 
     heart = stats.get("HeartRate")
     avg_hr = _stat_float(heart, "average")
@@ -193,6 +197,12 @@ def parse_apple_export(
     **Outputs:**
     - tuple[list[AppleWorkout], list[DailyActivity]]: All workout sessions and
       daily activity summaries; raw samples are ignored.
+
+    **Raises/Throws:**
+    - ValueError: If a ``<Workout>`` or ``<ActivitySummary>`` is missing a
+      required attribute, or a timestamp/date cannot be parsed.
+    - xml.etree.ElementTree.ParseError: If the XML is not well-formed.
+    - OSError: If the file cannot be opened or read.
     """
     workouts: list[AppleWorkout] = []
     days: list[DailyActivity] = []

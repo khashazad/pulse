@@ -81,6 +81,10 @@ def parse_hevy_csv(
     **Outputs:**
     - tuple[list[StrengthWorkout], list[StrengthSet]]: Deduplicated session
       headers and the flat list of sets.
+
+    **Raises/Throws:**
+    - OSError: If the CSV file cannot be opened or read.
+    - ValueError: If a timestamp or the ``set_index`` cell cannot be parsed.
     """
     workouts: dict[tuple[str, DateTimeValue], StrengthWorkout] = {}
     workout_ids: dict[tuple[str, DateTimeValue], str] = {}

@@ -26,6 +26,12 @@ FIXTURES = Path(__file__).parents[1] / "fixtures" / "activity"
 
 @pytest_asyncio.fixture(autouse=True)
 async def _clean():
+    """Truncate the four activity tables before each test (skips without a DB).
+
+    **Outputs:**
+    - None: Yields control after clearing the tables; skips the test when
+      ``TEST_DATABASE_URL`` is unset.
+    """
     if TEST_DB_URL is None:
         pytest.skip("TEST_DATABASE_URL not set")
     await db.init_pool(TEST_DB_URL)

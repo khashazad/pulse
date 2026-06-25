@@ -45,6 +45,14 @@ async def session():
 
 
 def _workout(activity="Yoga"):
+    """Build a minimal AppleWorkout fixture (stats all None) for upsert tests.
+
+    **Inputs:**
+    - activity (str): Activity type for the workout.
+
+    **Outputs:**
+    - AppleWorkout: A workout with a fixed start/end time and null stats.
+    """
     t = datetime(2026, 6, 13, 18, 0, tzinfo=UTC)
     return AppleWorkout(
         user_key="khash",

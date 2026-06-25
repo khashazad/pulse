@@ -32,12 +32,15 @@ async def _upsert_row(
 
     **Inputs:**
     - session (AsyncSession): Active session (caller owns the commit).
-    - table: Target SQLAlchemy Core table.
+    - table (Table): Target SQLAlchemy Core table.
     - values (dict): Column→value mapping for the row.
     - conflict_cols (list[str]): Columns forming the conflict target.
 
     **Outputs:**
     - bool: True if inserted, False if an existing row was updated.
+
+    **Raises/Throws:**
+    - sqlalchemy.exc.SQLAlchemyError: If the statement fails to execute.
     """
     insert_stmt = pg_insert(table).values(**values)
     update_cols = {c: insert_stmt.excluded[c] for c in values if c not in conflict_cols}
@@ -72,6 +75,9 @@ async def upsert_apple_workouts(
 
     **Outputs:**
     - tuple[int, int]: (inserted, updated).
+
+    **Raises/Throws:**
+    - sqlalchemy.exc.SQLAlchemyError: If a statement fails to execute.
     """
     flags: list[bool] = []
     for w in workouts:
@@ -113,6 +119,9 @@ async def upsert_daily_activity(
 
     **Outputs:**
     - tuple[int, int]: (inserted, updated).
+
+    **Raises/Throws:**
+    - sqlalchemy.exc.SQLAlchemyError: If a statement fails to execute.
     """
     flags: list[bool] = []
     for d in days:
@@ -144,6 +153,9 @@ async def upsert_strength(
 
     **Outputs:**
     - tuple[int, int]: (inserted, updated) across both tables combined.
+
+    **Raises/Throws:**
+    - sqlalchemy.exc.SQLAlchemyError: If a statement fails to execute.
     """
     flags: list[bool] = []
     for w in workouts:
