@@ -47,7 +47,7 @@ final class PhotoComparisonLogicTests: XCTestCase {
             meta(tag: front, date: dayA, updated: dayA),
             meta(tag: front, date: dayB, updated: dayB),     // Front: both -> kept
             meta(tag: side, date: dayA, updated: dayA),       // Side: only dayA -> dropped
-            meta(tag: back, date: dayB, updated: dayB),       // Back: only dayB -> dropped
+            meta(tag: back, date: dayB, updated: dayB)        // Back: only dayB -> dropped
         ]
 
         let result = tagsWithPhotosOnBothDates(
@@ -66,7 +66,7 @@ final class PhotoComparisonLogicTests: XCTestCase {
         let bLater = dayB.addingTimeInterval(3600 * 20)
         let metadata = [
             meta(tag: front, date: aLater, updated: aLater),
-            meta(tag: front, date: bLater, updated: bLater),
+            meta(tag: front, date: bLater, updated: bLater)
         ]
         let result = tagsWithPhotosOnBothDates(
             tags: [front], metadata: metadata, dayA: dayA, dayB: dayB, calendar: cal
