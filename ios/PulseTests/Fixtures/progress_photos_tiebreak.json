@@ -1,0 +1,20 @@
+[
+  {
+    "id": "44444444-4444-4444-4444-444444444444",
+    "date": "2026-04-20",
+    "tag_id": "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+    "mime": "image/jpeg",
+    "bytes": 1000,
+    "sha256": "tie-early",
+    "updated_at": "2026-04-20T08:00:00Z"
+  },
+  {
+    "id": "55555555-5555-5555-5555-555555555555",
+    "date": "2026-04-20",
+    "tag_id": "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+    "mime": "image/jpeg",
+    "bytes": 1000,
+    "sha256": "tie-late",
+    "updated_at": "2026-04-20T18:00:00Z"
+  }
+]

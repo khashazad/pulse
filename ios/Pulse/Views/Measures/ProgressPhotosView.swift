@@ -16,6 +16,8 @@ struct ProgressPhotosView: View {
     @State private var showCapture = false
     @State private var showManageTags = false
     @State private var showCompare = false
+    /// Whether the multi-tag progression gallery is pushed.
+    @State private var showGallery = false
     /// The photo shown in the fullscreen viewer, or nil when the grid is
     /// showing. Drives a `fullScreenCover` so the viewer covers the whole
     /// window (dock + chrome included) and dismissing always returns here.
@@ -78,6 +80,9 @@ struct ProgressPhotosView: View {
         .sheet(isPresented: $showCompare) {
             NavigationStack { ProgressPhotoComparisonView(initialDate: selectedDate) }
         }
+        .navigationDestination(isPresented: $showGallery) {
+            ProgressGalleryView()
+        }
     }
 
     // MARK: date strip
@@ -86,6 +91,7 @@ struct ProgressPhotosView: View {
         HStack(spacing: 8) {
             chip("Today") { selectedDate = Calendar.current.startOfDay(for: Date()) }
             compareButton
+            galleryButton
             Spacer()
             DatePicker("", selection: $selectedDate, displayedComponents: .date)
                 .labelsHidden()
@@ -113,6 +119,22 @@ struct ProgressPhotosView: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Compare two days")
+    }
+
+    /// Pushes the multi-tag progression gallery (tag switcher + grid). Disabled
+    /// until at least one tag exists.
+    private var galleryButton: some View {
+        Button { showGallery = true } label: {
+            Image(systemName: "photo.stack")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Theme.CTP.mauve)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(Theme.BG.secondary, in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .disabled(tagStore.tags.isEmpty)
+        .accessibilityLabel("Open progress gallery")
     }
 
     // MARK: grid

@@ -5,8 +5,8 @@
 /// the floating tab dock and section chrome — and a dismiss always returns to
 /// the exact grid it came from instead of letting a stray tap switch sections.
 /// Loads the full-resolution image from `ProgressPhotoStore`, supports
-/// pinch-to-zoom, and exposes a trash action that deletes the photo and
-/// dismisses. A tap anywhere on the backdrop closes it.
+/// pinch-to-zoom, and (when `allowsDelete` is true) exposes a trash action that
+/// deletes the photo and dismisses. A tap anywhere on the backdrop closes it.
 import SwiftUI
 import UIKit
 
@@ -14,11 +14,14 @@ import UIKit
 /// - Parameters:
 ///   - `meta`: server metadata for the photo to display.
 ///   - `tagName`: human-readable tag label shown in the header.
+///   - `allowsDelete`: when false, the trash action is hidden (read-only viewer,
+///     e.g. the pair comparison where delete is out of scope). Defaults to true.
 ///   - `onClose`: invoked to dismiss the viewer back to the grid.
 struct ProgressPhotoDetailView: View {
     @Environment(ProgressPhotoStore.self) private var store
     let meta: ProgressPhotoMetadata
     let tagName: String
+    var allowsDelete: Bool = true
     let onClose: () -> Void
 
     @State private var image: UIImage?
@@ -68,16 +71,18 @@ struct ProgressPhotoDetailView: View {
                 .padding(.vertical, 6)
                 .background(.black.opacity(0.55), in: Capsule())
             Spacer()
-            Button(role: .destructive) {
-                Task {
-                    await store.delete(meta)
-                    onClose()
+            if allowsDelete {
+                Button(role: .destructive) {
+                    Task {
+                        await store.delete(meta)
+                        onClose()
+                    }
+                } label: {
+                    Image(systemName: "trash")
+                        .foregroundStyle(.white)
+                        .padding(8)
+                        .background(.black.opacity(0.55), in: Circle())
                 }
-            } label: {
-                Image(systemName: "trash")
-                    .foregroundStyle(.white)
-                    .padding(8)
-                    .background(.black.opacity(0.55), in: Circle())
             }
         }
         .padding(.horizontal, 16)
