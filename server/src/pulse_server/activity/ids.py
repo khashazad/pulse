@@ -18,7 +18,8 @@ def apple_workout_id(user_key: str, start_time: DateTimeValue, activity_type: st
     **Outputs:**
     - str: Canonical UUID5 string.
     """
-    return str(uuid.uuid5(uuid.NAMESPACE_URL, f"{user_key}:{start_time.isoformat()}:{activity_type}"))
+    key = f"{user_key}:{start_time.isoformat()}:{activity_type}"
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, key))
 
 
 def strength_workout_id(user_key: str, title: str, start_time: DateTimeValue) -> str:
@@ -32,7 +33,8 @@ def strength_workout_id(user_key: str, title: str, start_time: DateTimeValue) ->
     **Outputs:**
     - str: Canonical UUID5 string.
     """
-    return str(uuid.uuid5(uuid.NAMESPACE_URL, f"{user_key}:{title}:{start_time.isoformat()}"))
+    key = f"{user_key}:{title}:{start_time.isoformat()}"
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, key))
 
 
 def strength_set_id(workout_id: str, exercise_title: str, set_index: int) -> str:
@@ -46,4 +48,5 @@ def strength_set_id(workout_id: str, exercise_title: str, set_index: int) -> str
     **Outputs:**
     - str: Canonical UUID5 string.
     """
-    return str(uuid.uuid5(uuid.NAMESPACE_URL, f"{workout_id}:{exercise_title}:{set_index}"))
+    key = f"{workout_id}:{exercise_title}:{set_index}"
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, key))

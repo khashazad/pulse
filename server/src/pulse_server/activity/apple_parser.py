@@ -77,9 +77,7 @@ def _build_workout(elem: Element, user_key: str) -> AppleWorkout:
     **Outputs:**
     - AppleWorkout: Populated value type (missing stats become None).
     """
-    metadata = {
-        m.get("key"): m.get("value") for m in elem.findall("MetadataEntry")
-    }
+    metadata = {m.get("key"): m.get("value") for m in elem.findall("MetadataEntry")}
     stats: dict[str, Element] = {
         (s.get("type") or "").removeprefix(_QUANTITY_PREFIX): s
         for s in elem.findall("WorkoutStatistics")
@@ -150,13 +148,15 @@ def _build_daily(elem: Element, user_key: str) -> DailyActivity:
     **Outputs:**
     - DailyActivity: Populated value type.
     """
+    active_energy_goal_raw = _require(elem.get("activeEnergyBurnedGoal"), "activeEnergyBurnedGoal")
+    exercise_goal_raw = _require(elem.get("appleExerciseTimeGoal"), "appleExerciseTimeGoal")
     return DailyActivity(
         user_key=user_key,
         date=DateValue.fromisoformat(_require(elem.get("dateComponents"), "dateComponents")),
         active_energy_cal=float(_require(elem.get("activeEnergyBurned"), "activeEnergyBurned")),
-        active_energy_goal=float(_require(elem.get("activeEnergyBurnedGoal"), "activeEnergyBurnedGoal")),
+        active_energy_goal=float(active_energy_goal_raw),
         exercise_minutes=int(float(_require(elem.get("appleExerciseTime"), "appleExerciseTime"))),
-        exercise_goal=int(float(_require(elem.get("appleExerciseTimeGoal"), "appleExerciseTimeGoal"))),
+        exercise_goal=int(float(exercise_goal_raw)),
         stand_hours=int(float(_require(elem.get("appleStandHours"), "appleStandHours"))),
         stand_goal=int(float(_require(elem.get("appleStandHoursGoal"), "appleStandHoursGoal"))),
     )
@@ -178,7 +178,7 @@ def parse_apple_export(
     workouts: list[AppleWorkout] = []
     days: list[DailyActivity] = []
 
-    for event, elem in iterparse(str(path), events=("end",)):
+    for _event, elem in iterparse(str(path), events=("end",)):
         if elem.tag == "Workout":
             workouts.append(_build_workout(elem, user_key))
             elem.clear()

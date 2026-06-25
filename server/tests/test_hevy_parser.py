@@ -34,8 +34,12 @@ def test_blank_numeric_cells_become_none():
     assert stair.weight_lbs is None
     assert stair.reps is None
     assert stair.duration_seconds == 1206
-    warmup = next(s for s in sets if s.set_index == 0 and s.exercise_title == "Incline Dumbbell Press")
+    warmup = next(
+        s for s in sets if s.set_index == 0 and s.exercise_title == "Incline Dumbbell Press"
+    )
     assert warmup.weight_lbs == 55.0
     assert warmup.rpe is None
-    normal = next(s for s in sets if s.set_index == 1 and s.exercise_title == "Incline Dumbbell Press")
+    normal = next(
+        s for s in sets if s.set_index == 1 and s.exercise_title == "Incline Dumbbell Press"
+    )
     assert normal.rpe == 8.0

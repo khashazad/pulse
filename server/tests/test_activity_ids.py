@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+import datetime
 
 from pulse_server.activity import ids
 
 
 def test_apple_workout_id_is_deterministic():
-    t = datetime(2026, 6, 12, 8, 34, tzinfo=timezone.utc)
+    t = datetime.datetime(2026, 6, 12, 8, 34, tzinfo=datetime.UTC)
     a = ids.apple_workout_id("khash", t, "TraditionalStrengthTraining")
     b = ids.apple_workout_id("khash", t, "TraditionalStrengthTraining")
     assert a == b
@@ -16,15 +16,13 @@ def test_apple_workout_id_is_deterministic():
 
 
 def test_apple_workout_id_varies_by_input():
-    t = datetime(2026, 6, 12, 8, 34, tzinfo=timezone.utc)
-    assert ids.apple_workout_id("khash", t, "Yoga") != ids.apple_workout_id(
-        "khash", t, "Cycling"
-    )
+    t = datetime.datetime(2026, 6, 12, 8, 34, tzinfo=datetime.UTC)
+    assert ids.apple_workout_id("khash", t, "Yoga") != ids.apple_workout_id("khash", t, "Cycling")
 
 
 def test_strength_set_id_depends_on_workout_and_index():
     wid = ids.strength_workout_id(
-        "khash", "Chest Day", datetime(2026, 6, 12, 7, 26, tzinfo=timezone.utc)
+        "khash", "Chest Day", datetime.datetime(2026, 6, 12, 7, 26, tzinfo=datetime.UTC)
     )
     s0 = ids.strength_set_id(wid, "Incline Dumbbell Press", 0)
     s1 = ids.strength_set_id(wid, "Incline Dumbbell Press", 1)
