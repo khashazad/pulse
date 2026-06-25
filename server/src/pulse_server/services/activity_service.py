@@ -9,7 +9,6 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from pulse_server.config import get_settings
 from pulse_server.models.activity import (
     ActivityDeltas,
     ActivityPeriod,
@@ -37,6 +36,33 @@ from pulse_server.services.activity_summary import (
 
 MAX_FEED_LIMIT = 100
 DEFAULT_FEED_LIMIT = 50
+
+
+def _set_volume(row: dict) -> float:
+    """Volume contribution of one strength set: ``weight_lbs * reps``.
+
+    **Inputs:**
+    - row (dict): A set row with ``weight_lbs`` and ``reps`` keys.
+
+    **Outputs:**
+    - float: ``weight_lbs * reps``, or ``0.0`` when either value is missing/zero.
+    """
+    if row["weight_lbs"] and row["reps"]:
+        return float(row["weight_lbs"]) * int(row["reps"])
+    return 0.0
+
+
+def _metric_delta(current: float, previous: float) -> MetricDelta:
+    """Build a ``MetricDelta`` carrying the current/previous values and their percent change.
+
+    **Inputs:**
+    - current (float): Current-period value.
+    - previous (float): Prior-period value.
+
+    **Outputs:**
+    - MetricDelta: The packaged delta, with ``pct`` from :func:`pct_change`.
+    """
+    return MetricDelta(current=current, previous=previous, pct=pct_change(current, previous))
 
 
 async def list_workout_feed(
@@ -114,26 +140,19 @@ def _build_exercises(set_rows: list[dict]) -> tuple[list[WorkoutExercise], Stren
             )
             for r in rows
         ]
-        volume = sum(
-            float(r["weight_lbs"]) * int(r["reps"]) for r in rows if r["weight_lbs"] and r["reps"]
-        )
-        weighted = [r for r in rows if r["weight_lbs"] and r["reps"]]
-        top_row = (
-            max(weighted, key=lambda r: est_one_rep_max(float(r["weight_lbs"]), int(r["reps"])))
-            if weighted
-            else None
-        )
-        top_set: WorkoutSet | None = None
-        if top_row is not None:
-            top_set = WorkoutSet(
-                set_index=top_row["set_index"],
-                set_type=top_row["set_type"],
-                weight_lbs=top_row["weight_lbs"],
-                reps=top_row["reps"],
-                rpe=top_row["rpe"],
-                distance_km=top_row["distance_km"],
-                duration_seconds=top_row["duration_seconds"],
-            )
+        # Single pass: accumulate volume and track the highest-est-1RM set, then
+        # reference the already-built ``sets`` element for ``top_set``.
+        volume = 0.0
+        top_index: int | None = None
+        best_e1rm = -1.0
+        for i, r in enumerate(rows):
+            volume += _set_volume(r)
+            if r["weight_lbs"] and r["reps"]:
+                e1rm = est_one_rep_max(float(r["weight_lbs"]), int(r["reps"]))
+                if e1rm > best_e1rm:
+                    best_e1rm = e1rm
+                    top_index = i
+        top_set = sets[top_index] if top_index is not None else None
         exercises.append(
             WorkoutExercise(
                 exercise_title=title,
@@ -216,11 +235,49 @@ def _totals(rows: list[dict]) -> ActivityTotals:
     )
 
 
+def _build_vol_rows(history: list[dict], start: DateValue, end: DateValue) -> list[dict]:
+    """Turn current-period strength sets into rows for :func:`bucket_volume`.
+
+    Each in-period set yields one volume-only row (``duration_min=0``); each
+    distinct ``workout_id`` additionally yields one duration-only row
+    (``volume_lbs=0``). Splitting volume from duration this way prevents the
+    workout's minutes from being multiplied by its set count when the buckets
+    sum each field.
+
+    **Inputs:**
+    - history (list[dict]): Strength-set rows with ``date``, ``weight_lbs``,
+      ``reps``, ``duration_min``, ``workout_id``.
+    - start (date): Inclusive period start; sets before it are skipped.
+    - end (date): Inclusive period end; sets after it are skipped.
+
+    **Outputs:**
+    - list[dict]: Rows with ``date``, ``volume_lbs``, ``duration_min`` keys.
+    """
+    vol_rows: list[dict] = []
+    seen_workout_ids: set = set()
+    for h in history:
+        if not (start <= h["date"] <= end):
+            continue
+        vol_rows.append({"date": h["date"], "volume_lbs": _set_volume(h), "duration_min": 0.0})
+        wid = h["workout_id"]
+        if wid not in seen_workout_ids:
+            seen_workout_ids.add(wid)
+            vol_rows.append(
+                {
+                    "date": h["date"],
+                    "volume_lbs": 0.0,
+                    "duration_min": float(h["duration_min"] or 0),
+                }
+            )
+    return vol_rows
+
+
 async def build_summary(
     session: AsyncSession,
     user_key: str,
     period: ActivityPeriod,
     anchor: DateValue,
+    tz: str,
 ) -> ActivitySummary:
     """Assemble the week/month/year trend summary for a period.
 
@@ -233,6 +290,8 @@ async def build_summary(
     - user_key (str): Owning user's scoping key.
     - period (ActivityPeriod): Granularity — ``"week"``, ``"month"``, or ``"year"``.
     - anchor (date): A date inside the target period (defaults applied by the router).
+    - tz (str): IANA timezone name used to resolve workout dates into local
+      calendar periods (passed through from the router).
 
     **Outputs:**
     - ActivitySummary: Assembled trend summary including totals, period-over-period
@@ -240,59 +299,18 @@ async def build_summary(
     """
     start, end = period_bounds(period, anchor)
     p_start, p_end = previous_bounds(period, anchor)
-    tz = get_settings().timezone
     repo = ActivityReadRepository(session)
     cur = await repo.workouts_in_range(user_key, start, end, tz=tz)
     prev = await repo.workouts_in_range(user_key, p_start, p_end, tz=tz)
     history = await repo.strength_history(user_key, end, tz=tz)
     cur_t, prev_t = _totals(cur), _totals(prev)
     deltas = ActivityDeltas(
-        workout_count=MetricDelta(
-            current=cur_t.workout_count,
-            previous=prev_t.workout_count,
-            pct=pct_change(cur_t.workout_count, prev_t.workout_count),
-        ),
-        total_duration_min=MetricDelta(
-            current=cur_t.total_duration_min,
-            previous=prev_t.total_duration_min,
-            pct=pct_change(cur_t.total_duration_min, prev_t.total_duration_min),
-        ),
-        total_active_energy_cal=MetricDelta(
-            current=cur_t.total_active_energy_cal,
-            previous=prev_t.total_active_energy_cal,
-            pct=pct_change(cur_t.total_active_energy_cal, prev_t.total_active_energy_cal),
+        workout_count=_metric_delta(cur_t.workout_count, prev_t.workout_count),
+        total_duration_min=_metric_delta(cur_t.total_duration_min, prev_t.total_duration_min),
+        total_active_energy_cal=_metric_delta(
+            cur_t.total_active_energy_cal, prev_t.total_active_energy_cal
         ),
     )
-    # Volume rows: one per-set volume row (duration_min=0) plus one duration row per
-    # distinct workout_id within the current period.  Naively summing duration_min on
-    # every set row would multiply the workout's minutes by its set count; tracking
-    # seen workout ids and emitting a single duration-only row per workout avoids that.
-    vol_rows: list[dict] = []
-    seen_workout_ids: set = set()
-    for h in history:
-        if not (start <= h["date"] <= end):
-            continue
-        vol_rows.append(
-            {
-                "date": h["date"],
-                "volume_lbs": (
-                    float(h["weight_lbs"]) * int(h["reps"])
-                    if (h["weight_lbs"] and h["reps"])
-                    else 0.0
-                ),
-                "duration_min": 0.0,
-            }
-        )
-        wid = h["workout_id"]
-        if wid not in seen_workout_ids:
-            seen_workout_ids.add(wid)
-            vol_rows.append(
-                {
-                    "date": h["date"],
-                    "volume_lbs": 0.0,
-                    "duration_min": float(h["duration_min"] or 0),
-                }
-            )
     return ActivitySummary(
         period=period,
         period_start=start,
@@ -300,6 +318,6 @@ async def build_summary(
         totals=cur_t,
         deltas=deltas,
         by_type=rollup_by_type(cur, top_n=5),
-        volume_series=bucket_volume(vol_rows, period, start, end),
+        volume_series=bucket_volume(_build_vol_rows(history, start, end), period, start, end),
         top_lifts=compute_top_lifts(history, period_start=start),
     )

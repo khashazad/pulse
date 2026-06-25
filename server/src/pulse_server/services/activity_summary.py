@@ -89,22 +89,27 @@ def rollup_by_type(rows: list[dict], top_n: int = 5) -> list[TypeBreakdown]:
     - list[TypeBreakdown]: Sorted desc by duration, each with its share (0..1) of
       total duration; a trailing ``Other`` slice when more than ``top_n`` types.
     """
-    agg: dict[str, list[float]] = {}
+    agg: dict[str, dict[str, float]] = {}
     for r in rows:
-        a = agg.setdefault(r["activity_type"], [0.0, 0.0])
-        a[0] += float(r["duration_min"] or 0)
-        a[1] += 1
-    total = sum(v[0] for v in agg.values()) or 1.0
-    ordered = sorted(agg.items(), key=lambda kv: kv[1][0], reverse=True)
+        a = agg.setdefault(r["activity_type"], {"duration": 0.0, "count": 0.0})
+        a["duration"] += float(r["duration_min"] or 0)
+        a["count"] += 1
+    total = sum(a["duration"] for a in agg.values()) or 1.0
+    ordered = sorted(agg.items(), key=lambda kv: kv[1]["duration"], reverse=True)
     out: list[TypeBreakdown] = []
-    for name, (dur, count) in ordered[:top_n]:
+    for name, a in ordered[:top_n]:
         out.append(
-            TypeBreakdown(activity_type=name, count=int(count), duration_min=dur, share=dur / total)
+            TypeBreakdown(
+                activity_type=name,
+                count=int(a["count"]),
+                duration_min=a["duration"],
+                share=a["duration"] / total,
+            )
         )
     rest = ordered[top_n:]
     if rest:
-        dur = sum(v[0] for _, v in rest)
-        count = sum(v[1] for _, v in rest)
+        dur = sum(a["duration"] for _, a in rest)
+        count = sum(a["count"] for _, a in rest)
         out.append(
             TypeBreakdown(
                 activity_type="Other", count=int(count), duration_min=dur, share=dur / total

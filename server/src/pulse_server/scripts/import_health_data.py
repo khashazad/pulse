@@ -95,7 +95,12 @@ def main(argv: list[str] | None = None) -> int:
     summary = asyncio.run(run_import(args.apple, args.hevy, user_key))
 
     for name, (inserted, updated) in summary.items():
-        print(f"{name:16} inserted={inserted:>6} updated={updated:>6}")
+        # `link_apple_to_strength` is a clear-and-reassign pass, not an upsert, so
+        # the (inserted, updated) framing doesn't apply — report its link count plainly.
+        if name == "linked":
+            print(f"{name:16} links={inserted:>6}")
+        else:
+            print(f"{name:16} inserted={inserted:>6} updated={updated:>6}")
     return 0
 
 

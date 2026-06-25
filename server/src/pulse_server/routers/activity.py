@@ -26,7 +26,9 @@ from pulse_server.services.activity_service import (
     list_workout_feed,
 )
 
+settings = get_settings()
 router = APIRouter(dependencies=[Depends(require_session)])
+TZ = ZoneInfo(settings.timezone)
 
 
 @router.get("/activity/workouts", response_model=WorkoutFeedPage)
@@ -79,8 +81,8 @@ async def get_activity_summary(
       breakdown, volume series, and top lifts.
     """
     if anchor is None:
-        anchor = DateTimeValue.now(tz=ZoneInfo(get_settings().timezone)).date()
-    return await build_summary(session, request.state.user_key, period, anchor)
+        anchor = DateTimeValue.now(tz=TZ).date()
+    return await build_summary(session, request.state.user_key, period, anchor, settings.timezone)
 
 
 @router.get("/activity/workouts/{workout_id}", response_model=ActivityWorkoutDetail)

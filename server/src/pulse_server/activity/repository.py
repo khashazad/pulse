@@ -4,7 +4,7 @@ Postgres ``xmax = 0`` trick in a RETURNING clause."""
 
 from __future__ import annotations
 
-from sqlalchemy import Table, select, text, update
+from sqlalchemy import Table, bindparam, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -250,10 +250,11 @@ async def link_apple_to_strength(session: AsyncSession, user_key: str) -> int:
         used_strength.add(s_id)
         assignments.append((a_id, s_id))
 
-    for a_id, s_id in assignments:
+    if assignments:
         await session.execute(
             update(apple_workouts)
-            .where(apple_workouts.c.id == a_id)
-            .values(linked_strength_workout_id=s_id)
+            .where(apple_workouts.c.id == bindparam("a_id"))
+            .values(linked_strength_workout_id=bindparam("s_id")),
+            [{"a_id": a_id, "s_id": s_id} for a_id, s_id in assignments],
         )
     return len(assignments)
