@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<HealthData locale="en_US">
+ <Record type="HKQuantityTypeIdentifierHeartRate" sourceName="Watch" startDate="2026-06-12 08:00:00 -0400" endDate="2026-06-12 08:00:01 -0400" value="72"/>
+ <Workout workoutActivityType="HKWorkoutActivityTypeTraditionalStrengthTraining" duration="68.0" durationUnit="min" sourceName="Khashayar's Apple Watch" startDate="2026-06-12 07:26:00 -0400" endDate="2026-06-12 08:34:00 -0400">
+  <MetadataEntry key="HKIndoorWorkout" value="1"/>
+  <MetadataEntry key="HKAverageMETs" value="6.5 kcal/hr·kg"/>
+  <MetadataEntry key="HKWeatherTemperature" value="73.4 degF"/>
+  <MetadataEntry key="HKWeatherHumidity" value="4300 %"/>
+  <MetadataEntry key="HKTimeZone" value="America/Toronto"/>
+  <MetadataEntry key="HKElevationAscended" value="8652 cm"/>
+  <WorkoutStatistics type="HKQuantityTypeIdentifierActiveEnergyBurned" sum="408.38" unit="Cal"/>
+  <WorkoutStatistics type="HKQuantityTypeIdentifierBasalEnergyBurned" sum="154.7" unit="Cal"/>
+  <WorkoutStatistics type="HKQuantityTypeIdentifierHeartRate" average="118.2" maximum="160.0" unit="count/min"/>
+  <WorkoutStatistics type="HKQuantityTypeIdentifierDistanceWalkingRunning" sum="4.82" unit="km"/>
+  <WorkoutStatistics type="HKQuantityTypeIdentifierStepCount" sum="320" unit="count"/>
+  <WorkoutStatistics type="HKQuantityTypeIdentifierFlightsClimbed" sum="3" unit="count"/>
+  <WorkoutRoute sourceName="Watch" startDate="2026-06-12 07:26:00 -0400" endDate="2026-06-12 08:34:00 -0400">
+   <FileReference path="/workout-routes/route_2026-06-12_7.26am.gpx"/>
+  </WorkoutRoute>
+ </Workout>
+ <Workout workoutActivityType="HKWorkoutActivityTypeYoga" duration="30.0" durationUnit="min" sourceName="Watch" startDate="2026-06-13 18:00:00 -0400" endDate="2026-06-13 18:30:00 -0400">
+ </Workout>
+ <ActivitySummary dateComponents="2026-06-12" activeEnergyBurned="577.8" activeEnergyBurnedGoal="780" activeEnergyBurnedUnit="Cal" appleExerciseTime="55" appleExerciseTimeGoal="60" appleStandHours="7" appleStandHoursGoal="12"/>
+ <ActivitySummary dateComponents="2026-06-13" activeEnergyBurned="1030.4" activeEnergyBurnedGoal="780" activeEnergyBurnedUnit="Cal" appleExerciseTime="91" appleExerciseTimeGoal="60" appleStandHours="11" appleStandHoursGoal="12"/>
+</HealthData>
