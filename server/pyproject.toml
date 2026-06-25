@@ -18,6 +18,7 @@ dependencies = [
     "Pillow>=10.4",
     "obstore>=0.10.1",
     "sentry-sdk>=2.63.0",
+    "defusedxml>=0.7.1",
 ]
 
 [project.optional-dependencies]

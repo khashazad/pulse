@@ -1,0 +1,228 @@
+"""Stream an Apple Health ``export.xml`` into workout and daily-activity value
+types. Uses ``iterparse`` and clears each element so the 1.4 GB file never
+loads whole. Raw ``<Record>`` samples are skipped."""
+
+from __future__ import annotations
+
+from datetime import date as DateValue
+from datetime import datetime as DateTimeValue
+from pathlib import Path
+from xml.etree.ElementTree import Element
+
+from defusedxml.ElementTree import iterparse
+
+from pulse_server.activity.models import AppleWorkout, DailyActivity
+
+_APPLE_TIME_FORMAT = "%Y-%m-%d %H:%M:%S %z"
+_WORKOUT_PREFIX = "HKWorkoutActivityType"
+_QUANTITY_PREFIX = "HKQuantityTypeIdentifier"
+_HANDLED_TAGS = {"Workout", "ActivitySummary", "Record"}
+
+
+def _require(value: str | None, attr: str) -> str:
+    """Return a required XML attribute value, raising if absent.
+
+    **Inputs:**
+    - value (str | None): The raw attribute read from the element.
+    - attr (str): Attribute name, used in the error message.
+
+    **Outputs:**
+    - str: The non-None value.
+
+    **Raises/Throws:**
+    - ValueError: If value is None (attribute missing from element).
+    """
+    if value is None:
+        raise ValueError(f"missing required attribute: {attr}")
+    return value
+
+
+def _parse_apple_time(value: str) -> DateTimeValue:
+    """Parse an Apple timestamp with explicit offset.
+
+    **Inputs:**
+    - value (str): e.g. ``"2026-06-12 07:26:00 -0400"``.
+
+    **Outputs:**
+    - datetime: Timezone-aware datetime.
+    """
+    return DateTimeValue.strptime(value, _APPLE_TIME_FORMAT)
+
+
+def _leading_number(value: str | None) -> float | None:
+    """Extract the leading numeric token from a metadata value.
+
+    Apple metadata values look like ``"73.4 degF"`` or ``"8652 cm"``; this
+    returns the number, or None when absent/non-numeric.
+
+    **Inputs:**
+    - value (str | None): Raw metadata value.
+
+    **Outputs:**
+    - float | None: Leading number, or None.
+    """
+    if not value:
+        return None
+    token = value.strip().split(" ", 1)[0]
+    try:
+        return float(token)
+    except ValueError:
+        return None
+
+
+def _stat_float(stat: Element | None, attr: str) -> float | None:
+    """Read a numeric attribute off a ``<WorkoutStatistics>`` element, or None.
+
+    **Inputs:**
+    - stat (Element | None): The statistics element, or None when absent.
+    - attr (str): Attribute name to read (e.g. ``"sum"``, ``"average"``).
+
+    **Outputs:**
+    - float | None: Parsed value, or None when the element or attribute is
+      missing (or empty).
+    """
+    value = stat.get(attr) if stat is not None else None
+    return float(value) if value else None
+
+
+def _build_workout(elem: Element, user_key: str) -> AppleWorkout:
+    """Build an ``AppleWorkout`` from a parsed ``<Workout>`` element.
+
+    **Inputs:**
+    - elem (Element): The ``<Workout>`` element with its children.
+    - user_key (str): Owning user key.
+
+    **Outputs:**
+    - AppleWorkout: Populated value type (missing stats become None).
+    """
+    metadata = {m.get("key"): m.get("value") for m in elem.findall("MetadataEntry")}
+    stats: dict[str, Element] = {
+        (s.get("type") or "").removeprefix(_QUANTITY_PREFIX): s
+        for s in elem.findall("WorkoutStatistics")
+    }
+
+    def stat_sum(name: str) -> float | None:
+        return _stat_float(stats.get(name), "sum")
+
+    # Use an explicit None check, not `or`: a genuine 0.0 walking distance must
+    # be kept, not fall through to the cycling stat.
+    distance = stat_sum("DistanceWalkingRunning")
+    if distance is None:
+        distance = stat_sum("DistanceCycling")
+
+    heart = stats.get("HeartRate")
+    avg_hr = _stat_float(heart, "average")
+    max_hr = _stat_float(heart, "maximum")
+
+    steps = stat_sum("StepCount")
+    flights = stat_sum("FlightsClimbed")
+
+    indoor_raw = metadata.get("HKIndoorWorkout")
+    indoor = (indoor_raw == "1") if indoor_raw is not None else None
+
+    elevation_cm = _leading_number(metadata.get("HKElevationAscended"))
+    elevation_m = elevation_cm / 100.0 if elevation_cm is not None else None
+
+    route_ref = elem.find("WorkoutRoute/FileReference")
+    route_path = route_ref.get("path") if route_ref is not None else None
+
+    duration_raw = elem.get("duration")
+
+    return AppleWorkout(
+        user_key=user_key,
+        activity_type=_require(elem.get("workoutActivityType"), "workoutActivityType").removeprefix(
+            _WORKOUT_PREFIX
+        ),
+        source_name=elem.get("sourceName"),
+        start_time=_parse_apple_time(_require(elem.get("startDate"), "startDate")),
+        end_time=_parse_apple_time(_require(elem.get("endDate"), "endDate")),
+        duration_min=float(duration_raw) if duration_raw else None,
+        active_energy_cal=stat_sum("ActiveEnergyBurned"),
+        basal_energy_cal=stat_sum("BasalEnergyBurned"),
+        avg_heart_rate=avg_hr,
+        max_heart_rate=max_hr,
+        distance_km=distance,
+        step_count=int(steps) if steps is not None else None,
+        flights_climbed=int(flights) if flights is not None else None,
+        indoor=indoor,
+        elevation_ascended_m=elevation_m,
+        avg_mets=_leading_number(metadata.get("HKAverageMETs")),
+        temperature_f=_leading_number(metadata.get("HKWeatherTemperature")),
+        humidity_pct=_leading_number(metadata.get("HKWeatherHumidity")),
+        timezone=metadata.get("HKTimeZone"),
+        route_gpx_path=route_path,
+    )
+
+
+def _build_daily(elem: Element, user_key: str) -> DailyActivity:
+    """Build a ``DailyActivity`` from an ``<ActivitySummary>`` element.
+
+    **Inputs:**
+    - elem (Element): The ``<ActivitySummary>`` element.
+    - user_key (str): Owning user key.
+
+    **Outputs:**
+    - DailyActivity: Populated value type.
+    """
+    active_energy_goal_raw = _require(elem.get("activeEnergyBurnedGoal"), "activeEnergyBurnedGoal")
+    exercise_goal_raw = _require(elem.get("appleExerciseTimeGoal"), "appleExerciseTimeGoal")
+    return DailyActivity(
+        user_key=user_key,
+        date=DateValue.fromisoformat(_require(elem.get("dateComponents"), "dateComponents")),
+        active_energy_cal=float(_require(elem.get("activeEnergyBurned"), "activeEnergyBurned")),
+        active_energy_goal=float(active_energy_goal_raw),
+        exercise_minutes=int(float(_require(elem.get("appleExerciseTime"), "appleExerciseTime"))),
+        exercise_goal=int(float(exercise_goal_raw)),
+        stand_hours=int(float(_require(elem.get("appleStandHours"), "appleStandHours"))),
+        stand_goal=int(float(_require(elem.get("appleStandHoursGoal"), "appleStandHoursGoal"))),
+    )
+
+
+def parse_apple_export(
+    path: str | Path, *, user_key: str
+) -> tuple[list[AppleWorkout], list[DailyActivity]]:
+    """Stream an Apple Health export into workouts and daily activity.
+
+    Uses ``iterparse`` with both ``start`` and ``end`` events. The root
+    element is captured on the first ``start`` event and cleared after each
+    handled element so empty shells do not accumulate on the document root
+    across millions of ``<Record>`` entries. Without root clearing, each
+    ``elem.clear()`` empties the element's own subtree but leaves the shell
+    attached to the root, causing linear memory growth with element count.
+
+    **Inputs:**
+    - path (str | Path): Path to ``export.xml``.
+    - user_key (str): Owning user key applied to every row.
+
+    **Outputs:**
+    - tuple[list[AppleWorkout], list[DailyActivity]]: All workout sessions and
+      daily activity summaries; raw samples are ignored.
+
+    **Raises/Throws:**
+    - ValueError: If a ``<Workout>`` or ``<ActivitySummary>`` is missing a
+      required attribute, or a timestamp/date cannot be parsed.
+    - xml.etree.ElementTree.ParseError: If the XML is not well-formed.
+    - OSError: If the file cannot be opened or read.
+    """
+    workouts: list[AppleWorkout] = []
+    days: list[DailyActivity] = []
+    root: Element | None = None
+
+    for event, elem in iterparse(str(path), events=("start", "end")):
+        if event == "start":
+            if root is None:
+                root = elem
+            continue
+        # event == "end" from here down
+        if elem.tag == "Workout":
+            workouts.append(_build_workout(elem, user_key))
+        elif elem.tag == "ActivitySummary":
+            days.append(_build_daily(elem, user_key))
+        if elem.tag in _HANDLED_TAGS:
+            # Clear the element and the now-empty shell off the root so memory
+            # stays flat across millions of <Record> entries.
+            elem.clear()
+            if root is not None:
+                root.clear()
+
+    return workouts, days

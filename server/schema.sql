@@ -390,6 +390,80 @@ create trigger meals_alias_uniqueness
   before insert or update on meals
   for each row execute function check_meals_alias_uniqueness();
 
+-- ===== Activity import: Apple Health workouts + Hevy strength + daily activity =====
+
+create table if not exists apple_workouts (
+  id uuid primary key,
+  user_key text not null,
+  activity_type text not null,
+  source_name text,
+  start_time timestamptz not null,
+  end_time timestamptz not null,
+  duration_min numeric,
+  active_energy_cal numeric,
+  basal_energy_cal numeric,
+  avg_heart_rate numeric,
+  max_heart_rate numeric,
+  distance_km numeric,
+  step_count integer,
+  flights_climbed integer,
+  indoor boolean,
+  elevation_ascended_m numeric,
+  avg_mets numeric,
+  temperature_f numeric,
+  humidity_pct numeric,
+  timezone text,
+  route_gpx_path text,
+  linked_strength_workout_id uuid,
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_apple_workouts_user_key_start_time
+  on apple_workouts (user_key, start_time);
+
+create table if not exists strength_workouts (
+  id uuid primary key,
+  user_key text not null,
+  title text not null,
+  start_time timestamptz not null,
+  end_time timestamptz not null,
+  description text,
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_strength_workouts_user_key_start_time
+  on strength_workouts (user_key, start_time);
+
+create table if not exists strength_sets (
+  id uuid primary key,
+  strength_workout_id uuid not null references strength_workouts (id) on delete cascade,
+  user_key text not null,
+  exercise_title text not null,
+  superset_id text,
+  exercise_notes text,
+  set_index integer not null,
+  set_type text,
+  weight_lbs numeric,
+  reps integer,
+  distance_km numeric,
+  duration_seconds integer,
+  rpe numeric,
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_strength_sets_workout_id
+  on strength_sets (strength_workout_id);
+
+create table if not exists daily_activity (
+  user_key text not null,
+  date date not null,
+  active_energy_cal numeric not null,
+  active_energy_goal numeric not null,
+  exercise_minutes integer not null,
+  exercise_goal integer not null,
+  stand_hours integer not null,
+  stand_goal integer not null,
+  created_at timestamptz not null default now(),
+  primary key (user_key, date)
+);
+
 -- Keep public tables off the Supabase Data API surface (lints 0026/0027,
 -- pg_graphql anon/authenticated table exposed). The backend connects as the
 -- `postgres` owner, which is unaffected by these grants. Guarded on role
