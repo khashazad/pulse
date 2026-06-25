@@ -3,14 +3,20 @@ from ActivityReadRepository rows into the response DTOs."""
 
 from __future__ import annotations
 
+from datetime import date as DateValue
 from datetime import datetime as DateTimeValue
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pulse_server.models.activity import (
+    ActivityDeltas,
+    ActivityPeriod,
+    ActivitySummary,
+    ActivityTotals,
     ActivityWorkoutDetail,
     ActivityWorkoutSummary,
+    MetricDelta,
     StrengthBrief,
     StrengthTotals,
     WorkoutExercise,
@@ -18,7 +24,15 @@ from pulse_server.models.activity import (
     WorkoutSet,
 )
 from pulse_server.repositories.activity import ActivityReadRepository
-from pulse_server.services.activity_summary import est_one_rep_max
+from pulse_server.services.activity_summary import (
+    bucket_volume,
+    compute_top_lifts,
+    est_one_rep_max,
+    pct_change,
+    period_bounds,
+    previous_bounds,
+    rollup_by_type,
+)
 
 MAX_FEED_LIMIT = 100
 DEFAULT_FEED_LIMIT = 50
@@ -182,4 +196,90 @@ async def get_workout_detail(
         indoor=w["indoor"],
         exercises=exercises,
         strength_totals=totals,
+    )
+
+
+def _totals(rows: list[dict]) -> ActivityTotals:
+    """Sum workout count, duration, and active energy over rows.
+
+    **Inputs:**
+    - rows (list[dict]): Workout rows with ``duration_min`` and ``active_energy_cal``.
+
+    **Outputs:**
+    - ActivityTotals: Aggregated headline totals for the given set of rows.
+    """
+    return ActivityTotals(
+        workout_count=len(rows),
+        total_duration_min=sum(float(r["duration_min"] or 0) for r in rows),
+        total_active_energy_cal=sum(float(r["active_energy_cal"] or 0) for r in rows),
+    )
+
+
+async def build_summary(
+    session: AsyncSession,
+    user_key: str,
+    period: ActivityPeriod,
+    anchor: DateValue,
+) -> ActivitySummary:
+    """Assemble the week/month/year trend summary for a period.
+
+    Fetches current and previous period workouts plus full strength history,
+    then delegates to the pure-math helpers in ``activity_summary`` to
+    produce totals, deltas, by-type breakdown, volume series, and top lifts.
+
+    **Inputs:**
+    - session (AsyncSession): Active database session.
+    - user_key (str): Owning user's scoping key.
+    - period (ActivityPeriod): Granularity — ``"week"``, ``"month"``, or ``"year"``.
+    - anchor (date): A date inside the target period (defaults applied by the router).
+
+    **Outputs:**
+    - ActivitySummary: Assembled trend summary including totals, period-over-period
+      deltas, by-type breakdown, volume series, and top lifts.
+    """
+    start, end = period_bounds(period, anchor)
+    p_start, p_end = previous_bounds(period, anchor)
+    repo = ActivityReadRepository(session)
+    cur = await repo.workouts_in_range(user_key, start, end)
+    prev = await repo.workouts_in_range(user_key, p_start, p_end)
+    history = await repo.strength_history(user_key, end)
+    cur_t, prev_t = _totals(cur), _totals(prev)
+    deltas = ActivityDeltas(
+        workout_count=MetricDelta(
+            current=cur_t.workout_count,
+            previous=prev_t.workout_count,
+            pct=pct_change(cur_t.workout_count, prev_t.workout_count),
+        ),
+        total_duration_min=MetricDelta(
+            current=cur_t.total_duration_min,
+            previous=prev_t.total_duration_min,
+            pct=pct_change(cur_t.total_duration_min, prev_t.total_duration_min),
+        ),
+        total_active_energy_cal=MetricDelta(
+            current=cur_t.total_active_energy_cal,
+            previous=prev_t.total_active_energy_cal,
+            pct=pct_change(cur_t.total_active_energy_cal, prev_t.total_active_energy_cal),
+        ),
+    )
+    # Volume rows: strength sets within the current period, with per-set volume.
+    vol_rows = [
+        {
+            "date": h["date"],
+            "volume_lbs": (
+                float(h["weight_lbs"]) * int(h["reps"]) if (h["weight_lbs"] and h["reps"]) else 0.0
+            ),
+            "duration_min": 0.0,
+        }
+        for h in history
+        if start <= h["date"] <= end
+    ]
+    return ActivitySummary(
+        period=period,
+        period_start=start,
+        period_end=end,
+        totals=cur_t,
+        deltas=deltas,
+        by_type=rollup_by_type(cur, top_n=5),
+        volume_series=bucket_volume(vol_rows, period, start, end),
+        top_lifts=compute_top_lifts(history, period_start=start),
     )
