@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 import pytest
 import pytest_asyncio
@@ -105,20 +105,28 @@ async def test_strength_upsert_links_sets_to_workout(session):
         duration_seconds=None,
         rpe=8.0,
     )
-    inserted, _ = await repository.upsert_strength(session, [w], [s])
+    inserted, updated = await repository.upsert_strength(session, [w], [s])
     await session.commit()
     assert inserted == 2  # 1 workout + 1 set
+    assert updated == 0
 
     joined = await session.scalar(
         select(func.count()).select_from(strength_sets.join(strength_workouts))
     )
     assert joined == 1
 
+    inserted2, updated2 = await repository.upsert_strength(session, [w], [s])
+    await session.commit()
+    assert inserted2 == 0
+    assert updated2 == 2  # 1 workout + 1 set, both updated in place
+    wcount = await session.scalar(select(func.count()).select_from(strength_workouts))
+    scount = await session.scalar(select(func.count()).select_from(strength_sets))
+    assert wcount == 1
+    assert scount == 1
+
 
 @pytest.mark.asyncio
 async def test_daily_upsert_is_idempotent(session):
-    from datetime import date
-
     day = DailyActivity(
         user_key="khash",
         date=date(2026, 6, 12),
@@ -133,3 +141,5 @@ async def test_daily_upsert_is_idempotent(session):
     await session.commit()
     assert (await repository.upsert_daily_activity(session, [day])) == (0, 1)
     await session.commit()
+    count = await session.scalar(select(func.count()).select_from(daily_activity))
+    assert count == 1

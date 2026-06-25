@@ -4,7 +4,7 @@ Postgres ``xmax = 0`` trick in a RETURNING clause."""
 
 from __future__ import annotations
 
-from sqlalchemy import text
+from sqlalchemy import Table, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -25,7 +25,9 @@ from pulse_server.repositories.tables import (
 _INSERTED_FLAG = text("(xmax = 0) AS inserted")
 
 
-async def _upsert_row(session: AsyncSession, table, values: dict, conflict_cols: list[str]) -> bool:
+async def _upsert_row(
+    session: AsyncSession, table: Table, values: dict, conflict_cols: list[str]
+) -> bool:
     """Upsert one row and report whether it was freshly inserted.
 
     **Inputs:**
