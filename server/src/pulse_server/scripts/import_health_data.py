@@ -42,6 +42,7 @@ async def run_import(
         "apple_workouts": (0, 0),
         "daily_activity": (0, 0),
         "strength": (0, 0),
+        "linked": (0, 0),
     }
 
     await db.init_pool(settings.database_url)
@@ -56,6 +57,7 @@ async def run_import(
             if hevy_path:
                 s_workouts, s_sets = parse_hevy_csv(hevy_path, user_key=user_key, tz=tz)
                 summary["strength"] = await repository.upsert_strength(session, s_workouts, s_sets)
+            summary["linked"] = (await repository.link_apple_to_strength(session, user_key), 0)
     finally:
         await db.close_pool()
 
