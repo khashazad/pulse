@@ -7,9 +7,22 @@ from datetime import datetime as DateTimeValue
 from datetime import tzinfo
 from pathlib import Path
 
+from pulse_server.activity import ids
 from pulse_server.activity.models import StrengthSet, StrengthWorkout
 
 _HEVY_TIME_FORMAT = "%d %b %Y, %H:%M"
+
+
+def _opt_str(value: str | None) -> str | None:
+    """Strip a CSV cell, returning None when blank or missing.
+
+    **Inputs:**
+    - value (str | None): Raw cell text.
+
+    **Outputs:**
+    - str | None: Stripped non-empty string, or None.
+    """
+    return (value or "").strip() or None
 
 
 def _opt_float(value: str | None) -> float | None:
@@ -70,6 +83,7 @@ def parse_hevy_csv(
       headers and the flat list of sets.
     """
     workouts: dict[tuple[str, DateTimeValue], StrengthWorkout] = {}
+    workout_ids: dict[tuple[str, DateTimeValue], str] = {}
     sets: list[StrengthSet] = []
 
     with open(path, newline="", encoding="utf-8") as handle:
@@ -84,18 +98,18 @@ def parse_hevy_csv(
                     title=title,
                     start_time=start,
                     end_time=end,
-                    description=(row.get("description") or "").strip() or None,
+                    description=_opt_str(row.get("description")),
                 )
+                workout_ids[key] = ids.strength_workout_id(user_key, title, start)
             sets.append(
                 StrengthSet(
                     user_key=user_key,
-                    workout_title=title,
-                    workout_start_time=start,
+                    strength_workout_id=workout_ids[key],
                     exercise_title=row["exercise_title"],
-                    superset_id=(row.get("superset_id") or "").strip() or None,
-                    exercise_notes=(row.get("exercise_notes") or "").strip() or None,
+                    superset_id=_opt_str(row.get("superset_id")),
+                    exercise_notes=_opt_str(row.get("exercise_notes")),
                     set_index=int(row["set_index"]),
-                    set_type=(row.get("set_type") or "").strip() or None,
+                    set_type=_opt_str(row.get("set_type")),
                     weight_lbs=_opt_float(row.get("weight_lbs")),
                     reps=_opt_int(row.get("reps")),
                     distance_km=_opt_float(row.get("distance_km")),

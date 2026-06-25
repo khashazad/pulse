@@ -16,6 +16,7 @@ from pulse_server.activity.models import AppleWorkout, DailyActivity
 _APPLE_TIME_FORMAT = "%Y-%m-%d %H:%M:%S %z"
 _WORKOUT_PREFIX = "HKWorkoutActivityType"
 _QUANTITY_PREFIX = "HKQuantityTypeIdentifier"
+_HANDLED_TAGS = {"Workout", "ActivitySummary", "Record"}
 
 
 def _require(value: str | None, attr: str) -> str:
@@ -69,6 +70,21 @@ def _leading_number(value: str | None) -> float | None:
         return None
 
 
+def _stat_float(stat: Element | None, attr: str) -> float | None:
+    """Read a numeric attribute off a ``<WorkoutStatistics>`` element, or None.
+
+    **Inputs:**
+    - stat (Element | None): The statistics element, or None when absent.
+    - attr (str): Attribute name to read (e.g. ``"sum"``, ``"average"``).
+
+    **Outputs:**
+    - float | None: Parsed value, or None when the element or attribute is
+      missing (or empty).
+    """
+    value = stat.get(attr) if stat is not None else None
+    return float(value) if value else None
+
+
 def _build_workout(elem: Element, user_key: str) -> AppleWorkout:
     """Build an ``AppleWorkout`` from a parsed ``<Workout>`` element.
 
@@ -86,21 +102,13 @@ def _build_workout(elem: Element, user_key: str) -> AppleWorkout:
     }
 
     def stat_sum(name: str) -> float | None:
-        s = stats.get(name)
-        if s is None:
-            return None
-        sum_raw = s.get("sum")
-        return float(sum_raw) if sum_raw else None
+        return _stat_float(stats.get(name), "sum")
 
-    distance = stat_sum("DistanceWalkingRunning")
-    if distance is None:
-        distance = stat_sum("DistanceCycling")
+    distance = stat_sum("DistanceWalkingRunning") or stat_sum("DistanceCycling")
 
     heart = stats.get("HeartRate")
-    avg_raw = heart.get("average") if heart is not None else None
-    avg_hr = float(avg_raw) if avg_raw else None
-    max_raw = heart.get("maximum") if heart is not None else None
-    max_hr = float(max_raw) if max_raw else None
+    avg_hr = _stat_float(heart, "average")
+    max_hr = _stat_float(heart, "maximum")
 
     steps = stat_sum("StepCount")
     flights = stat_sum("FlightsClimbed")
@@ -118,7 +126,9 @@ def _build_workout(elem: Element, user_key: str) -> AppleWorkout:
 
     return AppleWorkout(
         user_key=user_key,
-        activity_type=(elem.get("workoutActivityType") or "").removeprefix(_WORKOUT_PREFIX),
+        activity_type=_require(elem.get("workoutActivityType"), "workoutActivityType").removeprefix(
+            _WORKOUT_PREFIX
+        ),
         source_name=elem.get("sourceName"),
         start_time=_parse_apple_time(_require(elem.get("startDate"), "startDate")),
         end_time=_parse_apple_time(_require(elem.get("endDate"), "endDate")),
@@ -196,15 +206,11 @@ def parse_apple_export(
         # event == "end" from here down
         if elem.tag == "Workout":
             workouts.append(_build_workout(elem, user_key))
-            elem.clear()
-            if root is not None:
-                root.clear()
         elif elem.tag == "ActivitySummary":
             days.append(_build_daily(elem, user_key))
-            elem.clear()
-            if root is not None:
-                root.clear()
-        elif elem.tag == "Record":
+        if elem.tag in _HANDLED_TAGS:
+            # Clear the element and the now-empty shell off the root so memory
+            # stays flat across millions of <Record> entries.
             elem.clear()
             if root is not None:
                 root.clear()

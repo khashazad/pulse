@@ -10,7 +10,7 @@ import pytest_asyncio
 from sqlalchemy import func, select
 
 from pulse_server import db
-from pulse_server.activity import repository
+from pulse_server.activity import ids, repository
 from pulse_server.activity.models import (
     AppleWorkout,
     DailyActivity,
@@ -92,8 +92,7 @@ async def test_strength_upsert_links_sets_to_workout(session):
     )
     s = StrengthSet(
         user_key="khash",
-        workout_title="Chest Day",
-        workout_start_time=t,
+        strength_workout_id=ids.strength_workout_id("khash", "Chest Day", t),
         exercise_title="Incline Dumbbell Press",
         superset_id=None,
         exercise_notes=None,

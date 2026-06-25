@@ -57,7 +57,7 @@ def _tally(flags: list[bool]) -> tuple[int, int]:
     **Outputs:**
     - tuple[int, int]: (inserted_count, updated_count).
     """
-    inserted = sum(1 for f in flags if f)
+    inserted = sum(flags)
     return inserted, len(flags) - inserted
 
 
@@ -157,10 +157,9 @@ async def upsert_strength(
         }
         flags.append(await _upsert_row(session, strength_workouts, values, ["id"]))
     for s in sets:
-        workout_id = ids.strength_workout_id(s.user_key, s.workout_title, s.workout_start_time)
         values = {
-            "id": ids.strength_set_id(workout_id, s.exercise_title, s.set_index),
-            "strength_workout_id": workout_id,
+            "id": ids.strength_set_id(s.strength_workout_id, s.exercise_title, s.set_index),
+            "strength_workout_id": s.strength_workout_id,
             "user_key": s.user_key,
             "exercise_title": s.exercise_title,
             "superset_id": s.superset_id,

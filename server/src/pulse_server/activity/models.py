@@ -61,12 +61,11 @@ class StrengthWorkout:
 
 @dataclass(frozen=True)
 class StrengthSet:
-    """One Hevy set. ``workout_title`` + ``workout_start_time`` let the
-    repository recompute the parent ``strength_workouts`` id for the FK."""
+    """One Hevy set, carrying its parent ``strength_workouts`` id (derived by
+    the parser) so the repository can set the FK without re-deriving it."""
 
     user_key: str
-    workout_title: str
-    workout_start_time: DateTimeValue
+    strength_workout_id: str
     exercise_title: str
     superset_id: str | None
     exercise_notes: str | None
