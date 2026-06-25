@@ -68,4 +68,6 @@ async def test_run_import_is_idempotent():
     await run_import(**args)
     summary = await run_import(**args)
     assert summary["apple_workouts"] == (0, 2)
+    assert summary["daily_activity"] == (0, 2)  # 2 rows updated, none inserted
     assert summary["strength"][0] == 0  # nothing newly inserted on re-run
+    assert summary["strength"][1] == 5  # 2 workouts + 3 sets all updated
