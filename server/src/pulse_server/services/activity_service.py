@@ -69,6 +69,7 @@ async def list_workout_feed(
     session: AsyncSession,
     user_key: str,
     before: DateTimeValue | None,
+    before_id: UUID | None,
     limit: int,
     activity_type: str | None,
 ) -> WorkoutFeedPage:
@@ -77,17 +78,18 @@ async def list_workout_feed(
     **Inputs:**
     - session (AsyncSession): Active session.
     - user_key (str): Owning user's scoping key.
-    - before (datetime | None): Cursor; return workouts strictly older than this.
+    - before (datetime | None): ``start_time`` component of the page cursor.
+    - before_id (UUID | None): Id tiebreaker paired with ``before``.
     - limit (int): Page size (clamped to ``MAX_FEED_LIMIT``).
     - activity_type (str | None): Optional exact type filter.
 
     **Outputs:**
-    - WorkoutFeedPage: Items newest-first plus the ``next_before`` cursor (None when
-      the page was not full).
+    - WorkoutFeedPage: Items newest-first plus the composite ``(next_before,
+      next_before_id)`` cursor (both None when the page was not full).
     """
     limit = max(1, min(limit, MAX_FEED_LIMIT))
     repo = ActivityReadRepository(session)
-    rows = await repo.list_workouts(user_key, before, limit, activity_type)
+    rows = await repo.list_workouts(user_key, before, before_id, limit, activity_type)
     linked_ids = [r["linked_strength_workout_id"] for r in rows if r["linked_strength_workout_id"]]
     briefs = await repo.strength_briefs(linked_ids) if linked_ids else {}
     items: list[ActivityWorkoutSummary] = []
@@ -107,8 +109,10 @@ async def list_workout_feed(
                 strength_brief=StrengthBrief(**brief) if brief else None,
             )
         )
-    next_before = rows[-1]["start_time"] if len(rows) == limit else None
-    return WorkoutFeedPage(items=items, next_before=next_before)
+    page_full = len(rows) == limit
+    next_before = rows[-1]["start_time"] if page_full else None
+    next_before_id = rows[-1]["id"] if page_full else None
+    return WorkoutFeedPage(items=items, next_before=next_before, next_before_id=next_before_id)
 
 
 def _build_exercises(set_rows: list[dict]) -> tuple[list[WorkoutExercise], StrengthTotals]:

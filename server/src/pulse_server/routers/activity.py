@@ -35,6 +35,7 @@ TZ = ZoneInfo(settings.timezone)
 async def get_workout_feed(
     request: Request,
     before: DateTimeValue | None = Query(default=None),
+    before_id: UUID | None = Query(default=None),
     limit: int = Query(default=DEFAULT_FEED_LIMIT, ge=1, le=100),
     type: str | None = Query(default=None),
     session: AsyncSession = Depends(get_session_dependency),
@@ -43,18 +44,22 @@ async def get_workout_feed(
 
     **Inputs:**
     - request (Request): Provides ``user_key``.
-    - before (datetime | None): Cursor; older-than bound on ``start_time``.
+    - before (datetime | None): ``start_time`` component of the page cursor
+      (echo back ``next_before`` from the previous page).
+    - before_id (UUID | None): Id tiebreaker for the cursor (echo back
+      ``next_before_id`` from the previous page).
     - limit (int): Page size, 1-100.
     - type (str | None): Optional ``activity_type`` filter.
     - session (AsyncSession): DB session dependency.
 
     **Outputs:**
-    - WorkoutFeedPage: Items plus the ``next_before`` cursor.
+    - WorkoutFeedPage: Items plus the composite ``(next_before, next_before_id)`` cursor.
     """
     return await list_workout_feed(
         session=session,
         user_key=request.state.user_key,
         before=before,
+        before_id=before_id,
         limit=limit,
         activity_type=type,
     )

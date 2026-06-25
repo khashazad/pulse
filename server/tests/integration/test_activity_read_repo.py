@@ -66,12 +66,41 @@ async def test_list_workouts_paginates_newest_first(session) -> None:
     await session.commit()
 
     repo = ActivityReadRepository(session)
-    page1 = await repo.list_workouts(UK, before=None, limit=2, activity_type=None)
+    page1 = await repo.list_workouts(UK, before=None, before_id=None, limit=2, activity_type=None)
     assert [r["id"] for r in page1] == [ids[0], ids[1]]
 
     cursor = page1[-1]["start_time"]
-    page2 = await repo.list_workouts(UK, before=cursor, limit=2, activity_type=None)
+    cursor_id = page1[-1]["id"]
+    page2 = await repo.list_workouts(
+        UK, before=cursor, before_id=cursor_id, limit=2, activity_type=None
+    )
     assert [r["id"] for r in page2] == [ids[2]]
+
+
+async def test_list_workouts_composite_cursor_no_drop_on_tie(session) -> None:
+    """Two workouts sharing an exact start_time are both delivered across pages."""
+    # Same start_time, different activity_type (so they are distinct apple_workouts rows).
+    a, b = uuid4(), uuid4()
+    for wid, atype in ((a, "Running"), (b, "Cycling")):
+        await session.execute(
+            insert(apple_workouts).values(
+                id=wid,
+                user_key=UK,
+                activity_type=atype,
+                start_time=T0,
+                end_time=T0 + timedelta(minutes=30),
+            )
+        )
+    await session.commit()
+
+    repo = ActivityReadRepository(session)
+    page1 = await repo.list_workouts(UK, before=None, before_id=None, limit=1, activity_type=None)
+    assert len(page1) == 1
+    page2 = await repo.list_workouts(
+        UK, before=page1[-1]["start_time"], before_id=page1[-1]["id"], limit=1, activity_type=None
+    )
+    assert len(page2) == 1
+    assert {page1[0]["id"], page2[0]["id"]} == {a, b}  # neither row dropped at the boundary
 
 
 async def test_strength_briefs_aggregate_sets(session) -> None:

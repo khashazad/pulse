@@ -32,8 +32,8 @@ def test_summary_dto_coerces_decimal_to_float() -> None:
 
 def test_feed_page_holds_items_and_cursor() -> None:
     """WorkoutFeedPage carries the item list and an optional next_before cursor."""
-    page = WorkoutFeedPage(items=[], next_before=None)
-    assert page.items == [] and page.next_before is None
+    page = WorkoutFeedPage(items=[], next_before=None, next_before_id=None)
+    assert page.items == [] and page.next_before is None and page.next_before_id is None
 
 
 def test_metric_delta_allows_null_pct() -> None:

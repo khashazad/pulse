@@ -182,10 +182,22 @@ def bucket_volume(
     - period_end (date): Inclusive period end.
 
     **Outputs:**
-    - list[VolumeBucket]: Ordered buckets covering the period.
+    - list[VolumeBucket]: Ordered buckets covering the period. Each
+      ``bucket_start`` is clamped to ``period_start`` so no bucket is labelled
+      before the period (the first month bucket's ISO-week Monday can fall in the
+      prior month).
     """
 
     def bucket_key(d: DateValue) -> DateValue:
+        """Map a date to its bucket's start date for the current period.
+
+        **Inputs:**
+        - d (date): The date to bucket.
+
+        **Outputs:**
+        - date: ``d`` itself for ``week``, the ISO-week Monday for ``month``, or
+          the first of the month for ``year``.
+        """
         if period == "week":
             return d
         if period == "month":
@@ -210,6 +222,6 @@ def bucket_volume(
         b[0] += float(r["volume_lbs"] or 0)
         b[1] += float(r["duration_min"] or 0)
     return [
-        VolumeBucket(bucket_start=k, volume_lbs=v[0], duration_min=v[1])
+        VolumeBucket(bucket_start=max(k, period_start), volume_lbs=v[0], duration_min=v[1])
         for k, v in sorted(buckets.items())
     ]

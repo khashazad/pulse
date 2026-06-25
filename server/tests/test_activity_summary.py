@@ -5,12 +5,25 @@ from __future__ import annotations
 from datetime import date
 
 from pulse_server.services.activity_summary import (
+    bucket_volume,
     compute_top_lifts,
     est_one_rep_max,
     pct_change,
     period_bounds,
     rollup_by_type,
 )
+
+
+def test_month_buckets_never_predate_period_start() -> None:
+    """For a month not starting Monday, every bucket_start is clamped to period_start."""
+    # July 2026 starts on a Wednesday; the first ISO-week Monday is 2026-06-29.
+    start, end = date(2026, 7, 1), date(2026, 7, 31)
+    rows = [{"date": date(2026, 7, 2), "volume_lbs": 100.0, "duration_min": 45.0}]
+    buckets = bucket_volume(rows, "month", start, end)
+    assert buckets, "expected seeded buckets"
+    assert all(b.bucket_start >= start for b in buckets)
+    assert buckets[0].bucket_start == start  # the pre-period Monday is clamped to Jul 1
+    assert buckets[0].volume_lbs == 100.0  # Jul-2 data still lands in that first bucket
 
 
 def test_epley_est_1rm() -> None:

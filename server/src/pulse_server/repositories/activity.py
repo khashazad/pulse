@@ -12,7 +12,7 @@ from datetime import datetime as DateTimeValue
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import Date, cast, func, select
+from sqlalchemy import Date, and_, cast, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pulse_server.repositories.tables import apple_workouts, strength_sets, strength_workouts
@@ -33,26 +33,47 @@ class ActivityReadRepository:
         self,
         user_key: str,
         before: DateTimeValue | None,
+        before_id: UUID | None,
         limit: int,
         activity_type: str | None,
     ) -> list[dict[str, Any]]:
         """Return workouts newest-first, optionally filtered by type, with a cursor.
 
+        Orders by ``(start_time desc, id desc)`` so the ordering is total even when
+        two workouts share an exact ``start_time``. The cursor is the composite
+        ``(before, before_id)``: rows strictly older than ``before``, plus rows at
+        exactly ``before`` whose id sorts before ``before_id``. Passing ``before``
+        without ``before_id`` falls back to a plain ``start_time < before`` bound.
+
         **Inputs:**
         - user_key (str): Owning user's scoping key.
-        - before (datetime | None): Exclusive upper bound on ``start_time`` (cursor).
+        - before (datetime | None): ``start_time`` component of the cursor.
+        - before_id (UUID | None): Id tiebreaker for rows sharing ``before``'s start_time.
         - limit (int): Max rows to return.
         - activity_type (str | None): Optional exact ``activity_type`` filter.
 
         **Outputs:**
-        - list[dict[str, Any]]: Apple workout rows ordered by ``start_time`` desc.
+        - list[dict[str, Any]]: Apple workout rows ordered by ``(start_time, id)`` desc.
         """
         stmt = select(*apple_workouts.c).where(apple_workouts.c.user_key == user_key)
         if activity_type is not None:
             stmt = stmt.where(apple_workouts.c.activity_type == activity_type)
         if before is not None:
-            stmt = stmt.where(apple_workouts.c.start_time < before)
-        stmt = stmt.order_by(apple_workouts.c.start_time.desc()).limit(limit)
+            if before_id is not None:
+                stmt = stmt.where(
+                    or_(
+                        apple_workouts.c.start_time < before,
+                        and_(
+                            apple_workouts.c.start_time == before,
+                            apple_workouts.c.id < before_id,
+                        ),
+                    )
+                )
+            else:
+                stmt = stmt.where(apple_workouts.c.start_time < before)
+        stmt = stmt.order_by(apple_workouts.c.start_time.desc(), apple_workouts.c.id.desc()).limit(
+            limit
+        )
         result = await self._session.execute(stmt)
         return [dict(row) for row in result.mappings()]
 

@@ -41,10 +41,11 @@ class ActivityWorkoutSummary(BaseModel):
 
 
 class WorkoutFeedPage(BaseModel):
-    """A page of feed workouts plus the cursor for the next (older) page."""
+    """A page of feed workouts plus the composite cursor for the next (older) page."""
 
     items: list[ActivityWorkoutSummary]
     next_before: DateTimeValue | None
+    next_before_id: UUID | None
 
 
 class WorkoutSet(BaseModel):
