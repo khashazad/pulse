@@ -79,13 +79,12 @@ def parse_hevy_csv(
             end = _parse_time(row["end_time"], tz)
             key = (title, start)
             if key not in workouts:
-                description = row.get("description") or None
                 workouts[key] = StrengthWorkout(
                     user_key=user_key,
                     title=title,
                     start_time=start,
                     end_time=end,
-                    description=description.strip() or None if description else None,
+                    description=(row.get("description") or "").strip() or None,
                 )
             sets.append(
                 StrengthSet(

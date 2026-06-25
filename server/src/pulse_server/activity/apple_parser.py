@@ -169,6 +169,13 @@ def parse_apple_export(
 ) -> tuple[list[AppleWorkout], list[DailyActivity]]:
     """Stream an Apple Health export into workouts and daily activity.
 
+    Uses ``iterparse`` with both ``start`` and ``end`` events. The root
+    element is captured on the first ``start`` event and cleared after each
+    handled element so empty shells do not accumulate on the document root
+    across millions of ``<Record>`` entries. Without root clearing, each
+    ``elem.clear()`` empties the element's own subtree but leaves the shell
+    attached to the root, causing linear memory growth with element count.
+
     **Inputs:**
     - path (str | Path): Path to ``export.xml``.
     - user_key (str): Owning user key applied to every row.
@@ -179,15 +186,27 @@ def parse_apple_export(
     """
     workouts: list[AppleWorkout] = []
     days: list[DailyActivity] = []
+    root: Element | None = None
 
-    for _event, elem in iterparse(str(path), events=("end",)):
+    for event, elem in iterparse(str(path), events=("start", "end")):
+        if event == "start":
+            if root is None:
+                root = elem
+            continue
+        # event == "end" from here down
         if elem.tag == "Workout":
             workouts.append(_build_workout(elem, user_key))
             elem.clear()
+            if root is not None:
+                root.clear()
         elif elem.tag == "ActivitySummary":
             days.append(_build_daily(elem, user_key))
             elem.clear()
+            if root is not None:
+                root.clear()
         elif elem.tag == "Record":
             elem.clear()
+            if root is not None:
+                root.clear()
 
     return workouts, days
