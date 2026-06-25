@@ -7,14 +7,15 @@ SQLAlchemy Core, returns plain dict rows.
 
 from __future__ import annotations
 
+from datetime import date as DateValue
 from datetime import datetime as DateTimeValue
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import Date, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from pulse_server.repositories.tables import apple_workouts, strength_sets
+from pulse_server.repositories.tables import apple_workouts, strength_sets, strength_workouts
 
 
 class ActivityReadRepository:
@@ -123,3 +124,86 @@ class ActivityReadRepository:
         )
         result = await self._session.execute(stmt)
         return [dict(row) for row in result.mappings()]
+
+    async def workouts_in_range(
+        self,
+        user_key: str,
+        start: DateValue,
+        end: DateValue,
+    ) -> list[dict[str, Any]]:
+        """Return workouts whose start date falls within [start, end] inclusive.
+
+        **Inputs:**
+        - user_key (str): Owning user's scoping key.
+        - start (date): Inclusive lower date bound.
+        - end (date): Inclusive upper date bound.
+
+        **Outputs:**
+        - list[dict[str, Any]]: Rows with ``activity_type``, ``duration_min``,
+          ``active_energy_cal``, and ``start_time``, ordered by ``start_time`` asc.
+
+        **Raises:**
+        - SQLAlchemyError: On any database execution failure.
+        """
+        col = cast(apple_workouts.c.start_time, Date)
+        stmt = (
+            select(
+                apple_workouts.c.activity_type,
+                apple_workouts.c.duration_min,
+                apple_workouts.c.active_energy_cal,
+                apple_workouts.c.start_time,
+            )
+            .where(apple_workouts.c.user_key == user_key)
+            .where(col >= start)
+            .where(col <= end)
+            .order_by(apple_workouts.c.start_time.asc())
+        )
+        result = await self._session.execute(stmt)
+        return [dict(r) for r in result.mappings()]
+
+    async def strength_history(
+        self,
+        user_key: str,
+        end: DateValue,
+    ) -> list[dict[str, Any]]:
+        """Return all strength sets up to ``end`` joined with their workout date and minutes.
+
+        **Inputs:**
+        - user_key (str): Owning user's scoping key.
+        - end (date): Inclusive upper bound on the workout's start date.
+
+        **Outputs:**
+        - list[dict[str, Any]]: Rows with ``exercise_title``, ``weight_lbs``, ``reps``,
+          ``date`` (the workout's ``start_time::date``), ``duration_min`` (derived from
+          workout start/end), and ``workout_id``; ordered by workout ``start_time`` asc
+          then ``set_index`` asc.
+
+        **Raises:**
+        - SQLAlchemyError: On any database execution failure.
+        """
+        wdate = cast(strength_workouts.c.start_time, Date)
+        duration_min = (
+            func.extract("epoch", strength_workouts.c.end_time - strength_workouts.c.start_time)
+            / 60
+        )
+        stmt = (
+            select(
+                strength_sets.c.exercise_title,
+                strength_sets.c.weight_lbs,
+                strength_sets.c.reps,
+                wdate.label("date"),
+                duration_min.label("duration_min"),
+                strength_workouts.c.id.label("workout_id"),
+            )
+            .select_from(
+                strength_sets.join(
+                    strength_workouts,
+                    strength_sets.c.strength_workout_id == strength_workouts.c.id,
+                )
+            )
+            .where(strength_sets.c.user_key == user_key)
+            .where(wdate <= end)
+            .order_by(strength_workouts.c.start_time.asc(), strength_sets.c.set_index.asc())
+        )
+        result = await self._session.execute(stmt)
+        return [dict(r) for r in result.mappings()]

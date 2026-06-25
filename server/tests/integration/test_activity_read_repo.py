@@ -154,3 +154,73 @@ async def test_get_workout_missing_returns_none(session) -> None:
     """get_workout returns None for an unknown id."""
     repo = ActivityReadRepository(session)
     assert await repo.get_workout(UK, uuid4()) is None
+
+
+async def test_workouts_in_range_filters_by_date(session) -> None:
+    """workouts_in_range returns only workouts whose start date is within bounds."""
+    from datetime import date
+
+    inside, outside = uuid4(), uuid4()
+    async with session.begin_nested():
+        await session.execute(
+            insert(apple_workouts).values(
+                id=inside,
+                user_key=UK,
+                activity_type="Running",
+                start_time=T0,
+                end_time=T0 + timedelta(minutes=30),
+                duration_min=30,
+                active_energy_cal=300,
+            )
+        )
+        await session.execute(
+            insert(apple_workouts).values(
+                id=outside,
+                user_key=UK,
+                activity_type="Running",
+                start_time=T0 - timedelta(days=40),
+                end_time=T0 - timedelta(days=40) + timedelta(minutes=30),
+                duration_min=30,
+                active_energy_cal=300,
+            )
+        )
+    repo = ActivityReadRepository(session)
+    rows = await repo.workouts_in_range(UK, date(2026, 6, 22), date(2026, 6, 28))
+    assert len(rows) == 1 and rows[0]["activity_type"] == "Running"
+
+
+async def test_strength_history_returns_joined_rows(session) -> None:
+    """strength_history joins sets to workouts and returns date, duration, and set fields."""
+    from datetime import date
+
+    sw = uuid4()
+    async with session.begin_nested():
+        await session.execute(
+            insert(strength_workouts).values(
+                id=sw,
+                user_key=UK,
+                title="Leg Day",
+                start_time=T0,
+                end_time=T0 + timedelta(minutes=45),
+            )
+        )
+        await session.execute(
+            insert(strength_sets).values(
+                id=uuid4(),
+                strength_workout_id=sw,
+                user_key=UK,
+                exercise_title="Squat",
+                set_index=0,
+                weight_lbs=225,
+                reps=5,
+            )
+        )
+    repo = ActivityReadRepository(session)
+    rows = await repo.strength_history(UK, date(2026, 6, 28))
+    assert len(rows) == 1
+    r = rows[0]
+    assert r["exercise_title"] == "Squat"
+    assert r["weight_lbs"] == 225
+    assert r["reps"] == 5
+    assert r["date"] == date(2026, 6, 24)
+    assert r["workout_id"] == sw
