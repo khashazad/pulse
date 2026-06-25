@@ -4,7 +4,7 @@ Postgres ``xmax = 0`` trick in a RETURNING clause."""
 
 from __future__ import annotations
 
-from sqlalchemy import Table, text
+from sqlalchemy import Table, bindparam, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -186,3 +186,75 @@ async def upsert_strength(
         }
         flags.append(await _upsert_row(session, strength_sets, values, ["id"]))
     return _tally(flags)
+
+
+_LINK_TYPES = ("TraditionalStrengthTraining", "Other")
+_LINK_WINDOW_SECONDS = 1200  # ±20 minutes
+
+
+async def link_apple_to_strength(session: AsyncSession, user_key: str) -> int:
+    """Link each Hevy strength workout to its nearest in-window Apple workout, 1:1.
+
+    Clears all existing links for ``user_key`` first, then greedily pairs every
+    ``strength_workouts`` row to the nearest unclaimed ``apple_workouts`` row of
+    type ``TraditionalStrengthTraining``/``Other`` whose ``start_time`` is within
+    ±20 minutes, smallest offset winning. Idempotent.
+
+    **Inputs:**
+    - session (AsyncSession): Active session (caller owns the commit).
+    - user_key (str): Scoping key whose rows are (re)linked.
+
+    **Outputs:**
+    - int: Number of Apple rows assigned a link.
+
+    **Raises/Throws:**
+    - sqlalchemy.exc.SQLAlchemyError: If a statement fails to execute.
+    """
+    await session.execute(
+        update(apple_workouts)
+        .where(apple_workouts.c.user_key == user_key)
+        .values(linked_strength_workout_id=None)
+    )
+    strengths = (
+        await session.execute(
+            select(strength_workouts.c.id, strength_workouts.c.start_time)
+            .where(strength_workouts.c.user_key == user_key)
+            .order_by(strength_workouts.c.start_time.asc())
+        )
+    ).all()
+    apples = (
+        await session.execute(
+            select(apple_workouts.c.id, apple_workouts.c.start_time)
+            .where(apple_workouts.c.user_key == user_key)
+            .where(apple_workouts.c.activity_type.in_(_LINK_TYPES))
+            .order_by(apple_workouts.c.start_time.asc())
+        )
+    ).all()
+
+    # Build all in-window candidate pairs, then greedily assign by smallest offset.
+    candidates: list[tuple[float, object, object]] = []
+    for s_id, s_start in strengths:
+        for a_id, a_start in apples:
+            offset = abs((a_start - s_start).total_seconds())
+            if offset <= _LINK_WINDOW_SECONDS:
+                candidates.append((offset, s_id, a_id))
+    candidates.sort(key=lambda c: c[0])
+
+    used_apple: set[object] = set()
+    used_strength: set[object] = set()
+    assignments: list[tuple[object, object]] = []  # (apple_id, strength_id)
+    for _offset, s_id, a_id in candidates:
+        if a_id in used_apple or s_id in used_strength:
+            continue
+        used_apple.add(a_id)
+        used_strength.add(s_id)
+        assignments.append((a_id, s_id))
+
+    if assignments:
+        await session.execute(
+            update(apple_workouts)
+            .where(apple_workouts.c.id == bindparam("a_id"))
+            .values(linked_strength_workout_id=bindparam("s_id")),
+            [{"a_id": a_id, "s_id": s_id} for a_id, s_id in assignments],
+        )
+    return len(assignments)

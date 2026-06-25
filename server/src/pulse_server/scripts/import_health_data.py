@@ -42,6 +42,7 @@ async def run_import(
         "apple_workouts": (0, 0),
         "daily_activity": (0, 0),
         "strength": (0, 0),
+        "linked": (0, 0),
     }
 
     await db.init_pool(settings.database_url)
@@ -56,6 +57,7 @@ async def run_import(
             if hevy_path:
                 s_workouts, s_sets = parse_hevy_csv(hevy_path, user_key=user_key, tz=tz)
                 summary["strength"] = await repository.upsert_strength(session, s_workouts, s_sets)
+            summary["linked"] = (await repository.link_apple_to_strength(session, user_key), 0)
     finally:
         await db.close_pool()
 
@@ -93,7 +95,12 @@ def main(argv: list[str] | None = None) -> int:
     summary = asyncio.run(run_import(args.apple, args.hevy, user_key))
 
     for name, (inserted, updated) in summary.items():
-        print(f"{name:16} inserted={inserted:>6} updated={updated:>6}")
+        # `link_apple_to_strength` is a clear-and-reassign pass, not an upsert, so
+        # the (inserted, updated) framing doesn't apply — report its link count plainly.
+        if name == "linked":
+            print(f"{name:16} links={inserted:>6}")
+        else:
+            print(f"{name:16} inserted={inserted:>6} updated={updated:>6}")
     return 0
 
 

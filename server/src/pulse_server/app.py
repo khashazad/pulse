@@ -26,6 +26,7 @@ from pulse_server.mcp import build_mcp
 from pulse_server.mcp.storage import aclose_client_storage
 from pulse_server.observability import init_sentry, request_logging_middleware
 from pulse_server.photo_store import build_photo_store, set_photo_store
+from pulse_server.routers import activity as activity_router
 from pulse_server.routers import auth as auth_router
 from pulse_server.routers import (
     containers as containers_router,
@@ -155,6 +156,7 @@ app.include_router(meals_router.router)
 app.include_router(weight_router.router)
 app.include_router(measures_photo_tags_router.router)
 app.include_router(measures_photos_router.router)
+app.include_router(activity_router.router)
 
 # OAuth metadata routes (.well-known/oauth-authorization-server, /authorize, /token, etc.)
 # must live at the root so claude.ai's connector can discover them. The MCP server itself
