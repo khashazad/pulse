@@ -390,23 +390,6 @@ create trigger meals_alias_uniqueness
   before insert or update on meals
   for each row execute function check_meals_alias_uniqueness();
 
--- Keep public tables off the Supabase Data API surface (lints 0026/0027,
--- pg_graphql anon/authenticated table exposed). The backend connects as the
--- `postgres` owner, which is unaffected by these grants. Guarded on role
--- existence so this is a no-op on local/test Postgres, which has no `anon`/
--- `authenticated` roles and would otherwise fail to boot here. RLS is enabled
--- separately on each table on the live database.
-do $$
-begin
-  if exists (select 1 from pg_roles where rolname = 'anon')
-     and exists (select 1 from pg_roles where rolname = 'authenticated') then
-    execute 'revoke all on all tables in schema public from anon, authenticated';
-    execute 'alter default privileges for role postgres in schema public '
-         || 'revoke all on tables from anon, authenticated';
-  end if;
-end
-$$;
-
 -- ===== Activity import: Apple Health workouts + Hevy strength + daily activity =====
 
 create table if not exists apple_workouts (
@@ -480,3 +463,20 @@ create table if not exists daily_activity (
   created_at timestamptz not null default now(),
   primary key (user_key, date)
 );
+
+-- Keep public tables off the Supabase Data API surface (lints 0026/0027,
+-- pg_graphql anon/authenticated table exposed). The backend connects as the
+-- `postgres` owner, which is unaffected by these grants. Guarded on role
+-- existence so this is a no-op on local/test Postgres, which has no `anon`/
+-- `authenticated` roles and would otherwise fail to boot here. RLS is enabled
+-- separately on each table on the live database.
+do $$
+begin
+  if exists (select 1 from pg_roles where rolname = 'anon')
+     and exists (select 1 from pg_roles where rolname = 'authenticated') then
+    execute 'revoke all on all tables in schema public from anon, authenticated';
+    execute 'alter default privileges for role postgres in schema public '
+         || 'revoke all on tables from anon, authenticated';
+  end if;
+end
+$$;
