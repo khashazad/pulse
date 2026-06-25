@@ -105,3 +105,52 @@ async def test_strength_briefs_aggregate_sets(session) -> None:
     assert briefs[sw]["exercise_count"] == 2
     assert briefs[sw]["set_count"] == 3
     assert briefs[sw]["volume_lbs"] == 135 * 8 + 145 * 6 + 30 * 15
+
+
+async def test_get_workout_and_sets(session) -> None:
+    """get_workout returns the apple row; sets_for_workout returns ordered sets."""
+    aid, sw = uuid4(), uuid4()
+    await session.execute(
+        insert(strength_workouts).values(
+            id=sw,
+            user_key=UK,
+            title="Push",
+            start_time=T0,
+            end_time=T0 + timedelta(minutes=50),
+        )
+    )
+    await session.execute(
+        insert(apple_workouts).values(
+            id=aid,
+            user_key=UK,
+            activity_type="TraditionalStrengthTraining",
+            start_time=T0,
+            end_time=T0 + timedelta(minutes=57),
+            active_energy_cal=276,
+            linked_strength_workout_id=sw,
+        )
+    )
+    for i, (ex, w, reps) in enumerate([("Bench", 135, 8), ("Bench", 145, 6)]):
+        await session.execute(
+            insert(strength_sets).values(
+                id=uuid4(),
+                strength_workout_id=sw,
+                user_key=UK,
+                exercise_title=ex,
+                set_index=i,
+                weight_lbs=w,
+                reps=reps,
+            )
+        )
+    await session.commit()
+    repo = ActivityReadRepository(session)
+    row = await repo.get_workout(UK, aid)
+    assert row is not None and row["linked_strength_workout_id"] == sw
+    sets = await repo.sets_for_workout(sw)
+    assert [s["set_index"] for s in sets] == [0, 1]
+
+
+async def test_get_workout_missing_returns_none(session) -> None:
+    """get_workout returns None for an unknown id."""
+    repo = ActivityReadRepository(session)
+    assert await repo.get_workout(UK, uuid4()) is None

@@ -87,3 +87,39 @@ class ActivityReadRepository:
                 "volume_lbs": float(row["volume_lbs"]),
             }
         return out
+
+    async def get_workout(self, user_key: str, workout_id: UUID) -> dict[str, Any] | None:
+        """Fetch a single Apple workout row by id, scoped to the user.
+
+        **Inputs:**
+        - user_key (str): Owning user's scoping key.
+        - workout_id (UUID): The ``apple_workouts.id`` to fetch.
+
+        **Outputs:**
+        - dict[str, Any] | None: The row as a plain dict, or None when absent.
+        """
+        stmt = (
+            select(*apple_workouts.c)
+            .where(apple_workouts.c.user_key == user_key)
+            .where(apple_workouts.c.id == workout_id)
+            .limit(1)
+        )
+        row = (await self._session.execute(stmt)).mappings().first()
+        return dict(row) if row else None
+
+    async def sets_for_workout(self, strength_workout_id: UUID) -> list[dict[str, Any]]:
+        """Return all sets for a strength workout ordered by exercise then set index.
+
+        **Inputs:**
+        - strength_workout_id (UUID): The ``strength_workouts.id`` whose sets to fetch.
+
+        **Outputs:**
+        - list[dict[str, Any]]: Set rows ordered by ``(exercise_title, set_index)``.
+        """
+        stmt = (
+            select(*strength_sets.c)
+            .where(strength_sets.c.strength_workout_id == strength_workout_id)
+            .order_by(strength_sets.c.exercise_title.asc(), strength_sets.c.set_index.asc())
+        )
+        result = await self._session.execute(stmt)
+        return [dict(row) for row in result.mappings()]
