@@ -3,14 +3,19 @@
 from __future__ import annotations
 
 from datetime import datetime as DateTimeValue
+from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pulse_server.auth import require_session
 from pulse_server.db import get_session_dependency
-from pulse_server.models.activity import WorkoutFeedPage
-from pulse_server.services.activity_service import DEFAULT_FEED_LIMIT, list_workout_feed
+from pulse_server.models.activity import ActivityWorkoutDetail, WorkoutFeedPage
+from pulse_server.services.activity_service import (
+    DEFAULT_FEED_LIMIT,
+    get_workout_detail,
+    list_workout_feed,
+)
 
 router = APIRouter(dependencies=[Depends(require_session)])
 
@@ -42,3 +47,28 @@ async def get_workout_feed(
         limit=limit,
         activity_type=type,
     )
+
+
+@router.get("/activity/workouts/{workout_id}", response_model=ActivityWorkoutDetail)
+async def get_workout_detail_endpoint(
+    request: Request,
+    workout_id: UUID,
+    session: AsyncSession = Depends(get_session_dependency),
+) -> ActivityWorkoutDetail:
+    """Return full detail for one workout, including Hevy sets when linked.
+
+    **Inputs:**
+    - request (Request): Provides ``user_key``.
+    - workout_id (UUID): The workout to detail.
+    - session (AsyncSession): DB session dependency.
+
+    **Outputs:**
+    - ActivityWorkoutDetail: The workout detail.
+
+    **Raises/Throws:**
+    - HTTPException(404): When no workout with that id exists for the user.
+    """
+    detail = await get_workout_detail(session, request.state.user_key, workout_id)
+    if detail is None:
+        raise HTTPException(status_code=404, detail="workout not found")
+    return detail
