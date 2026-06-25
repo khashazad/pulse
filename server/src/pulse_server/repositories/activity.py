@@ -130,13 +130,22 @@ class ActivityReadRepository:
         user_key: str,
         start: DateValue,
         end: DateValue,
+        tz: str,
     ) -> list[dict[str, Any]]:
-        """Return workouts whose start date falls within [start, end] inclusive.
+        """Return workouts whose local-timezone start date falls within [start, end] inclusive.
+
+        The ``start_time`` column is ``timestamptz``.  Converting it to a local date
+        with a bare ``cast(..., Date)`` would resolve in whatever timezone the DB
+        session uses (typically UTC), bucketing evening workouts into the wrong day.
+        ``func.timezone(tz, start_time)`` converts to the wall-clock timestamp in
+        ``tz`` first, so the date boundary matches the user's local calendar.
 
         **Inputs:**
         - user_key (str): Owning user's scoping key.
-        - start (date): Inclusive lower date bound.
-        - end (date): Inclusive upper date bound.
+        - start (date): Inclusive lower date bound (in the ``tz`` timezone).
+        - end (date): Inclusive upper date bound (in the ``tz`` timezone).
+        - tz (str): IANA timezone name (e.g. ``"America/Toronto"``) used for the
+          UTC-to-local conversion before the date comparison.
 
         **Outputs:**
         - list[dict[str, Any]]: Rows with ``activity_type``, ``duration_min``,
@@ -145,7 +154,7 @@ class ActivityReadRepository:
         **Raises:**
         - SQLAlchemyError: On any database execution failure.
         """
-        col = cast(apple_workouts.c.start_time, Date)
+        col = cast(func.timezone(tz, apple_workouts.c.start_time), Date)
         stmt = (
             select(
                 apple_workouts.c.activity_type,
@@ -165,23 +174,31 @@ class ActivityReadRepository:
         self,
         user_key: str,
         end: DateValue,
+        tz: str,
     ) -> list[dict[str, Any]]:
-        """Return all strength sets up to ``end`` joined with their workout date and minutes.
+        """Return all strength sets up to ``end`` joined with their workout local-timezone date.
+
+        The ``start_time`` column is ``timestamptz``.  ``func.timezone(tz, start_time)``
+        converts it to the wall-clock timestamp in ``tz`` before casting to ``Date``,
+        so the returned ``date`` field and the ``<= end`` filter both reflect the user's
+        local calendar rather than UTC.
 
         **Inputs:**
         - user_key (str): Owning user's scoping key.
-        - end (date): Inclusive upper bound on the workout's start date.
+        - end (date): Inclusive upper bound on the workout's local-timezone start date.
+        - tz (str): IANA timezone name (e.g. ``"America/Toronto"``) used for the
+          UTC-to-local conversion before the date comparison and label.
 
         **Outputs:**
         - list[dict[str, Any]]: Rows with ``exercise_title``, ``weight_lbs``, ``reps``,
-          ``date`` (the workout's ``start_time::date``), ``duration_min`` (derived from
-          workout start/end), and ``workout_id``; ordered by workout ``start_time`` asc
-          then ``set_index`` asc.
+          ``date`` (the workout's local-timezone start date), ``duration_min`` (derived
+          from workout start/end), and ``workout_id``; ordered by workout ``start_time``
+          asc then ``set_index`` asc.
 
         **Raises:**
         - SQLAlchemyError: On any database execution failure.
         """
-        wdate = cast(strength_workouts.c.start_time, Date)
+        wdate = cast(func.timezone(tz, strength_workouts.c.start_time), Date)
         duration_min = (
             func.extract("epoch", strength_workouts.c.end_time - strength_workouts.c.start_time)
             / 60

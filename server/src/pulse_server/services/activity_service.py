@@ -9,6 +9,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from pulse_server.config import get_settings
 from pulse_server.models.activity import (
     ActivityDeltas,
     ActivityPeriod,
@@ -239,10 +240,11 @@ async def build_summary(
     """
     start, end = period_bounds(period, anchor)
     p_start, p_end = previous_bounds(period, anchor)
+    tz = get_settings().timezone
     repo = ActivityReadRepository(session)
-    cur = await repo.workouts_in_range(user_key, start, end)
-    prev = await repo.workouts_in_range(user_key, p_start, p_end)
-    history = await repo.strength_history(user_key, end)
+    cur = await repo.workouts_in_range(user_key, start, end, tz=tz)
+    prev = await repo.workouts_in_range(user_key, p_start, p_end, tz=tz)
+    history = await repo.strength_history(user_key, end, tz=tz)
     cur_t, prev_t = _totals(cur), _totals(prev)
     deltas = ActivityDeltas(
         workout_count=MetricDelta(
@@ -261,18 +263,36 @@ async def build_summary(
             pct=pct_change(cur_t.total_active_energy_cal, prev_t.total_active_energy_cal),
         ),
     )
-    # Volume rows: strength sets within the current period, with per-set volume.
-    vol_rows = [
-        {
-            "date": h["date"],
-            "volume_lbs": (
-                float(h["weight_lbs"]) * int(h["reps"]) if (h["weight_lbs"] and h["reps"]) else 0.0
-            ),
-            "duration_min": 0.0,
-        }
-        for h in history
-        if start <= h["date"] <= end
-    ]
+    # Volume rows: one per-set volume row (duration_min=0) plus one duration row per
+    # distinct workout_id within the current period.  Naively summing duration_min on
+    # every set row would multiply the workout's minutes by its set count; tracking
+    # seen workout ids and emitting a single duration-only row per workout avoids that.
+    vol_rows: list[dict] = []
+    seen_workout_ids: set = set()
+    for h in history:
+        if not (start <= h["date"] <= end):
+            continue
+        vol_rows.append(
+            {
+                "date": h["date"],
+                "volume_lbs": (
+                    float(h["weight_lbs"]) * int(h["reps"])
+                    if (h["weight_lbs"] and h["reps"])
+                    else 0.0
+                ),
+                "duration_min": 0.0,
+            }
+        )
+        wid = h["workout_id"]
+        if wid not in seen_workout_ids:
+            seen_workout_ids.add(wid)
+            vol_rows.append(
+                {
+                    "date": h["date"],
+                    "volume_lbs": 0.0,
+                    "duration_min": float(h["duration_min"] or 0),
+                }
+            )
     return ActivitySummary(
         period=period,
         period_start=start,

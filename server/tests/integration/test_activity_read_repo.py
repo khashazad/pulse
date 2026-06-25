@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from uuid import uuid4
 
 import pytest
@@ -185,7 +185,7 @@ async def test_workouts_in_range_filters_by_date(session) -> None:
             )
         )
     repo = ActivityReadRepository(session)
-    rows = await repo.workouts_in_range(UK, date(2026, 6, 22), date(2026, 6, 28))
+    rows = await repo.workouts_in_range(UK, date(2026, 6, 22), date(2026, 6, 28), tz="UTC")
     assert len(rows) == 1 and rows[0]["activity_type"] == "Running"
 
 
@@ -216,7 +216,7 @@ async def test_strength_history_returns_joined_rows(session) -> None:
             )
         )
     repo = ActivityReadRepository(session)
-    rows = await repo.strength_history(UK, date(2026, 6, 28))
+    rows = await repo.strength_history(UK, date(2026, 6, 28), tz="UTC")
     assert len(rows) == 1
     r = rows[0]
     assert r["exercise_title"] == "Squat"
@@ -224,3 +224,35 @@ async def test_strength_history_returns_joined_rows(session) -> None:
     assert r["reps"] == 5
     assert r["date"] == date(2026, 6, 24)
     assert r["workout_id"] == sw
+
+
+async def test_workouts_in_range_timezone_bucketing(session) -> None:
+    """workouts_in_range uses tz for date bucketing, not UTC."""
+    # 2026-06-22 02:30 UTC == 2026-06-21 22:30 America/Toronto (UTC-4 in June).
+    # Querying for 2026-06-21 in Toronto must include the workout;
+    # querying for 2026-06-22 must exclude it.
+    start_utc = datetime(2026, 6, 22, 2, 30, tzinfo=UTC)
+    wid = uuid4()
+    await session.execute(
+        insert(apple_workouts).values(
+            id=wid,
+            user_key=UK,
+            activity_type="Running",
+            start_time=start_utc,
+            end_time=start_utc + timedelta(minutes=30),
+            duration_min=30,
+            active_energy_cal=300,
+        )
+    )
+    await session.commit()
+    repo = ActivityReadRepository(session)
+    rows_jun21 = await repo.workouts_in_range(
+        UK, date(2026, 6, 21), date(2026, 6, 21), tz="America/Toronto"
+    )
+    rows_jun22 = await repo.workouts_in_range(
+        UK, date(2026, 6, 22), date(2026, 6, 22), tz="America/Toronto"
+    )
+    assert len(rows_jun21) == 1, (
+        "workout whose UTC date is June 22 should appear on June 21 Toronto"
+    )
+    assert len(rows_jun22) == 0, "workout should not appear on June 22 Toronto"
