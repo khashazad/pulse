@@ -84,7 +84,7 @@ struct ActivityTabView: View {
     private func summaryStrip(_ s: ActivitySummary) -> some View {
         Button { onOpenTrends() } label: {
             HStack(spacing: 18) {
-                metric("\(Int(s.totals.totalDurationMin.rounded() / 60))h \(Int(s.totals.totalDurationMin.rounded()) % 60)m", "this week")
+                metric(s.totals.totalDurationMin.asDurationFromMinutes, "this week")
                 metric("\(s.totals.workoutCount)", "sessions")
                 metric("\(Int(s.totals.totalActiveEnergyCal.rounded()))", "kcal")
                 Spacer()

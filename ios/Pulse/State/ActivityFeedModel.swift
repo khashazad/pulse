@@ -13,38 +13,38 @@ final class ActivityFeedModel {
 
     private(set) var state: LoadState<[ActivityWorkoutSummary]> = .idle
     private(set) var summary: ActivitySummary?
-    private(set) var isLoadingMore = false
     private(set) var filter: String?            // nil = All
 
+    /// The loaded workouts grouped into Mon–Sun week sections (newest first), cached on
+    /// every page append so the view reads it without recomputing the grouping each render.
+    private(set) var sections: [WeekSection] = []
+
+    /// All activity types seen across any load (filtered or unfiltered), sorted alphabetically.
+    /// Derived from `knownTypes`, which is never cleared on reload, so the filter chips stay
+    /// stable while a type filter is active — the user can switch types without tapping "All".
+    private(set) var availableTypes: [String] = []
+
+    private var isLoadingMore = false
     private weak var auth: AuthSession?
     private var items: [ActivityWorkoutSummary] = []
     private var seen = Set<UUID>()
     private var knownTypes: Set<String> = []
     private var nextBefore: String?
     private var nextBeforeId: String?
-    private var hasMore = true
 
     /// Initializes the model with the app's auth session.
     /// - Parameter auth: The shared auth session used to create authenticated clients.
     init(auth: AuthSession) { self.auth = auth }
 
-    /// Whether more (older) pages remain to load.
-    var canLoadMore: Bool { hasMore }
-
-    /// The currently loaded workouts grouped into week sections (for the list).
-    var sections: [WeekSection] { Self.groupByWeek(items) }
-
-    /// All activity types seen across any load (filtered or unfiltered), sorted alphabetically.
-    /// Sourced from `knownTypes`, which is never cleared on reload, so chips remain stable
-    /// while a type filter is active — the user can switch types without tapping "All" first.
-    var availableTypes: [String] { knownTypes.sorted() }
+    /// Whether more (older) pages remain to load — true while the server returned a cursor.
+    var canLoadMore: Bool { nextBefore != nil }
 
     /// Loads the first feed page and the week summary; resets any prior state.
     /// - Returns: Nothing; results publish via `state` and `summary`.
     func loadFirst() async {
         guard let client = auth?.makeClient() else { state = .failed(.notSignedIn); return }
         state = .loading
-        items = []; seen = []; nextBefore = nil; nextBeforeId = nil; hasMore = true
+        items = []; seen = []; nextBefore = nil; nextBeforeId = nil
         async let summaryResult = try? client.activitySummary(period: .week, anchor: nil)
         do {
             let page = try await client.activityWorkouts(before: nil, beforeId: nil, type: filter)
@@ -62,7 +62,7 @@ final class ActivityFeedModel {
     /// Loads the next (older) page and appends it, if any remain and not already loading.
     /// - Returns: Nothing; results publish via `state`.
     func loadMore() async {
-        guard hasMore, !isLoadingMore, let client = auth?.makeClient(), case .loaded = state else { return }
+        guard canLoadMore, !isLoadingMore, let client = auth?.makeClient(), case .loaded = state else { return }
         isLoadingMore = true
         defer { isLoadingMore = false }
         do {
@@ -82,9 +82,9 @@ final class ActivityFeedModel {
         await loadFirst()
     }
 
-    /// Appends a page's items (de-duplicated by id) and advances the cursor.
-    /// Also records every item's `activityType` into `knownTypes` so filter chips
-    /// remain stable across filtered reloads.
+    /// Appends a page's items (de-duplicated by id), advances the cursor, and rebuilds
+    /// the cached derived state. Also records every item's `activityType` into `knownTypes`
+    /// so filter chips remain stable across filtered reloads.
     /// - Parameter page: The freshly fetched feed page.
     private func append(_ page: WorkoutFeedPage) {
         for w in page.items {
@@ -95,7 +95,16 @@ final class ActivityFeedModel {
         }
         nextBefore = page.nextBefore
         nextBeforeId = page.nextBeforeId
-        hasMore = page.nextBefore != nil
+        rebuildDerived()
+    }
+
+    /// Rebuilds the cached `sections` and `availableTypes` from the current items and known
+    /// types. Called once per page append so the view reads cached values instead of
+    /// recomputing the week grouping and type sort on every render of a growing feed.
+    /// - Returns: Nothing; updates `sections` and `availableTypes` in place.
+    private func rebuildDerived() {
+        sections = Self.groupByWeek(items)
+        availableTypes = knownTypes.sorted()
     }
 
     /// Groups workouts into Mon–Sun week sections, newest week and workout first.

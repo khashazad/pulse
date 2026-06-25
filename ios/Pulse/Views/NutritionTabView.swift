@@ -84,17 +84,12 @@ struct NutritionTabView: View {
     // MARK: - Private helpers
 
     /// Segmented control that switches between Intake, Food, and Prep.
-    /// - Returns: A styled `Picker` pinned above the active section content.
+    /// - Returns: The Catppuccin-styled `CTPSegmented` control pinned above the active section.
     private var sectionPicker: some View {
-        Picker("Section", selection: $section) {
-            ForEach(Section.allCases) { s in
-                Text(s.rawValue).tag(s)
-            }
-        }
-        .pickerStyle(.segmented)
-        .padding(.horizontal, 16)
-        .padding(.top, 8)
-        .padding(.bottom, 6)
+        CTPSegmented(selection: $section, options: Section.allCases) { $0.rawValue }
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
+            .padding(.bottom, 6)
     }
 
     /// The content area for the currently selected sub-section.

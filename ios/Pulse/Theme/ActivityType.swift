@@ -4,8 +4,18 @@ import SwiftUI
 enum ActivityType {
     /// Theme color for a workout type's feed dot, bars, and chart fills.
     /// - Parameter raw: The Apple `activity_type` string.
-    /// - Returns: A `Theme.CTP` color; mauve for strength, teal for run/cardio, sky default.
+    /// - Returns: A `Theme.CTP` color; mauve for strength, peach for HIIT, sky default.
     static func color(_ raw: String) -> Color {
+        // Known Apple HealthKit identifiers mapped explicitly (mirrors displayName's spine).
+        // These camel-cased names contain no lowercase substring like "hiit", so the
+        // substring fallback below would mis-bucket them — match them by exact name first.
+        switch raw {
+        case "TraditionalStrengthTraining", "FunctionalStrengthTraining": return Theme.CTP.mauve
+        case "HighIntensityIntervalTraining": return Theme.CTP.peach
+        case "Other": return Theme.CTP.overlay1
+        default: break
+        }
+        // Substring fallback for the long tail of less common types.
         let k = raw.lowercased()
         if k.contains("strength") { return Theme.CTP.mauve }
         if k.contains("run") { return Theme.CTP.teal }
@@ -14,7 +24,6 @@ enum ActivityType {
         if k.contains("swim") { return Theme.CTP.sapphire }
         if k.contains("yoga") || k.contains("flexibility") { return Theme.CTP.flamingo }
         if k.contains("hiit") || k.contains("functional") { return Theme.CTP.peach }
-        if k == "other" { return Theme.CTP.overlay1 }
         return Theme.CTP.lavender
     }
 

@@ -19,11 +19,9 @@ struct ActivityTrendsView: View {
             Theme.BG.primary.ignoresSafeArea()
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    Picker("", selection: Binding(get: { model.period },
-                                                  set: { p in Task { await model.select(p) } })) {
-                        ForEach(ActivityPeriod.allCases) { Text($0.label).tag($0) }
-                    }
-                    .pickerStyle(.segmented)
+                    CTPSegmented(selection: Binding(get: { model.period },
+                                                    set: { p in Task { await model.select(p) } }),
+                                 options: ActivityPeriod.allCases) { $0.label }
                     content
                 }
                 .padding(.horizontal, 16)
@@ -60,7 +58,7 @@ struct ActivityTrendsView: View {
     private func headline(_ s: ActivitySummary) -> some View {
         HStack(spacing: 10) {
             metricTile("Time",
-                       value: "\(Int(s.totals.totalDurationMin.rounded() / 60))h \(Int(s.totals.totalDurationMin.rounded()) % 60)m",
+                       value: s.totals.totalDurationMin.asDurationFromMinutes,
                        delta: s.deltas.totalDurationMin)
             metricTile("Sessions", value: "\(s.totals.workoutCount)", delta: s.deltas.workoutCount)
             metricTile("Calories",
