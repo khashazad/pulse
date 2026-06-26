@@ -8,11 +8,13 @@ from uuid import uuid4
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import insert
+from sqlalchemy import insert, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from pulse_server import db
 from pulse_server.repositories.activity import ActivityReadRepository
 from pulse_server.repositories.tables import (
+    activity_type_settings,
     apple_workouts,
     daily_activity,
     strength_sets,
@@ -314,3 +316,81 @@ async def test_workouts_in_range_timezone_bucketing(session) -> None:
         "workout whose UTC date is June 22 should appear on June 21 Toronto"
     )
     assert len(rows_jun22) == 0, "workout should not appear on June 22 Toronto"
+
+
+async def test_activity_type_settings_round_trip_and_upsert(session) -> None:
+    """Insert a row into activity_type_settings, read it back, then upsert to flip is_cardio.
+
+    Verifies the composite PK, the round-trip column values, and that ON CONFLICT DO UPDATE
+    replaces the existing row (is_cardio flips from the initial value to the updated one).
+
+    Args:
+        session: Async SQLAlchemy session with a clean activity-table slate (from the
+            module-level ``session`` fixture).
+
+    Returns:
+        None: This is a pytest test — it asserts rather than returning a value.
+
+    Raises:
+        sqlalchemy.exc.ProgrammingError: If the ``activity_type_settings`` table does not
+            exist in the test database (expected failure in the RED phase).
+        AssertionError: If round-trip values or upsert behaviour are incorrect.
+    """
+    # Clean up any rows from previous runs (table may have data from a prior session).
+    await session.execute(activity_type_settings.delete())
+    await session.commit()
+
+    # Insert the initial row.
+    await session.execute(
+        insert(activity_type_settings).values(
+            user_key=UK,
+            activity_type="Running",
+            is_cardio=True,
+        )
+    )
+    await session.commit()
+
+    # Round-trip: read back and assert all columns.
+    row = (
+        (
+            await session.execute(
+                select(activity_type_settings).where(
+                    activity_type_settings.c.user_key == UK,
+                    activity_type_settings.c.activity_type == "Running",
+                )
+            )
+        )
+        .mappings()
+        .one()
+    )
+    assert row["user_key"] == UK
+    assert row["activity_type"] == "Running"
+    assert row["is_cardio"] is True
+    assert row["updated_at"] is not None
+
+    # Upsert: flip is_cardio to False via ON CONFLICT DO UPDATE (replaces existing row).
+    upsert_stmt = (
+        pg_insert(activity_type_settings)
+        .values(user_key=UK, activity_type="Running", is_cardio=False)
+        .on_conflict_do_update(
+            index_elements=["user_key", "activity_type"],
+            set_={"is_cardio": False},
+        )
+    )
+    await session.execute(upsert_stmt)
+    await session.commit()
+
+    # Confirm the upsert replaced the row (still one row, is_cardio now False).
+    rows = (
+        (
+            await session.execute(
+                select(activity_type_settings).where(
+                    activity_type_settings.c.user_key == UK,
+                )
+            )
+        )
+        .mappings()
+        .all()
+    )
+    assert len(rows) == 1, "upsert must not duplicate the row"
+    assert rows[0]["is_cardio"] is False, "upsert must overwrite is_cardio"
