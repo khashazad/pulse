@@ -78,7 +78,12 @@ struct RootView: View {
                             case let .workout(id):
                                 WorkoutDetailView(id: id, auth: auth)
                             case .trends:
-                                ActivityTrendsView(auth: auth)
+                                ActivityTrendsView(
+                                    auth: auth,
+                                    onManageTypes: { activityPath.append(ActivityRoute.types) }
+                                )
+                            case .types:
+                                ActivityTypesView(auth: auth)
                             }
                         }
                     }

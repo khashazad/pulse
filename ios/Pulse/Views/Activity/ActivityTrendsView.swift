@@ -7,11 +7,18 @@ private let prBadgeCornerRadius: CGFloat = 5
 /// a volume-over-time bar chart, a by-type breakdown, and strength top lifts.
 struct ActivityTrendsView: View {
     @State private var model: ActivityTrendsModel
+    /// Called when the user taps the manage-types toolbar button. The parent
+    /// `NavigationStack` owner (RootView) appends `ActivityRoute.types` to the path.
+    private let onManageTypes: () -> Void
 
-    /// Initializes the view with the shared auth session.
-    /// - Parameter auth: The app's authenticated session.
-    init(auth: AuthSession) {
+    /// Initializes the view with the shared auth session and a navigation callback.
+    /// - Parameters:
+    ///   - auth: The app's authenticated session.
+    ///   - onManageTypes: Invoked when the user taps the toolbar button to open
+    ///     the activity-types management screen.
+    init(auth: AuthSession, onManageTypes: @escaping () -> Void) {
         _model = State(initialValue: ActivityTrendsModel(auth: auth))
+        self.onManageTypes = onManageTypes
     }
 
     var body: some View {
@@ -30,6 +37,16 @@ struct ActivityTrendsView: View {
         }
         .navigationTitle("Trends")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    onManageTypes()
+                } label: {
+                    Image(systemName: "tag")
+                        .foregroundStyle(Theme.CTP.mauve)
+                }
+            }
+        }
         .task { if case .idle = model.state { await model.load() } }
     }
 

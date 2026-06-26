@@ -10,4 +10,6 @@ enum ActivityRoute: Hashable {
     case workout(UUID)
     /// The activity trends screen (week / month / year breakdowns).
     case trends
+    /// The activity types management screen (cardio classification toggles).
+    case types
 }
