@@ -58,21 +58,53 @@ struct MonthTrendsView: View {
                 )
             } else {
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 8) {
-                        ForEach(summary.weeks) { week in
-                            Button {
-                                onOpenWeek(week.weekStart)
-                            } label: {
-                                WeekRollupRow(week: week)
-                                    .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                        }
+                    VStack(alignment: .leading, spacing: Theme.Layout.sectionSpacing) {
+                        summaryCard(summary)
+                        WeekBreakdownSection(weeks: summary.weeks, onOpenWeek: onOpenWeek)
+                        Spacer(minLength: Theme.Layout.dockClearance)
                     }
-                    .padding(16)
-                    .padding(.bottom, Theme.Layout.dockClearance)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 4)
                 }
             }
         }
+    }
+
+    /// A two-tile summary header for the month: total session count and total time.
+    /// Mirrors the Trends headline tiles so the drill-down reads consistently.
+    /// - Parameter s: The loaded month summary.
+    /// - Returns: An `HStack` of two stat tiles.
+    private func summaryCard(_ s: ActivitySummary) -> some View {
+        HStack(spacing: 10) {
+            summaryTile(
+                "Sessions",
+                "\(s.totals.workoutCount)"
+            )
+            summaryTile(
+                "Time",
+                s.totals.totalDurationMin.asDurationWithDays
+            )
+        }
+    }
+
+    /// A single labelled stat tile used by `summaryCard`.
+    /// - Parameters:
+    ///   - label: The uppercased metric label (e.g. "Sessions").
+    ///   - value: The formatted metric value.
+    /// - Returns: A card-styled tile filling the available width.
+    private func summaryTile(_ label: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label)
+                .font(.system(size: 10, weight: .medium))
+                .tracking(0.4)
+                .textCase(.uppercase)
+                .foregroundStyle(Theme.FG.tertiary)
+            Text(value)
+                .font(.system(size: 20, weight: .bold))
+                .foregroundStyle(Theme.FG.primary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .ctpCard()
     }
 }

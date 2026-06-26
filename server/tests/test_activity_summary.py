@@ -193,6 +193,24 @@ def test_months_in_year_returns_twelve_entries_with_correct_counts() -> None:
     assert all(r.session_count == 0 for i, r in enumerate(rollups) if i != 5)
 
 
+def test_months_in_year_through_month_excludes_future_months() -> None:
+    """months_in_year emits only Jan..through_month; later months are omitted entirely."""
+    rows = [
+        {"local_date": date(2026, 3, 10), "activity_type": "Running", "duration_min": 40.0},
+        # A row in a future month (relative to the cutoff) must be ignored, not bucketed.
+        {"local_date": date(2026, 9, 1), "activity_type": "Cycling", "duration_min": 50.0},
+    ]
+    rollups = months_in_year(rows, 2026, through_month=6)
+
+    assert len(rollups) == 6
+    starts = [r.month_start for r in rollups]
+    assert starts[0] == date(2026, 1, 1)
+    assert starts[-1] == date(2026, 6, 1)
+    # March counted; September dropped (past the cutoff).
+    assert rollups[2].session_count == 1
+    assert sum(r.session_count for r in rollups) == 1
+
+
 # ---------------------------------------------------------------------------
 # energy_balance
 # ---------------------------------------------------------------------------

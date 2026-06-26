@@ -322,12 +322,13 @@ async def build_summary(
     Both strength activity types are collapsed into a single ``"Weights"``
     label in ``by_type``.  ``weeks`` is populated only when ``period=="month"``
     (one entry per ISO week clamped to the month); ``months`` is populated only
-    when ``period=="year"`` (always 12 entries).
+    when ``period=="year"`` (January through the anchor's month — future months
+    are excluded).
 
     ``energy_balance`` is assembled for ``month`` and ``year`` periods: for
     ``month`` there is one bucket per ISO week (reusing the already-computed
-    ``weeks`` list); for ``year`` there is one bucket per calendar month
-    (Jan-Dec of ``anchor.year``).  ``week`` period yields ``[]``.  When
+    ``weeks`` list); for ``year`` there is one bucket per calendar month from
+    January through the anchor's month.  ``week`` period yields ``[]``.  When
     energy-balance buckets are non-empty, three extra queries are issued:
     ``daily_calorie_totals``, ``list_weight_range`` (both over ``[start, end]``
     exactly — no ±7-day expansion, which would breach the 366-day cap for the
@@ -373,8 +374,10 @@ async def build_summary(
             (w.week_start, w.week_end, f"Week of {w.week_start:%b %-d}") for w in weeks
         ]
     elif period == "year":
+        # Only months through the anchor's month have occurred; exclude future
+        # months so the Year view never shows empty placeholder buckets.
         eb_buckets = []
-        for m in range(1, 13):
+        for m in range(1, anchor.month + 1):
             m_start, m_end = period_bounds("month", DateValue(anchor.year, m, 1))
             eb_buckets.append((m_start, m_end, f"{m_start:%b}"))
     else:
@@ -407,7 +410,9 @@ async def build_summary(
         deltas=deltas,
         by_type=rollup_by_type(cur),
         weeks=weeks,
-        months=months_in_year(cur, anchor.year) if period == "year" else [],
+        months=months_in_year(cur, anchor.year, through_month=anchor.month)
+        if period == "year"
+        else [],
         volume_series=bucket_volume(_build_vol_rows(history, start, end), period, start, end),
         top_lifts=compute_top_lifts(history, period_start=start),
         energy_balance=eb,
