@@ -46,10 +46,8 @@ struct RootView: View {
                                 }
                             }
                         )
-                        .toolbar { settingsButton }
                         .navigationDestination(for: Date.self) { date in
                             DayMacroView(date: date)
-                                .toolbar { settingsButton }
                         }
                         .navigationDestination(for: FoodRoute.self) { route in
                             switch route {
@@ -59,14 +57,12 @@ struct RootView: View {
                                     onMutated: { Task { await mealsModel?.load() } },
                                     onDeleted: { id in mealsModel?.applyRemoval(id: id) }
                                 )
-                                .toolbar { settingsButton }
                             case .food(let food):
                                 CustomFoodDetailView(
                                     food: food,
                                     onRenamed: { updated in foodsModel?.applyRenamedStandalone(updated) },
                                     onDeleted: { id in foodsModel?.applyRemovedStandalone(id: id) }
                                 )
-                                .toolbar { settingsButton }
                             }
                         }
                     }
@@ -77,28 +73,24 @@ struct RootView: View {
                             onOpenWorkout: { id in activityPath.append(ActivityRoute.workout(id)) },
                             onOpenTrends: { activityPath.append(ActivityRoute.trends) }
                         )
-                        .toolbar { settingsButton }
                         .navigationDestination(for: ActivityRoute.self) { route in
                             switch route {
                             case let .workout(id):
                                 WorkoutDetailView(id: id, auth: auth)
-                                    .toolbar { settingsButton }
                             case .trends:
                                 ActivityTrendsView(auth: auth)
-                                    .toolbar { settingsButton }
                             }
                         }
                     }
                 case .measures:
                     NavigationStack(path: $measuresPath) {
                         MeasuresTabRootView()
-                            .toolbar { settingsButton }
                     }
                 }
             }
 
             if dockVisible {
-                FloatingDock(tab: $tab)
+                FloatingDock(tab: $tab, onSettings: { showSettings = true })
                     .padding(.horizontal, 32)
                     // Ride just above the home indicator (TickTick-style) rather
                     // than floating high off the bottom edge.
@@ -128,20 +120,6 @@ struct RootView: View {
         case .nutrition: nutritionPath.isEmpty
         case .activity:  activityPath.isEmpty
         case .measures:  measuresPath.isEmpty
-        }
-    }
-
-    /// Shared toolbar item: gear icon that presents the settings sheet.
-    /// - Returns: Composed toolbar content placing a gear button in the trailing bar slot.
-    @ToolbarContentBuilder
-    private var settingsButton: some ToolbarContent {
-        ToolbarItem(placement: .topBarTrailing) {
-            Button {
-                showSettings = true
-            } label: {
-                Image(systemName: "gearshape")
-                    .foregroundStyle(Theme.CTP.mauve)
-            }
         }
     }
 }

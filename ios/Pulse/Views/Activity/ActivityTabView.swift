@@ -27,6 +27,9 @@ struct ActivityTabView: View {
             content
         }
         .navigationTitle("Activity")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(Theme.BG.primary, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
         .task { if case .idle = model.state { await model.loadFirst() } }
     }
 
@@ -126,7 +129,9 @@ struct ActivityTabView: View {
             }
             if let group = model.groupFilter {
                 let subtypes = model.availableSubtypes(in: group)
-                if !subtypes.isEmpty {
+                // Only worth a drill-in row when the group has more than one
+                // subtype — e.g. Weights (one strength type) shows no second row.
+                if subtypes.count > 1 {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 8) {
                             chip("All \(group.displayName)", active: model.subtypeFilter == nil) {

@@ -20,27 +20,14 @@ struct LogView: View {
     var body: some View {
         ZStack {
             Theme.BG.primary.ignoresSafeArea()
-            VStack(spacing: 0) {
-                segmented
-                    .padding(.horizontal, 16)
-                    .padding(.top, 4)
-                    .padding(.bottom, 8)
-                content
-            }
+            content
         }
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(Theme.BG.primary, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    showDatePicker = true
-                } label: {
-                    Image(systemName: "calendar")
-                        .foregroundStyle(Theme.CTP.mauve)
-                }
-            }
+            ToolbarItem(placement: .topBarTrailing) { periodMenu }
         }
         .sheet(isPresented: $showDatePicker) {
             DatePickerSheet(onOpen: { date in
@@ -60,14 +47,29 @@ struct LogView: View {
         }
     }
 
-    private var segmented: some View {
-        Picker("", selection: $subTab) {
-            Text("Today").tag(LogSubTab.today)
-            Text("Week").tag(LogSubTab.week)
-            Text("Month").tag(LogSubTab.month)
-            Text("Year").tag(LogSubTab.year)
+    /// Calendar dropdown that replaces the old segmented period bar: picks the
+    /// period (Today / Week / Month / Year) and offers a jump-to-date action, so
+    /// one top-bar control does both. The active period is shown by the nav title
+    /// and the picker's checkmark.
+    /// - Returns: A `Menu` labeled with a calendar glyph.
+    private var periodMenu: some View {
+        Menu {
+            Picker("Period", selection: $subTab) {
+                Text("Today").tag(LogSubTab.today)
+                Text("This week").tag(LogSubTab.week)
+                Text("This month").tag(LogSubTab.month)
+                Text("This year").tag(LogSubTab.year)
+            }
+            Divider()
+            Button {
+                showDatePicker = true
+            } label: {
+                Label("Pick a date…", systemImage: "calendar.badge.plus")
+            }
+        } label: {
+            Image(systemName: "calendar")
+                .foregroundStyle(Theme.CTP.mauve)
         }
-        .pickerStyle(.segmented)
     }
 
     @ViewBuilder

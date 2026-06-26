@@ -9,18 +9,33 @@ enum DockTab: Hashable {
 }
 
 /// Floating capsule tab bar shown at the bottom of `RootView`.
-/// Renders three `tabButton`s and writes the selected tab back through the `tab` binding.
+/// Renders the three top-level `tabButton`s plus a Settings button that opens the
+/// settings sheet (via `onSettings`) rather than switching tabs.
 struct FloatingDock: View {
     @Binding var tab: DockTab
+    /// Invoked when the Settings dock item is tapped; presents the settings sheet.
+    let onSettings: () -> Void
 
     var body: some View {
         HStack(spacing: 4) {
             tabButton(.nutrition, system: "fork.knife", label: "Nutrition")
             tabButton(.activity, system: "figure.run", label: "Activity")
             tabButton(.measures, system: "figure.arms.open", label: "Measures")
+            settingsButton
         }
         .padding(6)
         .modifier(DockSurface())
+    }
+
+    /// Dock item that opens the settings sheet. Unlike the tab buttons it never
+    /// shows an active state, since Settings is presented over the current tab
+    /// rather than being a persistent tab of its own.
+    /// - Returns: A labeled gear button wired to `onSettings`.
+    private var settingsButton: some View {
+        Button(action: onSettings) {
+            tabContents(system: "gearshape", label: "Settings", isActive: false)
+        }
+        .buttonStyle(.plain)
     }
 
     /// One tap-target in the dock; selects `target` on tap.
@@ -128,7 +143,7 @@ private struct DockSurface: ViewModifier {
         Theme.BG.primary.ignoresSafeArea()
         VStack {
             Spacer()
-            FloatingDock(tab: $tab)
+            FloatingDock(tab: $tab, onSettings: {})
                 .padding(.horizontal, 24)
                 .padding(.bottom, 16)
         }
