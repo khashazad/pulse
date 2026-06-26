@@ -50,7 +50,7 @@ struct MonthTrendsView: View {
                 description: error.userMessage
             )
         case let .some(.loaded(summary)):
-            if summary.weeks.isEmpty {
+            if summary.totals.workoutCount == 0 {
                 EmptyStateView(
                     icon: "calendar",
                     title: "No workouts",

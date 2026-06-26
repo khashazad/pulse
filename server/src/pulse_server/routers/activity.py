@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from pulse_server.auth import require_session
 from pulse_server.config import get_settings
-from pulse_server.db import get_session_dependency
+from pulse_server.db import get_session_dependency, transaction
 from pulse_server.models.activity import (
     ActivityPeriod,
     ActivitySummary,
@@ -194,6 +194,7 @@ async def put_activity_type_cardio(
     - HTTPException(404): When the activity type has no recorded workouts for
       this user (propagated from the service layer).
     """
-    return await set_activity_type_cardio(
-        session, request.state.user_key, activity_type, body.is_cardio
-    )
+    async with transaction(session):
+        return await set_activity_type_cardio(
+            session, request.state.user_key, activity_type, body.is_cardio
+        )

@@ -79,6 +79,26 @@ final class ActivityModelTests: XCTestCase {
         XCTAssertNil(b1.estMaintenancePerDay)
     }
 
+    /// Verifies `ActivitySummary` decodes without throwing when the period-collection
+    /// keys (`weeks`, `months`, `energy_balance`) are absent — as an older server that
+    /// predates those fields would respond — falling back to empty arrays rather than
+    /// failing the whole decode.
+    func testDecodeSummaryMissingPeriodCollectionsDegradesToEmpty() throws {
+        let data = try loadFixture("activity_summary")
+        guard var obj = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return XCTFail("fixture is not a JSON object")
+        }
+        obj.removeValue(forKey: "weeks")
+        obj.removeValue(forKey: "months")
+        obj.removeValue(forKey: "energy_balance")
+        let stripped = try JSONSerialization.data(withJSONObject: obj)
+
+        let s = try JSONDecoder.pulseDefault().decode(ActivitySummary.self, from: stripped)
+        XCTAssertTrue(s.weeks.isEmpty)
+        XCTAssertTrue(s.months.isEmpty)
+        XCTAssertTrue(s.energyBalance.isEmpty)
+    }
+
     /// Verifies `WeekDetail` decodes correctly from the `week_detail` fixture,
     /// including `weekStart`, `weekEnd`, and the nested day groups with workouts.
     func testDecodeWeekDetail() throws {

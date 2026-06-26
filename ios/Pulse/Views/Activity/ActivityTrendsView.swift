@@ -126,7 +126,7 @@ struct ActivityTrendsView: View {
                 : s.totals.totalDurationMin.asDurationFromMinutes
             metricTile("Time", value: timeValue, delta: s.deltas.totalDurationMin)
             let perMonth = model.period == .year
-                ? "\(s.totals.workoutCount / 12)/mo"
+                ? "\(Int((Double(s.totals.workoutCount) / 12).rounded()))/mo"
                 : nil
             metricTile(
                 "Sessions",

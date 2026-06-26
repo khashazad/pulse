@@ -281,3 +281,10 @@ class EnergyBalanceBucket(BaseModel):
     """Calendar days between the two weight readings (min 1); None when delta is None."""
     est_maintenance_per_day: float | None
     """Estimated maintenance calories per day; None when intake or weight delta is unavailable."""
+
+
+# ``ActivitySummary`` references ``WeekRollup``/``MonthRollup``/``EnergyBalanceBucket``
+# defined below it; with ``from __future__ import annotations`` those forward refs
+# leave the model incomplete until first use. Rebuild eagerly so any code path that
+# inspects the model's fields sees the resolved schema.
+ActivitySummary.model_rebuild()

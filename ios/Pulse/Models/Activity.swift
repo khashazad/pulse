@@ -412,8 +412,10 @@ struct ActivitySummary: Codable, Hashable {
         case energyBalance = "energy_balance"
     }
 
-    /// Decodes all summary fields, falling back to an empty array for
-    /// `energy_balance` when the key is absent.
+    /// Decodes all summary fields, falling back to an empty array for the
+    /// period-collection fields (`weeks`, `months`, `energy_balance`) when their
+    /// keys are absent — so a new client degrades gracefully against an older
+    /// server that predates those fields rather than failing the whole decode.
     /// - Parameter decoder: The decoder to read from.
     /// - Throws: `DecodingError` when any required field is missing or malformed.
     init(from decoder: any Decoder) throws {
@@ -424,8 +426,8 @@ struct ActivitySummary: Codable, Hashable {
         totals = try c.decode(ActivityTotals.self, forKey: .totals)
         deltas = try c.decode(ActivityDeltas.self, forKey: .deltas)
         byType = try c.decode([TypeBreakdown].self, forKey: .byType)
-        weeks = try c.decode([WeekRollup].self, forKey: .weeks)
-        months = try c.decode([MonthRollup].self, forKey: .months)
+        weeks = try c.decodeIfPresent([WeekRollup].self, forKey: .weeks) ?? []
+        months = try c.decodeIfPresent([MonthRollup].self, forKey: .months) ?? []
         volumeSeries = try c.decode([VolumeBucket].self, forKey: .volumeSeries)
         topLifts = try c.decode([TopLift].self, forKey: .topLifts)
         energyBalance = try c.decodeIfPresent([EnergyBalanceBucket].self, forKey: .energyBalance) ?? []
