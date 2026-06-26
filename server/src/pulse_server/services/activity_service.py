@@ -12,7 +12,6 @@ from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pulse_server.models.activity import (
-    WEIGHTS_ACTIVITY_TYPES,
     ActivityDeltas,
     ActivityPeriod,
     ActivitySummary,
@@ -34,10 +33,12 @@ from pulse_server.services.activity_summary import (
     bucket_volume,
     compute_top_lifts,
     est_one_rep_max,
+    months_in_year,
     pct_change,
     period_bounds,
     previous_bounds,
-    rollup_by_group,
+    rollup_by_type,
+    weeks_in_month,
 )
 
 MAX_FEED_LIMIT = 100
@@ -294,8 +295,14 @@ async def build_summary(
     """Assemble the week/month/year trend summary for a period.
 
     Fetches current and previous period workouts plus full strength history,
-    then delegates to the pure-math helpers in ``activity_summary`` to
-    produce totals, deltas, by-type breakdown, volume series, and top lifts.
+    then delegates to the pure-math helpers in ``activity_summary`` to produce
+    totals, deltas, by-type breakdown, period-level week/month rollups, volume
+    series, and top lifts.
+
+    Both strength activity types are collapsed into a single ``"Weights"``
+    label in ``by_type``.  ``weeks`` is populated only when ``period=="month"``
+    (one entry per ISO week clamped to the month); ``months`` is populated only
+    when ``period=="year"`` (always 12 entries).
 
     **Inputs:**
     - session (AsyncSession): Active database session.
@@ -307,7 +314,7 @@ async def build_summary(
 
     **Outputs:**
     - ActivitySummary: Assembled trend summary including totals, period-over-period
-      deltas, by-type breakdown, volume series, and top lifts.
+      deltas, by-type breakdown, week/month rollups, volume series, and top lifts.
     """
     start, end = period_bounds(period, anchor)
     p_start, p_end = previous_bounds(period, anchor)
@@ -329,7 +336,9 @@ async def build_summary(
         period_end=end,
         totals=cur_t,
         deltas=deltas,
-        by_group=rollup_by_group(cur, WEIGHTS_ACTIVITY_TYPES),
+        by_type=rollup_by_type(cur),
+        weeks=weeks_in_month(cur, start, end) if period == "month" else [],
+        months=months_in_year(cur, anchor.year) if period == "year" else [],
         volume_series=bucket_volume(_build_vol_rows(history, start, end), period, start, end),
         top_lifts=compute_top_lifts(history, period_start=start),
     )

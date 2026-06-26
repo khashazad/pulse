@@ -10,7 +10,6 @@ from datetime import timedelta as TimeDeltaValue
 from pulse_server.models.activity import (
     WEIGHTS_ACTIVITY_TYPES,
     ActivityPeriod,
-    GroupBreakdown,
     MonthRollup,
     TopLift,
     TypeBreakdown,
@@ -85,58 +84,6 @@ def previous_bounds(period: ActivityPeriod, anchor: DateValue) -> tuple[DateValu
     """
     start, _ = period_bounds(period, anchor)
     return period_bounds(period, start - TimeDeltaValue(days=1))
-
-
-def rollup_by_group(
-    rows: list[dict], weights_types: set[str] | frozenset[str]
-) -> list[GroupBreakdown]:
-    """Aggregate duration by activity_type, bucket each into weights/cardio, and
-    nest the per-type detail under its group.
-
-    **Inputs:**
-    - rows (list[dict]): Rows with ``activity_type`` and ``duration_min`` keys.
-    - weights_types (set[str]): The activity types that belong to the Weights group.
-
-    **Outputs:**
-    - list[GroupBreakdown]: Non-empty groups, desc by duration. Each group's
-      ``share`` is its fraction of total duration; each subtype's ``share`` is its
-      fraction of the group's duration; subtypes are desc by duration.
-    """
-    agg: dict[str, dict[str, float]] = {}
-    for r in rows:
-        a = agg.setdefault(r["activity_type"], {"duration": 0.0, "count": 0.0})
-        a["duration"] += float(r["duration_min"] or 0)
-        a["count"] += 1
-    total = sum(a["duration"] for a in agg.values()) or 1.0
-    groups: dict[str, list[tuple[str, dict[str, float]]]] = {"weights": [], "cardio": []}
-    for name, a in agg.items():
-        groups["weights" if name in weights_types else "cardio"].append((name, a))
-    out: list[GroupBreakdown] = []
-    for gname, members in groups.items():
-        if not members:
-            continue
-        gdur = sum(a["duration"] for _, a in members) or 1.0
-        gcount = sum(a["count"] for _, a in members)
-        subtypes = [
-            TypeBreakdown(
-                activity_type=name,
-                count=int(a["count"]),
-                duration_min=a["duration"],
-                share=a["duration"] / gdur,
-            )
-            for name, a in sorted(members, key=lambda kv: kv[1]["duration"], reverse=True)
-        ]
-        out.append(
-            GroupBreakdown(
-                group=gname,
-                count=int(gcount),
-                duration_min=sum(a["duration"] for _, a in members),
-                share=sum(a["duration"] for _, a in members) / total,
-                subtypes=subtypes,
-            )
-        )
-    out.sort(key=lambda g: g.duration_min, reverse=True)
-    return out
 
 
 def compute_top_lifts(
@@ -249,7 +196,7 @@ def bucket_volume(
 
 
 # ---------------------------------------------------------------------------
-# Per-type rollup math (new drill-down layer, additive to by_group above)
+# Per-type rollup math (by_type breakdown — replaces the former by_group layer)
 # ---------------------------------------------------------------------------
 
 
