@@ -94,4 +94,3 @@ struct ExerciseCard: View {
         return "—"
     }
 }
-

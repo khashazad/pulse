@@ -65,13 +65,13 @@ def test_rollup_by_group_buckets_and_shares() -> None:
     out = rollup_by_group(rows, {"TraditionalStrengthTraining", "FunctionalStrengthTraining"})
     by_name = {g.group: g for g in out}
     assert by_name["weights"].duration_min == 80.0
-    assert round(by_name["weights"].share, 3) == 0.8          # 80 / 100
+    assert round(by_name["weights"].share, 3) == 0.8  # 80 / 100
     assert round(by_name["cardio"].share, 3) == 0.2
     # subtype share is within its group: strength subtypes sum to ~1.0
     w_subs = {t.activity_type: t.share for t in by_name["weights"].subtypes}
-    assert round(w_subs["TraditionalStrengthTraining"], 3) == 0.75   # 60 / 80
+    assert round(w_subs["TraditionalStrengthTraining"], 3) == 0.75  # 60 / 80
     assert by_name["weights"].subtypes[0].activity_type == "TraditionalStrengthTraining"  # desc
-    assert out[0].group == "weights"                          # larger group leads
+    assert out[0].group == "weights"  # larger group leads
 
 
 def test_rollup_by_group_single_group() -> None:

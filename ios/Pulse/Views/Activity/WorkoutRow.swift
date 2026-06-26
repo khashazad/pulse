@@ -29,8 +29,11 @@ struct WorkoutRow: View {
     private var subtitle: String {
         var parts: [String] = [workout.startTime.formatted(date: .abbreviated, time: .shortened)]
         if let m = workout.durationMin { parts.append("\(Int(m.rounded())) min") }
-        if let b = workout.strengthBrief { parts.append("\(b.setCount) sets") }
-        else if let d = workout.distanceKm { parts.append("\(d.clean) km") }
+        if let b = workout.strengthBrief {
+            parts.append("\(b.setCount) sets")
+        } else if let d = workout.distanceKm {
+            parts.append("\(d.clean) km")
+        }
         return parts.joined(separator: " · ")
     }
 }

@@ -266,7 +266,9 @@ async def test_list_workouts_filters_by_group(session) -> None:
     for i, (atype, wid) in enumerate(rows):
         await session.execute(
             insert(apple_workouts).values(
-                id=wid, user_key=UK, activity_type=atype,
+                id=wid,
+                user_key=UK,
+                activity_type=atype,
                 start_time=T0 - timedelta(hours=i),
                 end_time=T0 - timedelta(hours=i) + timedelta(minutes=30),
             )
@@ -275,7 +277,8 @@ async def test_list_workouts_filters_by_group(session) -> None:
     repo = ActivityReadRepository(session)
     weights = await repo.list_workouts(UK, None, None, 50, None, group="weights")
     assert {r["activity_type"] for r in weights} == {
-        "TraditionalStrengthTraining", "FunctionalStrengthTraining"
+        "TraditionalStrengthTraining",
+        "FunctionalStrengthTraining",
     }
     cardio = await repo.list_workouts(UK, None, None, 50, None, group="cardio")
     assert {r["activity_type"] for r in cardio} == {"Running", "Cycling"}

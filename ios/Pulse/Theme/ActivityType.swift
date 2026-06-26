@@ -15,15 +15,20 @@ enum ActivityType {
         case "Other": return Theme.CTP.overlay1
         default: break
         }
-        // Substring fallback for the long tail of less common types.
+        // Substring fallback for the long tail of less common types, first match wins.
         let k = raw.lowercased()
-        if k.contains("strength") { return Theme.CTP.mauve }
-        if k.contains("run") { return Theme.CTP.teal }
-        if k.contains("cycling") || k.contains("bike") { return Theme.CTP.sky }
-        if k.contains("walk") || k.contains("hiking") { return Theme.CTP.green }
-        if k.contains("swim") { return Theme.CTP.sapphire }
-        if k.contains("yoga") || k.contains("flexibility") { return Theme.CTP.flamingo }
-        if k.contains("hiit") || k.contains("functional") { return Theme.CTP.peach }
+        let spine: [(needles: [String], color: Color)] = [
+            (["strength"], Theme.CTP.mauve),
+            (["run"], Theme.CTP.teal),
+            (["cycling", "bike"], Theme.CTP.sky),
+            (["walk", "hiking"], Theme.CTP.green),
+            (["swim"], Theme.CTP.sapphire),
+            (["yoga", "flexibility"], Theme.CTP.flamingo),
+            (["hiit", "functional"], Theme.CTP.peach)
+        ]
+        for entry in spine where entry.needles.contains(where: k.contains) {
+            return entry.color
+        }
         return Theme.CTP.lavender
     }
 
