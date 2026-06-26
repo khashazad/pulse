@@ -39,12 +39,15 @@ struct NutritionTabView: View {
     /// The caller (`RootView`) resolves the UUID to a `CustomFood` and pushes the route.
     let onOpenPortion: (UUID) -> Void
 
-    @State private var section: Section = .intake
+    /// The selected sub-section, owned by `RootView` so it survives leaving and
+    /// returning to the Nutrition tab (the old per-tab dock preserved this position).
+    @Binding var section: Section
 
     // MARK: - Init
 
     /// Initializes the nutrition tab view.
     /// - Parameters:
+    ///   - section: Binding to the selected sub-section, owned by `RootView` for persistence.
     ///   - auth: The app's authenticated session; forwarded to `FoodTabView`.
     ///   - mealsModel: Loaded meals model, or `nil` while bootstrapping.
     ///   - foodsModel: Loaded custom-foods model, or `nil` while bootstrapping.
@@ -53,6 +56,7 @@ struct NutritionTabView: View {
     ///   - onOpenFood: Navigation callback from `FoodTabView` when the user taps a custom food.
     ///   - onOpenPortion: Navigation callback from `FoodTabView` when the user taps a portion.
     init(
+        section: Binding<Section>,
         auth: AuthSession,
         mealsModel: MealsModel?,
         foodsModel: FoodsModel?,
@@ -61,6 +65,7 @@ struct NutritionTabView: View {
         onOpenFood: @escaping (CustomFood) -> Void,
         onOpenPortion: @escaping (UUID) -> Void
     ) {
+        self._section = section
         self.auth = auth
         self.mealsModel = mealsModel
         self.foodsModel = foodsModel

@@ -10,6 +10,7 @@ struct RootView: View {
     @Environment(AuthSession.self) private var auth
 
     @State private var tab: DockTab = .nutrition
+    @State private var nutritionSection: NutritionTabView.Section = .intake
     @State private var nutritionPath = NavigationPath()
     @State private var activityPath = NavigationPath()
     @State private var measuresPath = NavigationPath()
@@ -26,6 +27,7 @@ struct RootView: View {
                 case .nutrition:
                     NavigationStack(path: $nutritionPath) {
                         NutritionTabView(
+                            section: $nutritionSection,
                             auth: auth,
                             mealsModel: mealsModel,
                             foodsModel: foodsModel,

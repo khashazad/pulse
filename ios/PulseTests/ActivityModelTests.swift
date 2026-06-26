@@ -2,11 +2,17 @@ import XCTest
 @testable import Pulse
 
 final class ActivityModelTests: XCTestCase {
+    /// Loads a JSON fixture from the test bundle by name.
+    /// Inputs:
+    ///   - name: fixture file base name (without extension).
+    /// Outputs: raw `Data` bytes of the fixture file.
+    /// Exceptions: throws via `XCTUnwrap` if the fixture is not found, or if reading the file fails.
     private func loadFixture(_ name: String) throws -> Data {
         let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: name, withExtension: "json"))
         return try Data(contentsOf: url)
     }
 
+    /// Verifies `WorkoutFeedPage` decodes correctly from the `activity_feed_page` fixture, including cursor fields, strength brief, and distance.
     func testDecodeFeedPage() throws {
         let page = try JSONDecoder.pulseDefault().decode(WorkoutFeedPage.self, from: loadFixture("activity_feed_page"))
         XCTAssertEqual(page.items.count, 2)
@@ -19,6 +25,7 @@ final class ActivityModelTests: XCTestCase {
         XCTAssertEqual(page.nextBeforeId, "aaaaaaaa-0000-0000-0000-000000000002")
     }
 
+    /// Verifies `ActivityWorkoutDetail` decodes correctly from the `activity_workout_detail` fixture, including heart rate, exercises, sets, top set, and strength totals.
     func testDecodeWorkoutDetail() throws {
         let d = try JSONDecoder.pulseDefault().decode(ActivityWorkoutDetail.self, from: loadFixture("activity_workout_detail"))
         XCTAssertEqual(d.avgHeartRate, 121.0)
@@ -29,6 +36,7 @@ final class ActivityModelTests: XCTestCase {
         XCTAssertEqual(d.strengthTotals?.volumeLbs, 1950.0)
     }
 
+    /// Verifies `ActivitySummary` decodes correctly from the `activity_summary` fixture, including totals, deltas, by-type breakdown, volume series, and top lifts.
     func testDecodeSummary() throws {
         let s = try JSONDecoder.pulseDefault().decode(ActivitySummary.self, from: loadFixture("activity_summary"))
         XCTAssertEqual(s.totals.workoutCount, 4)

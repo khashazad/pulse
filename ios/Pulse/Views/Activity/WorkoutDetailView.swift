@@ -6,6 +6,7 @@ struct WorkoutDetailView: View {
     let id: UUID
     @State private var model: WorkoutDetailModel
 
+    /// Creates the detail view and its backing model for the given workout.
     /// - Parameters:
     ///   - id: The workout UUID to load and display.
     ///   - auth: The signed-in session used to build an authorized client.

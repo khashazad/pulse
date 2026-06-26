@@ -31,6 +31,9 @@ final class ActivityFeedModel {
     private var knownTypes: Set<String> = []
     private var nextBefore: String?
     private var nextBeforeId: String?
+    /// Bumped on every `loadFirst`; an in-flight load/page whose captured value no longer
+    /// matches has been superseded (e.g. by a rapid filter change) and must discard its result.
+    private var generation = 0
 
     /// Initializes the model with the app's auth session.
     /// - Parameter auth: The shared auth session used to create authenticated clients.
@@ -43,18 +46,25 @@ final class ActivityFeedModel {
     /// - Returns: Nothing; results publish via `state` and `summary`.
     func loadFirst() async {
         guard let client = auth?.makeClient() else { state = .failed(.notSignedIn); return }
+        generation += 1
+        let gen = generation
         state = .loading
         items = []; seen = []; nextBefore = nil; nextBeforeId = nil
         async let summaryResult = try? client.activitySummary(period: .week, anchor: nil)
         do {
             let page = try await client.activityWorkouts(before: nil, beforeId: nil, type: filter)
+            guard gen == generation else { return }   // a newer load superseded this one
             append(page)
             state = .loaded(items)
-            summary = await summaryResult
+            let loadedSummary = await summaryResult
+            guard gen == generation else { return }
+            summary = loadedSummary
         } catch let error as PulseError {
+            guard gen == generation else { return }
             if error == .unauthorized { auth?.handleUnauthorized() }
             state = .failed(error)
         } catch {
+            guard gen == generation else { return }
             state = .failed(.server(status: -1))
         }
     }
@@ -63,13 +73,16 @@ final class ActivityFeedModel {
     /// - Returns: Nothing; results publish via `state`.
     func loadMore() async {
         guard canLoadMore, !isLoadingMore, let client = auth?.makeClient(), case .loaded = state else { return }
+        let gen = generation
         isLoadingMore = true
         defer { isLoadingMore = false }
         do {
             let page = try await client.activityWorkouts(before: nextBefore, beforeId: nextBeforeId, type: filter)
+            guard gen == generation else { return }   // a reload superseded this page; drop it
             append(page)
             state = .loaded(items)
         } catch let error as PulseError {
+            guard gen == generation else { return }
             if error == .unauthorized { auth?.handleUnauthorized() }
         } catch { /* keep existing items; transient */ }
     }

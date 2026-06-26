@@ -2,6 +2,12 @@ import XCTest
 @testable import Pulse
 
 final class ActivityFeedModelTests: XCTestCase {
+    /// Constructs an `ActivityWorkoutSummary` stub for use in grouping tests.
+    /// Inputs:
+    ///   - id: UUID string assigned to the summary.
+    ///   - iso: ISO-8601 timestamp string used for both `startTime` and `endTime`.
+    ///   - type: activity type string (defaults to `"Running"`).
+    /// Outputs: a minimally populated `ActivityWorkoutSummary`.
     private func summary(id: String, _ iso: String, type: String = "Running") -> ActivityWorkoutSummary {
         ActivityWorkoutSummary(
             id: UUID(uuidString: id)!, activityType: type,
@@ -11,6 +17,7 @@ final class ActivityFeedModelTests: XCTestCase {
             hasStrengthDetail: false, strengthBrief: nil)
     }
 
+    /// Verifies `groupByWeek(_:calendar:)` assigns workouts to the correct week buckets, orders weeks newest-first, and sorts workouts newest-first within each bucket.
     func testGroupByWeekOrdersNewestFirstAndSplitsWeeks() {
         var cal = Calendar(identifier: .gregorian)
         cal.firstWeekday = 2 // Monday, to match server Mon-Sun weeks
@@ -29,6 +36,7 @@ final class ActivityFeedModelTests: XCTestCase {
         XCTAssertTrue(sections[0].weekStart < Date(timeIntervalSince1970: 1_790_000_000))
     }
 
+    /// Verifies `groupByWeek(_:calendar:)` returns an empty array when given no workouts.
     func testGroupByWeekEmpty() {
         XCTAssertTrue(ActivityFeedModel.groupByWeek([], calendar: .current).isEmpty)
     }

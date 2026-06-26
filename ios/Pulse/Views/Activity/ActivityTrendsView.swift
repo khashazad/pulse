@@ -20,7 +20,7 @@ struct ActivityTrendsView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     CTPSegmented(selection: Binding(get: { model.period },
-                                                    set: { p in Task { await model.select(p) } }),
+                                                    set: { model.setPeriodAndLoad($0) }),
                                  options: ActivityPeriod.allCases) { $0.label }
                     content
                 }

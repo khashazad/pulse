@@ -86,7 +86,10 @@ struct ExerciseCard: View {
     static func setSummary(_ set: WorkoutSet) -> String {
         if let w = set.weightLbs, let r = set.reps { return "\(w.clean) lb × \(r)" }
         if let d = set.distanceKm { return "\(d.clean) km" }
-        if let s = set.durationSeconds { return "\(s / 60)m \(s % 60)s" }
+        if let s = set.durationSeconds {
+            let hours = s / 3600, minutes = (s % 3600) / 60, seconds = s % 60
+            return hours > 0 ? "\(hours)h \(minutes)m \(seconds)s" : "\(minutes)m \(seconds)s"
+        }
         if let r = set.reps { return "\(r) reps" }
         return "—"
     }
