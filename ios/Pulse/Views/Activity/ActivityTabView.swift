@@ -109,15 +109,35 @@ struct ActivityTabView: View {
         }
     }
 
-    /// Horizontally scrolling type-filter chip row.
-    /// - Returns: A scroll view of "All" plus one chip per known type.
+    /// Two filter rows: parent groups (All / Weights / Cardio), then the selected
+    /// group's subtypes when a group is active.
+    /// - Returns: A vertical stack of one or two horizontally-scrolling chip rows.
     private var filterChips: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                chip("All", active: model.filter == nil) { Task { await model.setFilter(nil) } }
-                ForEach(model.availableTypes, id: \.self) { type in
-                    chip(ActivityType.displayName(type), active: model.filter == type) {
-                        Task { await model.setFilter(type) }
+        VStack(alignment: .leading, spacing: 8) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    chip("All", active: model.groupFilter == nil) { Task { await model.setGroup(nil) } }
+                    ForEach(ActivityGroup.allCases) { group in
+                        chip(group.displayName, active: model.groupFilter == group) {
+                            Task { await model.setGroup(group) }
+                        }
+                    }
+                }
+            }
+            if let group = model.groupFilter {
+                let subtypes = model.availableSubtypes(in: group)
+                if !subtypes.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            chip("All \(group.displayName)", active: model.subtypeFilter == nil) {
+                                Task { await model.setSubtype(nil) }
+                            }
+                            ForEach(subtypes, id: \.self) { type in
+                                chip(ActivityType.displayName(type), active: model.subtypeFilter == type) {
+                                    Task { await model.setSubtype(type) }
+                                }
+                            }
+                        }
                     }
                 }
             }

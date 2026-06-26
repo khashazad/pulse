@@ -13,7 +13,10 @@ final class ActivityFeedModel {
 
     private(set) var state: LoadState<[ActivityWorkoutSummary]> = .idle
     private(set) var summary: ActivitySummary?
-    private(set) var filter: String?            // nil = All
+    /// Selected parent group, nil = All.
+    private(set) var groupFilter: ActivityGroup?
+    /// Selected subtype within the group, nil = the whole group.
+    private(set) var subtypeFilter: String?
 
     /// The loaded workouts grouped into Mon–Sun week sections (newest first), cached on
     /// every page append so the view reads it without recomputing the grouping each render.
@@ -42,6 +45,15 @@ final class ActivityFeedModel {
     /// Whether more (older) pages remain to load — true while the server returned a cursor.
     var canLoadMore: Bool { nextBefore != nil }
 
+    /// The `(type, group)` query pair for the current filter selection.
+    /// - Returns: A tuple where at most one is non-nil: a chosen subtype sends `type`;
+    ///   otherwise a chosen group sends `group`; All sends neither.
+    private var requestFilter: (type: String?, group: String?) {
+        if let subtypeFilter { return (subtypeFilter, nil) }
+        if let groupFilter { return (nil, groupFilter.rawValue) }
+        return (nil, nil)
+    }
+
     /// Loads the first feed page and the week summary; resets any prior state.
     /// - Returns: Nothing; results publish via `state` and `summary`.
     func loadFirst() async {
@@ -52,7 +64,8 @@ final class ActivityFeedModel {
         items = []; seen = []; nextBefore = nil; nextBeforeId = nil
         async let summaryResult = try? client.activitySummary(period: .week, anchor: nil)
         do {
-            let page = try await client.activityWorkouts(before: nil, beforeId: nil, type: filter)
+            let page = try await client.activityWorkouts(
+                before: nil, beforeId: nil, type: requestFilter.type, group: requestFilter.group)
             guard gen == generation else { return }   // a newer load superseded this one
             append(page)
             state = .loaded(items)
@@ -77,7 +90,9 @@ final class ActivityFeedModel {
         isLoadingMore = true
         defer { isLoadingMore = false }
         do {
-            let page = try await client.activityWorkouts(before: nextBefore, beforeId: nextBeforeId, type: filter)
+            let page = try await client.activityWorkouts(
+                before: nextBefore, beforeId: nextBeforeId,
+                type: requestFilter.type, group: requestFilter.group)
             guard gen == generation else { return }   // a reload superseded this page; drop it
             append(page)
             state = .loaded(items)
@@ -87,12 +102,30 @@ final class ActivityFeedModel {
         } catch { /* keep existing items; transient */ }
     }
 
-    /// Sets the active type filter and reloads from the first page.
-    /// - Parameter type: An `activity_type` to filter by, or nil for All.
-    func setFilter(_ type: String?) async {
-        guard type != filter else { return }
-        filter = type
+    /// Selects a parent group (or All), clears any subtype, and reloads from the first page.
+    /// - Parameter group: The group to filter by, or nil for All.
+    /// - Returns: Nothing; results publish via `state`.
+    func setGroup(_ group: ActivityGroup?) async {
+        guard group != groupFilter || subtypeFilter != nil else { return }
+        groupFilter = group
+        subtypeFilter = nil
         await loadFirst()
+    }
+
+    /// Selects a subtype within the current group (nil = whole group) and reloads.
+    /// - Parameter type: The activity_type to narrow to, or nil for the whole group.
+    /// - Returns: Nothing; results publish via `state`.
+    func setSubtype(_ type: String?) async {
+        guard type != subtypeFilter else { return }
+        subtypeFilter = type
+        await loadFirst()
+    }
+
+    /// The subtypes seen so far that belong to a group, sorted (for the second chip row).
+    /// - Parameter group: The group to list subtypes for.
+    /// - Returns: Sorted activity types in that group.
+    func availableSubtypes(in group: ActivityGroup) -> [String] {
+        availableTypes.filter { ActivityGroup.of($0) == group }
     }
 
     /// Appends a page's items (de-duplicated by id), advances the cursor, and rebuilds
