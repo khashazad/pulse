@@ -34,6 +34,7 @@ from pulse_server.services.activity_cardio import effective_is_cardio
 from pulse_server.services.activity_summary import (
     bucket_volume,
     compute_top_lifts,
+    energy_balance,
     est_one_rep_max,
     months_in_year,
     pct_change,
@@ -42,6 +43,8 @@ from pulse_server.services.activity_summary import (
     rollup_by_type,
     weeks_in_month,
 )
+from pulse_server.services.summary_service import daily_calorie_totals
+from pulse_server.services.weight_service import list_weight_range
 
 MAX_FEED_LIMIT = 100
 DEFAULT_FEED_LIMIT = 50
@@ -297,12 +300,22 @@ async def build_summary(
     Fetches current and previous period workouts plus full strength history,
     then delegates to the pure-math helpers in ``activity_summary`` to produce
     totals, deltas, by-type breakdown, period-level week/month rollups, volume
-    series, and top lifts.
+    series, top lifts, and energy-balance buckets.
 
     Both strength activity types are collapsed into a single ``"Weights"``
     label in ``by_type``.  ``weeks`` is populated only when ``period=="month"``
     (one entry per ISO week clamped to the month); ``months`` is populated only
     when ``period=="year"`` (always 12 entries).
+
+    ``energy_balance`` is assembled for ``month`` and ``year`` periods: for
+    ``month`` there is one bucket per ISO week (reusing the already-computed
+    ``weeks`` list); for ``year`` there is one bucket per calendar month
+    (Jan-Dec of ``anchor.year``).  ``week`` period yields ``[]``.  When
+    energy-balance buckets are non-empty, three extra queries are issued:
+    ``daily_calorie_totals``, ``list_weight_range`` (both over ``[start, end]``
+    exactly — no ±7-day expansion, which would breach the 366-day cap for the
+    year period), and ``repo.cardio_overrides`` to resolve which activity types
+    count as cardio.
 
     **Inputs:**
     - session (AsyncSession): Active database session.
@@ -314,7 +327,8 @@ async def build_summary(
 
     **Outputs:**
     - ActivitySummary: Assembled trend summary including totals, period-over-period
-      deltas, by-type breakdown, week/month rollups, volume series, and top lifts.
+      deltas, by-type breakdown, week/month rollups, volume series, top lifts,
+      and energy-balance buckets.
     """
     start, end = period_bounds(period, anchor)
     p_start, p_end = previous_bounds(period, anchor)
@@ -330,6 +344,44 @@ async def build_summary(
             cur_t.total_active_energy_cal, prev_t.total_active_energy_cal
         ),
     )
+
+    # Compute week rollups once so we can reuse the list for energy-balance buckets
+    # rather than calling weeks_in_month twice.
+    weeks = weeks_in_month(cur, start, end) if period == "month" else []
+
+    # Build the energy-balance bucket descriptors (start, end, label) for the period.
+    # week → no buckets; month → one per ISO week; year → one per calendar month.
+    if period == "month":
+        eb_buckets: list[tuple[DateValue, DateValue, str]] = [
+            (w.week_start, w.week_end, f"Week of {w.week_start:%b %-d}") for w in weeks
+        ]
+    elif period == "year":
+        eb_buckets = []
+        for m in range(1, 13):
+            m_start, m_end = period_bounds("month", DateValue(anchor.year, m, 1))
+            eb_buckets.append((m_start, m_end, f"{m_start:%b}"))
+    else:
+        eb_buckets = []
+
+    # Fetch supporting data and compute energy-balance only when there are buckets.
+    # The fetch range is [start, end] exactly — no ±7-day expansion — because the
+    # year period spans 364 days and adding 7 days would exceed the 366-day cap in
+    # list_weight_range / daily_calorie_totals.
+    if eb_buckets:
+        intake_rows = await daily_calorie_totals(session, user_key, start, end)
+        intake_by_day = {row.log_date: row.calories for row in intake_rows}
+        weight_rows = await list_weight_range(session, user_key, start, end)
+        weight_readings = [(r.log_date, float(r.weight_lb)) for r in weight_rows]
+        overrides = await repo.cardio_overrides(user_key)
+        cardio_by_day: dict[DateValue, float] = {}
+        for r in cur:
+            if effective_is_cardio(r["activity_type"], overrides):
+                d = r["local_date"]
+                cardio_by_day[d] = cardio_by_day.get(d, 0.0) + float(r["active_energy_cal"] or 0)
+        eb = energy_balance(eb_buckets, intake_by_day, cardio_by_day, weight_readings)
+    else:
+        eb = []
+
     return ActivitySummary(
         period=period,
         period_start=start,
@@ -337,10 +389,11 @@ async def build_summary(
         totals=cur_t,
         deltas=deltas,
         by_type=rollup_by_type(cur),
-        weeks=weeks_in_month(cur, start, end) if period == "month" else [],
+        weeks=weeks,
         months=months_in_year(cur, anchor.year) if period == "year" else [],
         volume_series=bucket_volume(_build_vol_rows(history, start, end), period, start, end),
         top_lifts=compute_top_lifts(history, period_start=start),
+        energy_balance=eb,
     )
 
 

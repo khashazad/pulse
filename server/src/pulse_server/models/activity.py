@@ -165,6 +165,10 @@ class ActivitySummary(BaseModel):
     types are collapsed into a single ``"Weights"`` label; every other type maps
     to itself.  ``weeks`` is populated only when ``period == "month"``; ``months``
     is populated only when ``period == "year"``; both default to ``[]`` otherwise.
+
+    ``energy_balance`` carries per-bucket intake/cardio/weight/maintenance figures:
+    one bucket per week when ``period == "month"``, one per calendar month when
+    ``period == "year"``, and ``[]`` when ``period == "week"``.
     """
 
     period: ActivityPeriod
@@ -177,6 +181,7 @@ class ActivitySummary(BaseModel):
     months: list[MonthRollup] = []
     volume_series: list[VolumeBucket]
     top_lifts: list[TopLift]
+    energy_balance: list[EnergyBalanceBucket] = []
 
 
 class WeekRollup(BaseModel):
