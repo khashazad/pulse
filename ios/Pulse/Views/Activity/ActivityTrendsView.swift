@@ -106,6 +106,9 @@ struct ActivityTrendsView: View {
             if !s.byType.isEmpty { byTypeCard(s) }
             periodBreakdownCard(s)
             strengthSection(s)
+            if !s.energyBalance.isEmpty {
+                EnergyBalanceSection(buckets: s.energyBalance)
+            }
         }
     }
 

@@ -30,5 +30,31 @@
       "date": "2026-06-24",
       "is_pr": true
     }
+  ],
+  "energy_balance": [
+    {
+      "bucket_start": "2026-01-01",
+      "bucket_end": "2026-01-31",
+      "label": "Jan",
+      "intake_cal_per_day": 2100.0,
+      "cardio_cal_total": 1200.0,
+      "weight_start": 185.0,
+      "weight_end": 183.8,
+      "weight_delta_lb": -1.2,
+      "weight_span_days": 28,
+      "est_maintenance_per_day": 2580.0
+    },
+    {
+      "bucket_start": "2026-02-01",
+      "bucket_end": "2026-02-28",
+      "label": "Feb",
+      "intake_cal_per_day": null,
+      "cardio_cal_total": 800.0,
+      "weight_start": null,
+      "weight_end": null,
+      "weight_delta_lb": null,
+      "weight_span_days": null,
+      "est_maintenance_per_day": null
+    }
   ]
 }

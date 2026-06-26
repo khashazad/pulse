@@ -56,6 +56,29 @@ final class ActivityModelTests: XCTestCase {
         XCTAssertTrue(s.topLifts[0].isPr)
     }
 
+    /// Verifies `ActivitySummary` decodes `energy_balance` with both fully-populated
+    /// and null-heavy buckets, confirming that `id == bucketStart` and that JSON
+    /// `null` fields map to `nil` optionals.
+    func testDecodeEnergyBalance() throws {
+        let s = try JSONDecoder.pulseDefault().decode(ActivitySummary.self, from: loadFixture("activity_summary"))
+        XCTAssertEqual(s.energyBalance.count, 2)
+
+        let b0 = s.energyBalance[0]
+        XCTAssertEqual(b0.label, "Jan")
+        XCTAssertEqual(b0.intakeCalPerDay, 2100.0)
+        XCTAssertEqual(b0.cardioCalTotal, 1200.0)
+        XCTAssertEqual(b0.weightDeltaLb, -1.2)
+        XCTAssertEqual(b0.estMaintenancePerDay, 2580.0)
+        XCTAssertEqual(b0.id, b0.bucketStart)
+
+        let b1 = s.energyBalance[1]
+        XCTAssertEqual(b1.label, "Feb")
+        XCTAssertNil(b1.intakeCalPerDay)
+        XCTAssertNil(b1.weightStart)
+        XCTAssertNil(b1.weightDeltaLb)
+        XCTAssertNil(b1.estMaintenancePerDay)
+    }
+
     /// Verifies `WeekDetail` decodes correctly from the `week_detail` fixture,
     /// including `weekStart`, `weekEnd`, and the nested day groups with workouts.
     func testDecodeWeekDetail() throws {
