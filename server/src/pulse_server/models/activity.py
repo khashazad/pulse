@@ -17,6 +17,11 @@ from pydantic import BaseModel
 
 ActivityPeriod = Literal["week", "month", "year"]
 
+WEIGHTS_ACTIVITY_TYPES: frozenset[str] = frozenset(
+    {"TraditionalStrengthTraining", "FunctionalStrengthTraining"}
+)
+"""Apple activity_type values that belong to the Weights group; everything else is Cardio."""
+
 
 class StrengthBrief(BaseModel):
     """Compact lifting rollup shown on a feed row for a linked strength workout."""

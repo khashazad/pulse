@@ -38,6 +38,7 @@ async def get_workout_feed(
     before_id: UUID | None = Query(default=None),
     limit: int = Query(default=DEFAULT_FEED_LIMIT, ge=1, le=100),
     type: str | None = Query(default=None),
+    group: str | None = Query(default=None),
     session: AsyncSession = Depends(get_session_dependency),
 ) -> WorkoutFeedPage:
     """Return one page of the user's workout feed, newest first.
@@ -50,6 +51,7 @@ async def get_workout_feed(
       ``next_before_id`` from the previous page).
     - limit (int): Page size, 1-100.
     - type (str | None): Optional ``activity_type`` filter.
+    - group (str | None): Optional group filter — ``"weights"`` or ``"cardio"``.
     - session (AsyncSession): DB session dependency.
 
     **Outputs:**
@@ -62,6 +64,7 @@ async def get_workout_feed(
         before_id=before_id,
         limit=limit,
         activity_type=type,
+        group=group,
     )
 
 
