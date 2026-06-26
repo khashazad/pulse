@@ -20,9 +20,11 @@ from pulse_server.models.activity import (
     ActivityTypesResponse,
     ActivityWorkoutDetail,
     ActivityWorkoutSummary,
+    DayGroup,
     MetricDelta,
     StrengthBrief,
     StrengthTotals,
+    WeekDetail,
     WorkoutExercise,
     WorkoutFeedPage,
     WorkoutSet,
@@ -79,7 +81,6 @@ async def list_workout_feed(
     before_id: UUID | None,
     limit: int,
     activity_type: str | None,
-    group: str | None = None,
 ) -> WorkoutFeedPage:
     """Build one page of the workout feed, enriching strength rows with briefs.
 
@@ -90,7 +91,6 @@ async def list_workout_feed(
     - before_id (UUID | None): Id tiebreaker paired with ``before``.
     - limit (int): Page size (clamped to ``MAX_FEED_LIMIT``).
     - activity_type (str | None): Optional exact type filter.
-    - group (str | None): Optional ``"weights"``/``"cardio"`` group filter.
 
     **Outputs:**
     - WorkoutFeedPage: Items newest-first plus the composite ``(next_before,
@@ -98,7 +98,7 @@ async def list_workout_feed(
     """
     limit = max(1, min(limit, MAX_FEED_LIMIT))
     repo = ActivityReadRepository(session)
-    rows = await repo.list_workouts(user_key, before, before_id, limit, activity_type, group=group)
+    rows = await repo.list_workouts(user_key, before, before_id, limit, activity_type)
     linked_ids = [r["linked_strength_workout_id"] for r in rows if r["linked_strength_workout_id"]]
     briefs = await repo.strength_briefs(linked_ids) if linked_ids else {}
     items: list[ActivityWorkoutSummary] = []
@@ -342,6 +342,68 @@ async def build_summary(
         volume_series=bucket_volume(_build_vol_rows(history, start, end), period, start, end),
         top_lifts=compute_top_lifts(history, period_start=start),
     )
+
+
+async def get_week_detail(
+    session: AsyncSession,
+    user_key: str,
+    anchor: DateValue,
+    tz: str,
+) -> WeekDetail:
+    """Build the day-grouped workout view for the Mon-Sun week containing ``anchor``.
+
+    Fetches workouts in range via ``workouts_in_range``, enriches any strength
+    rows with ``strength_briefs``, then groups workouts by their ``local_date``
+    into :class:`DayGroup` objects.  Only days that have at least one workout
+    appear in the result.  Days are ordered newest-first; workouts within a day
+    are also ordered newest-first by ``start_time``.
+
+    **Inputs:**
+    - session (AsyncSession): Active database session.
+    - user_key (str): Owning user's scoping key.
+    - anchor (date): Any date inside the target week; ``period_bounds("week", anchor)``
+      derives the Mon-Sun bounds.
+    - tz (str): IANA timezone name passed through to ``workouts_in_range`` for
+      correct UTC-to-local date bucketing.
+
+    **Outputs:**
+    - WeekDetail: Assembled week detail with ``week_start``, ``week_end``, and
+      the ``day_groups`` list (empty when the week has no workouts).
+    """
+    start, end = period_bounds("week", anchor)
+    repo = ActivityReadRepository(session)
+    rows = await repo.workouts_in_range(user_key, start, end, tz=tz)
+
+    linked_ids = [r["linked_strength_workout_id"] for r in rows if r["linked_strength_workout_id"]]
+    briefs = await repo.strength_briefs(linked_ids) if linked_ids else {}
+
+    by_date: dict[DateValue, list[ActivityWorkoutSummary]] = {}
+    for r in rows:
+        sw_id = r["linked_strength_workout_id"]
+        brief = briefs.get(sw_id) if sw_id else None
+        summary = ActivityWorkoutSummary(
+            id=r["id"],
+            activity_type=r["activity_type"],
+            start_time=r["start_time"],
+            end_time=r["end_time"],
+            duration_min=r["duration_min"],
+            active_energy_cal=r["active_energy_cal"],
+            distance_km=r["distance_km"],
+            has_strength_detail=brief is not None,
+            strength_brief=StrengthBrief(**brief) if brief else None,
+        )
+        d: DateValue = r["local_date"]
+        by_date.setdefault(d, []).append(summary)
+
+    day_groups: list[DayGroup] = [
+        DayGroup(
+            date=d,
+            workouts=sorted(ws, key=lambda w: w.start_time, reverse=True),
+        )
+        for d, ws in sorted(by_date.items(), reverse=True)
+    ]
+
+    return WeekDetail(week_start=start, week_end=end, day_groups=day_groups)
 
 
 def _display_name(activity_type: str) -> str:

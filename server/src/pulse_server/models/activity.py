@@ -206,6 +206,25 @@ class MonthRollup(BaseModel):
     """Total workout duration in minutes for this month."""
 
 
+class DayGroup(BaseModel):
+    """One calendar day in the week drill-down: the day's date and its workouts."""
+
+    date: DateValue
+    workouts: list[ActivityWorkoutSummary]
+
+
+class WeekDetail(BaseModel):
+    """Day-grouped workout view for a single Mon-Sun week.
+
+    ``day_groups`` contains only days that have workouts, ordered newest-day first.
+    Workouts within each day are also ordered newest-first by ``start_time``.
+    """
+
+    week_start: DateValue
+    week_end: DateValue
+    day_groups: list[DayGroup]
+
+
 class ActivityTypeSetting(BaseModel):
     """One activity type with its best-effort display name, workout count, and
     effective cardio flag."""

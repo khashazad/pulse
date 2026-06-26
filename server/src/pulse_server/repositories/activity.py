@@ -16,7 +16,6 @@ from sqlalchemy import Date, and_, cast, func, or_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from pulse_server.models.activity import WEIGHTS_ACTIVITY_TYPES
 from pulse_server.repositories.tables import (
     activity_type_settings,
     apple_workouts,
@@ -43,9 +42,8 @@ class ActivityReadRepository:
         before_id: UUID | None,
         limit: int,
         activity_type: str | None,
-        group: str | None = None,
     ) -> list[dict[str, Any]]:
-        """Return workouts newest-first, optionally filtered by type or group, with a cursor.
+        """Return workouts newest-first, optionally filtered by exact activity type, with a cursor.
 
         Orders by ``(start_time desc, id desc)`` so the ordering is total even when
         two workouts share an exact ``start_time``. The cursor is the composite
@@ -59,7 +57,6 @@ class ActivityReadRepository:
         - before_id (UUID | None): Id tiebreaker for rows sharing ``before``'s start_time.
         - limit (int): Max rows to return.
         - activity_type (str | None): Optional exact ``activity_type`` filter.
-        - group (str | None): Optional ``"weights"``/``"cardio"`` filter over activity_type.
 
         **Outputs:**
         - list[dict[str, Any]]: Apple workout rows ordered by ``(start_time, id)`` desc.
@@ -67,10 +64,6 @@ class ActivityReadRepository:
         stmt = select(*apple_workouts.c).where(apple_workouts.c.user_key == user_key)
         if activity_type is not None:
             stmt = stmt.where(apple_workouts.c.activity_type == activity_type)
-        if group == "weights":
-            stmt = stmt.where(apple_workouts.c.activity_type.in_(WEIGHTS_ACTIVITY_TYPES))
-        elif group == "cardio":
-            stmt = stmt.where(apple_workouts.c.activity_type.notin_(WEIGHTS_ACTIVITY_TYPES))
         if before is not None:
             if before_id is not None:
                 stmt = stmt.where(
@@ -182,9 +175,10 @@ class ActivityReadRepository:
           UTC-to-local conversion before the date comparison.
 
         **Outputs:**
-        - list[dict[str, Any]]: Rows with ``activity_type``, ``duration_min``,
-          ``active_energy_cal``, ``start_time``, and ``local_date`` (the
-          workout's calendar date in ``tz``), ordered by ``start_time`` asc.
+        - list[dict[str, Any]]: Rows with ``id``, ``activity_type``,
+          ``start_time``, ``end_time``, ``duration_min``, ``active_energy_cal``,
+          ``distance_km``, ``linked_strength_workout_id``, and ``local_date``
+          (the workout's calendar date in ``tz``), ordered by ``start_time`` asc.
 
         **Raises:**
         - SQLAlchemyError: On any database execution failure.
@@ -192,10 +186,14 @@ class ActivityReadRepository:
         col = cast(func.timezone(tz, apple_workouts.c.start_time), Date)
         stmt = (
             select(
+                apple_workouts.c.id,
                 apple_workouts.c.activity_type,
+                apple_workouts.c.start_time,
+                apple_workouts.c.end_time,
                 apple_workouts.c.duration_min,
                 apple_workouts.c.active_energy_cal,
-                apple_workouts.c.start_time,
+                apple_workouts.c.distance_km,
+                apple_workouts.c.linked_strength_workout_id,
                 col.label("local_date"),
             )
             .where(apple_workouts.c.user_key == user_key)

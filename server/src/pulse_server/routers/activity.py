@@ -20,11 +20,13 @@ from pulse_server.models.activity import (
     ActivityTypeSetting,
     ActivityTypesResponse,
     ActivityWorkoutDetail,
+    WeekDetail,
     WorkoutFeedPage,
 )
 from pulse_server.services.activity_service import (
     DEFAULT_FEED_LIMIT,
     build_summary,
+    get_week_detail,
     get_workout_detail,
     list_activity_types,
     list_workout_feed,
@@ -43,7 +45,6 @@ async def get_workout_feed(
     before_id: UUID | None = Query(default=None),
     limit: int = Query(default=DEFAULT_FEED_LIMIT, ge=1, le=100),
     type: str | None = Query(default=None),
-    group: str | None = Query(default=None),
     session: AsyncSession = Depends(get_session_dependency),
 ) -> WorkoutFeedPage:
     """Return one page of the user's workout feed, newest first.
@@ -55,8 +56,7 @@ async def get_workout_feed(
     - before_id (UUID | None): Id tiebreaker for the cursor (echo back
       ``next_before_id`` from the previous page).
     - limit (int): Page size, 1-100.
-    - type (str | None): Optional ``activity_type`` filter.
-    - group (str | None): Optional group filter — ``"weights"`` or ``"cardio"``.
+    - type (str | None): Optional exact ``activity_type`` filter.
     - session (AsyncSession): DB session dependency.
 
     **Outputs:**
@@ -69,8 +69,31 @@ async def get_workout_feed(
         before_id=before_id,
         limit=limit,
         activity_type=type,
-        group=group,
     )
+
+
+@router.get("/activity/week", response_model=WeekDetail)
+async def get_week_detail_endpoint(
+    request: Request,
+    anchor: DateValue | None = Query(default=None),
+    session: AsyncSession = Depends(get_session_dependency),
+) -> WeekDetail:
+    """Return day-grouped workouts for the Mon-Sun week containing ``anchor``.
+
+    **Inputs:**
+    - request (Request): Provides ``user_key`` via ``request.state.user_key``.
+    - anchor (date | None): Any date inside the target week; defaults to today
+      in the server timezone when not supplied.
+    - session (AsyncSession): DB session dependency.
+
+    **Outputs:**
+    - WeekDetail: ``week_start``, ``week_end``, and ``day_groups`` — one entry
+      per day that has workouts, newest day first, workouts within a day
+      newest-first by ``start_time``.
+    """
+    if anchor is None:
+        anchor = DateTimeValue.now(tz=TZ).date()
+    return await get_week_detail(session, request.state.user_key, anchor, settings.timezone)
 
 
 @router.get("/activity/summary", response_model=ActivitySummary)

@@ -45,3 +45,28 @@ def test_feed_returns_items_and_cursor(rest_client) -> None:
 def test_feed_requires_auth(rest_client) -> None:
     """Without a bearer token the endpoint returns 401."""
     assert rest_client.get("/activity/workouts").status_code == 401
+
+
+def test_feed_type_filter_forwarded_to_repo(rest_client) -> None:
+    """type=<value> is passed through as activity_type to list_workouts."""
+    with patch("pulse_server.services.activity_service.ActivityReadRepository") as repo_cls:
+        repo = repo_cls.return_value
+        repo.list_workouts = AsyncMock(return_value=[])
+        repo.strength_briefs = AsyncMock(return_value={})
+        resp = rest_client.get("/activity/workouts?type=Running", headers=AUTH_HEADERS)
+    assert resp.status_code == 200
+    call = repo.list_workouts.call_args
+    # activity_type is the 5th positional arg: (user_key, before, before_id, limit, activity_type)
+    assert call.args[4] == "Running"
+
+
+def test_feed_group_param_not_forwarded_to_repo(rest_client) -> None:
+    """group= query param is silently ignored; list_workouts is not called with a group kwarg."""
+    with patch("pulse_server.services.activity_service.ActivityReadRepository") as repo_cls:
+        repo = repo_cls.return_value
+        repo.list_workouts = AsyncMock(return_value=[])
+        repo.strength_briefs = AsyncMock(return_value={})
+        resp = rest_client.get("/activity/workouts?group=weights", headers=AUTH_HEADERS)
+    assert resp.status_code == 200
+    call = repo.list_workouts.call_args
+    assert "group" not in call.kwargs
