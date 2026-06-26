@@ -10,6 +10,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pulse_server.models.activity import (
+    WEIGHTS_ACTIVITY_TYPES,
     ActivityDeltas,
     ActivityPeriod,
     ActivitySummary,
@@ -31,7 +32,7 @@ from pulse_server.services.activity_summary import (
     pct_change,
     period_bounds,
     previous_bounds,
-    rollup_by_type,
+    rollup_by_group,
 )
 
 MAX_FEED_LIMIT = 100
@@ -72,6 +73,7 @@ async def list_workout_feed(
     before_id: UUID | None,
     limit: int,
     activity_type: str | None,
+    group: str | None = None,
 ) -> WorkoutFeedPage:
     """Build one page of the workout feed, enriching strength rows with briefs.
 
@@ -82,6 +84,7 @@ async def list_workout_feed(
     - before_id (UUID | None): Id tiebreaker paired with ``before``.
     - limit (int): Page size (clamped to ``MAX_FEED_LIMIT``).
     - activity_type (str | None): Optional exact type filter.
+    - group (str | None): Optional ``"weights"``/``"cardio"`` group filter.
 
     **Outputs:**
     - WorkoutFeedPage: Items newest-first plus the composite ``(next_before,
@@ -89,7 +92,7 @@ async def list_workout_feed(
     """
     limit = max(1, min(limit, MAX_FEED_LIMIT))
     repo = ActivityReadRepository(session)
-    rows = await repo.list_workouts(user_key, before, before_id, limit, activity_type)
+    rows = await repo.list_workouts(user_key, before, before_id, limit, activity_type, group=group)
     linked_ids = [r["linked_strength_workout_id"] for r in rows if r["linked_strength_workout_id"]]
     briefs = await repo.strength_briefs(linked_ids) if linked_ids else {}
     items: list[ActivityWorkoutSummary] = []
@@ -321,7 +324,7 @@ async def build_summary(
         period_end=end,
         totals=cur_t,
         deltas=deltas,
-        by_type=rollup_by_type(cur, top_n=5),
+        by_group=rollup_by_group(cur, WEIGHTS_ACTIVITY_TYPES),
         volume_series=bucket_volume(_build_vol_rows(history, start, end), period, start, end),
         top_lifts=compute_top_lifts(history, period_start=start),
     )

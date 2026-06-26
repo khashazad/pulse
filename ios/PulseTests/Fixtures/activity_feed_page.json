@@ -1,0 +1,28 @@
+{
+  "items": [
+    {
+      "id": "aaaaaaaa-0000-0000-0000-000000000001",
+      "activity_type": "TraditionalStrengthTraining",
+      "start_time": "2026-06-24T18:00:00+00:00",
+      "end_time": "2026-06-24T18:57:00+00:00",
+      "duration_min": 57.0,
+      "active_energy_cal": 276.0,
+      "distance_km": null,
+      "has_strength_detail": true,
+      "strength_brief": { "exercise_count": 4, "set_count": 16, "volume_lbs": 18650.0 }
+    },
+    {
+      "id": "aaaaaaaa-0000-0000-0000-000000000002",
+      "activity_type": "Running",
+      "start_time": "2026-06-23T12:00:00+00:00",
+      "end_time": "2026-06-23T12:32:00+00:00",
+      "duration_min": 32.0,
+      "active_energy_cal": 344.0,
+      "distance_km": 5.1,
+      "has_strength_detail": false,
+      "strength_brief": null
+    }
+  ],
+  "next_before": "2026-06-23T12:00:00+00:00",
+  "next_before_id": "aaaaaaaa-0000-0000-0000-000000000002"
+}

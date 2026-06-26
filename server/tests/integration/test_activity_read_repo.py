@@ -255,6 +255,35 @@ async def test_strength_history_returns_joined_rows(session) -> None:
     assert r["workout_id"] == sw
 
 
+async def test_list_workouts_filters_by_group(session) -> None:
+    """group='weights' returns only strength types; 'cardio' returns the rest."""
+    rows = [
+        ("TraditionalStrengthTraining", uuid4()),
+        ("FunctionalStrengthTraining", uuid4()),
+        ("Running", uuid4()),
+        ("Cycling", uuid4()),
+    ]
+    for i, (atype, wid) in enumerate(rows):
+        await session.execute(
+            insert(apple_workouts).values(
+                id=wid,
+                user_key=UK,
+                activity_type=atype,
+                start_time=T0 - timedelta(hours=i),
+                end_time=T0 - timedelta(hours=i) + timedelta(minutes=30),
+            )
+        )
+    await session.commit()
+    repo = ActivityReadRepository(session)
+    weights = await repo.list_workouts(UK, None, None, 50, None, group="weights")
+    assert {r["activity_type"] for r in weights} == {
+        "TraditionalStrengthTraining",
+        "FunctionalStrengthTraining",
+    }
+    cardio = await repo.list_workouts(UK, None, None, 50, None, group="cardio")
+    assert {r["activity_type"] for r in cardio} == {"Running", "Cycling"}
+
+
 async def test_workouts_in_range_timezone_bucketing(session) -> None:
     """workouts_in_range uses tz for date bucketing, not UTC."""
     # 2026-06-22 02:30 UTC == 2026-06-21 22:30 America/Toronto (UTC-4 in June).

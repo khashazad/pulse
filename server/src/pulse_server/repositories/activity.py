@@ -15,6 +15,7 @@ from uuid import UUID
 from sqlalchemy import Date, and_, cast, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from pulse_server.models.activity import WEIGHTS_ACTIVITY_TYPES
 from pulse_server.repositories.tables import apple_workouts, strength_sets, strength_workouts
 
 
@@ -36,8 +37,9 @@ class ActivityReadRepository:
         before_id: UUID | None,
         limit: int,
         activity_type: str | None,
+        group: str | None = None,
     ) -> list[dict[str, Any]]:
-        """Return workouts newest-first, optionally filtered by type, with a cursor.
+        """Return workouts newest-first, optionally filtered by type or group, with a cursor.
 
         Orders by ``(start_time desc, id desc)`` so the ordering is total even when
         two workouts share an exact ``start_time``. The cursor is the composite
@@ -51,6 +53,7 @@ class ActivityReadRepository:
         - before_id (UUID | None): Id tiebreaker for rows sharing ``before``'s start_time.
         - limit (int): Max rows to return.
         - activity_type (str | None): Optional exact ``activity_type`` filter.
+        - group (str | None): Optional ``"weights"``/``"cardio"`` filter over activity_type.
 
         **Outputs:**
         - list[dict[str, Any]]: Apple workout rows ordered by ``(start_time, id)`` desc.
@@ -58,6 +61,10 @@ class ActivityReadRepository:
         stmt = select(*apple_workouts.c).where(apple_workouts.c.user_key == user_key)
         if activity_type is not None:
             stmt = stmt.where(apple_workouts.c.activity_type == activity_type)
+        if group == "weights":
+            stmt = stmt.where(apple_workouts.c.activity_type.in_(WEIGHTS_ACTIVITY_TYPES))
+        elif group == "cardio":
+            stmt = stmt.where(apple_workouts.c.activity_type.notin_(WEIGHTS_ACTIVITY_TYPES))
         if before is not None:
             if before_id is not None:
                 stmt = stmt.where(

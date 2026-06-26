@@ -17,6 +17,11 @@ from pydantic import BaseModel
 
 ActivityPeriod = Literal["week", "month", "year"]
 
+WEIGHTS_ACTIVITY_TYPES: frozenset[str] = frozenset(
+    {"TraditionalStrengthTraining", "FunctionalStrengthTraining"}
+)
+"""Apple activity_type values that belong to the Weights group; everything else is Cardio."""
+
 
 class StrengthBrief(BaseModel):
     """Compact lifting rollup shown on a feed row for a linked strength workout."""
@@ -134,6 +139,16 @@ class TypeBreakdown(BaseModel):
     share: float
 
 
+class GroupBreakdown(BaseModel):
+    """One parent group (weights/cardio) with its duration share and subtype detail."""
+
+    group: str
+    count: int
+    duration_min: float
+    share: float
+    subtypes: list[TypeBreakdown]
+
+
 class VolumeBucket(BaseModel):
     """Strength volume + workout time for one sub-bucket of the period."""
 
@@ -161,6 +176,6 @@ class ActivitySummary(BaseModel):
     period_end: DateValue
     totals: ActivityTotals
     deltas: ActivityDeltas
-    by_type: list[TypeBreakdown]
+    by_group: list[GroupBreakdown]
     volume_series: list[VolumeBucket]
     top_lifts: list[TopLift]

@@ -1,23 +1,22 @@
 /// Bottom floating-dock tab bar used by `RootView`.
-/// Defines the four top-level tabs (`DockTab`) and renders them as a capsule-shaped
+/// Defines the three top-level tabs (`DockTab`) and renders them as a capsule-shaped
 /// pill of glyph + label buttons that drive the binding back to the parent.
 import SwiftUI
 
-/// Identifies one of the four top-level tabs hosted by `RootView`.
+/// Identifies one of the three top-level tabs hosted by `RootView`.
 enum DockTab: Hashable {
-    case intake, food, prep, measures
+    case nutrition, activity, measures
 }
 
 /// Floating capsule tab bar shown at the bottom of `RootView`.
-/// Renders four `tabButton`s and writes the selected tab back through the `tab` binding.
+/// Renders three `tabButton`s and writes the selected tab back through the `tab` binding.
 struct FloatingDock: View {
     @Binding var tab: DockTab
 
     var body: some View {
         HStack(spacing: 4) {
-            tabButton(.intake, system: "circle.fill", label: "Intake")
-            tabButton(.food, system: "fork.knife", label: "Food")
-            tabButton(.prep, system: "cube.box.fill", label: "Prep")
+            tabButton(.nutrition, system: "fork.knife", label: "Nutrition")
+            tabButton(.activity, system: "figure.run", label: "Activity")
             tabButton(.measures, system: "figure.arms.open", label: "Measures")
         }
         .padding(6)
@@ -124,7 +123,7 @@ private struct DockSurface: ViewModifier {
 }
 
 #Preview {
-    @Previewable @State var tab: DockTab = .intake
+    @Previewable @State var tab: DockTab = .nutrition
     ZStack {
         Theme.BG.primary.ignoresSafeArea()
         VStack {

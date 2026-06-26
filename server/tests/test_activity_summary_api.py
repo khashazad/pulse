@@ -9,8 +9,8 @@ from uuid import uuid4
 AUTH_HEADERS = {"Authorization": "Bearer tok"}  # mirrors conftest.AUTH_HEADERS
 
 
-def test_summary_assembles_totals_deltas_and_types(rest_client) -> None:
-    """The endpoint returns totals, period-over-period deltas, and a by-type list."""
+def test_summary_assembles_totals_deltas_and_groups(rest_client) -> None:
+    """The endpoint returns totals, period-over-period deltas, and a by-group list."""
     cur = [
         {
             "activity_type": "Running",
@@ -55,7 +55,8 @@ def test_summary_assembles_totals_deltas_and_types(rest_client) -> None:
     assert body["totals"]["workout_count"] == 2
     assert body["totals"]["total_duration_min"] == 87.0
     assert body["deltas"]["total_active_energy_cal"]["previous"] == 250.0
-    assert any(t["activity_type"] == "Running" for t in body["by_type"])
+    cardio = next(g for g in body["by_group"] if g["group"] == "cardio")
+    assert any(t["activity_type"] == "Running" for t in cardio["subtypes"])
     assert body["top_lifts"][0]["exercise_title"] == "Bench"
 
 
