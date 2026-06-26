@@ -10,6 +10,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pulse_server.models.activity import (
+    WEIGHTS_ACTIVITY_TYPES,
     ActivityDeltas,
     ActivityPeriod,
     ActivitySummary,
@@ -31,7 +32,7 @@ from pulse_server.services.activity_summary import (
     pct_change,
     period_bounds,
     previous_bounds,
-    rollup_by_type,
+    rollup_by_group,
 )
 
 MAX_FEED_LIMIT = 100
@@ -323,7 +324,7 @@ async def build_summary(
         period_end=end,
         totals=cur_t,
         deltas=deltas,
-        by_type=rollup_by_type(cur, top_n=5),
+        by_group=rollup_by_group(cur, WEIGHTS_ACTIVITY_TYPES),
         volume_series=bucket_volume(_build_vol_rows(history, start, end), period, start, end),
         top_lifts=compute_top_lifts(history, period_start=start),
     )

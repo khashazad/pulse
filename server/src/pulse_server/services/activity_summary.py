@@ -7,7 +7,13 @@ import calendar
 from datetime import date as DateValue
 from datetime import timedelta as TimeDeltaValue
 
-from pulse_server.models.activity import ActivityPeriod, TopLift, TypeBreakdown, VolumeBucket
+from pulse_server.models.activity import (
+    ActivityPeriod,
+    GroupBreakdown,
+    TopLift,
+    TypeBreakdown,
+    VolumeBucket,
+)
 
 
 def est_one_rep_max(weight_lbs: float, reps: int) -> float:
@@ -115,6 +121,58 @@ def rollup_by_type(rows: list[dict], top_n: int = 5) -> list[TypeBreakdown]:
                 activity_type="Other", count=int(count), duration_min=dur, share=dur / total
             )
         )
+    return out
+
+
+def rollup_by_group(
+    rows: list[dict], weights_types: set[str] | frozenset[str]
+) -> list[GroupBreakdown]:
+    """Aggregate duration by activity_type, bucket each into weights/cardio, and
+    nest the per-type detail under its group.
+
+    **Inputs:**
+    - rows (list[dict]): Rows with ``activity_type`` and ``duration_min`` keys.
+    - weights_types (set[str]): The activity types that belong to the Weights group.
+
+    **Outputs:**
+    - list[GroupBreakdown]: Non-empty groups, desc by duration. Each group's
+      ``share`` is its fraction of total duration; each subtype's ``share`` is its
+      fraction of the group's duration; subtypes are desc by duration.
+    """
+    agg: dict[str, dict[str, float]] = {}
+    for r in rows:
+        a = agg.setdefault(r["activity_type"], {"duration": 0.0, "count": 0.0})
+        a["duration"] += float(r["duration_min"] or 0)
+        a["count"] += 1
+    total = sum(a["duration"] for a in agg.values()) or 1.0
+    groups: dict[str, list[tuple[str, dict[str, float]]]] = {"weights": [], "cardio": []}
+    for name, a in agg.items():
+        groups["weights" if name in weights_types else "cardio"].append((name, a))
+    out: list[GroupBreakdown] = []
+    for gname, members in groups.items():
+        if not members:
+            continue
+        gdur = sum(a["duration"] for _, a in members) or 1.0
+        gcount = sum(a["count"] for _, a in members)
+        subtypes = [
+            TypeBreakdown(
+                activity_type=name,
+                count=int(a["count"]),
+                duration_min=a["duration"],
+                share=a["duration"] / gdur,
+            )
+            for name, a in sorted(members, key=lambda kv: kv[1]["duration"], reverse=True)
+        ]
+        out.append(
+            GroupBreakdown(
+                group=gname,
+                count=int(gcount),
+                duration_min=sum(a["duration"] for _, a in members),
+                share=sum(a["duration"] for _, a in members) / total,
+                subtypes=subtypes,
+            )
+        )
+    out.sort(key=lambda g: g.duration_min, reverse=True)
     return out
 
 

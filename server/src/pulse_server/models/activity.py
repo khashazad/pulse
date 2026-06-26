@@ -139,6 +139,16 @@ class TypeBreakdown(BaseModel):
     share: float
 
 
+class GroupBreakdown(BaseModel):
+    """One parent group (weights/cardio) with its duration share and subtype detail."""
+
+    group: str
+    count: int
+    duration_min: float
+    share: float
+    subtypes: list[TypeBreakdown]
+
+
 class VolumeBucket(BaseModel):
     """Strength volume + workout time for one sub-bucket of the period."""
 
@@ -166,6 +176,6 @@ class ActivitySummary(BaseModel):
     period_end: DateValue
     totals: ActivityTotals
     deltas: ActivityDeltas
-    by_type: list[TypeBreakdown]
+    by_group: list[GroupBreakdown]
     volume_series: list[VolumeBucket]
     top_lifts: list[TopLift]
