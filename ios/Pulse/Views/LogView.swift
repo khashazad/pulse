@@ -20,14 +20,13 @@ struct LogView: View {
     var body: some View {
         ZStack {
             Theme.BG.primary.ignoresSafeArea()
-            content
-        }
-        .navigationTitle(title)
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbarBackground(Theme.BG.primary, for: .navigationBar)
-        .toolbarBackground(.visible, for: .navigationBar)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) { periodMenu }
+            VStack(spacing: 0) {
+                periodBar
+                    .padding(.horizontal, 16)
+                    .padding(.top, 6)
+                    .padding(.bottom, 8)
+                content
+            }
         }
         .sheet(isPresented: $showDatePicker) {
             DatePickerSheet(onOpen: { date in
@@ -38,38 +37,46 @@ struct LogView: View {
         }
     }
 
-    private var title: String {
-        switch subTab {
-        case .today: "Today"
-        case .week:  "This week"
-        case .month: "This month"
-        case .year:  "This year"
+    /// Top period selector: Today/Week/Month/Year toggle chips plus a "Pick a
+    /// date" action chip that opens the date picker. A non-scrolling row so it
+    /// never competes with the section pager's horizontal swipe.
+    /// - Returns: A single row of period chips.
+    private var periodBar: some View {
+        HStack(spacing: 8) {
+            periodChip("Today", .today)
+            periodChip("Week", .week)
+            periodChip("Month", .month)
+            periodChip("Year", .year)
+            Spacer(minLength: 6)
+            Button { showDatePicker = true } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "calendar").font(.system(size: 12, weight: .semibold))
+                    Text("Pick a date").font(.system(size: 13, weight: .medium))
+                }
+                .foregroundStyle(Theme.FG.secondary)
+                .padding(.horizontal, 12).padding(.vertical, 6)
+                .background(RoundedRectangle(cornerRadius: Theme.Layout.chipRadius)
+                    .fill(Theme.BG.tertiary))
+            }
+            .buttonStyle(.plain)
         }
     }
 
-    /// Calendar dropdown that replaces the old segmented period bar: picks the
-    /// period (Today / Week / Month / Year) and offers a jump-to-date action, so
-    /// one top-bar control does both. The active period is shown by the nav title
-    /// and the picker's checkmark.
-    /// - Returns: A `Menu` labeled with a calendar glyph.
-    private var periodMenu: some View {
-        Menu {
-            Picker("Period", selection: $subTab) {
-                Text("Today").tag(LogSubTab.today)
-                Text("This week").tag(LogSubTab.week)
-                Text("This month").tag(LogSubTab.month)
-                Text("This year").tag(LogSubTab.year)
-            }
-            Divider()
-            Button {
-                showDatePicker = true
-            } label: {
-                Label("Pick a date…", systemImage: "calendar.badge.plus")
-            }
-        } label: {
-            Image(systemName: "calendar")
-                .foregroundStyle(Theme.CTP.mauve)
+    /// A single period toggle chip.
+    /// - Parameters:
+    ///   - label: The chip's display text.
+    ///   - tab: The period this chip selects when tapped.
+    /// - Returns: A pill button that selects `tab` and highlights when it is current.
+    private func periodChip(_ label: String, _ tab: LogSubTab) -> some View {
+        let active = subTab == tab
+        return Button { subTab = tab } label: {
+            Text(label).font(.system(size: 13, weight: active ? .semibold : .medium))
+                .foregroundStyle(active ? Theme.CTP.base : Theme.FG.secondary)
+                .padding(.horizontal, 12).padding(.vertical, 6)
+                .background(RoundedRectangle(cornerRadius: Theme.Layout.chipRadius)
+                    .fill(active ? Theme.tint : Theme.BG.tertiary))
         }
+        .buttonStyle(.plain)
     }
 
     @ViewBuilder
