@@ -115,7 +115,7 @@ final class ActivityClientTests: XCTestCase {
         }
         let anchor = DateOnly.formatter.date(from: "2026-06-25")!
         let summary = try await client.activitySummary(period: .week, anchor: anchor)
-        XCTAssertEqual(summary.totals.workoutCount, 4)
+        XCTAssertEqual(summary.totals.workoutCount, 48)
         XCTAssertEqual(captured?.url?.path, "/activity/summary")
         let query = captured?.url?.query ?? ""
         XCTAssertTrue(query.contains("period=week"))

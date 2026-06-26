@@ -202,23 +202,67 @@ struct TypeBreakdown: Codable, Identifiable, Hashable {
     }
 }
 
-/// One parent group (weights/cardio) with its duration share and subtype detail.
-struct GroupBreakdown: Codable, Identifiable, Hashable {
-    let group: String
-    let count: Int
+/// Weekly rollup for the period breakdown shown on the Month Trends screen.
+/// Populated by the server only when `period == "month"`.
+struct WeekRollup: Codable, Identifiable, Hashable {
+    let weekStart: Date
+    let weekEnd: Date
+    let sessionCount: Int
     let durationMin: Double
-    let share: Double
-    let subtypes: [TypeBreakdown]
+    let byType: [TypeBreakdown]
 
-    /// Stable identity for `ForEach`/`Identifiable`; mirrors the group name.
-    /// - Returns: The group string ("weights" or "cardio").
-    var id: String { group }
+    /// Stable identity for `ForEach`/`Identifiable`; mirrors `weekStart`.
+    /// - Returns: The `weekStart` date.
+    var id: Date { weekStart }
+
     enum CodingKeys: String, CodingKey {
-        case group
-        case count
+        case weekStart = "week_start"
+        case weekEnd = "week_end"
+        case sessionCount = "session_count"
         case durationMin = "duration_min"
-        case share
-        case subtypes
+        case byType = "by_type"
+    }
+}
+
+/// Monthly rollup for the period breakdown shown on the Year Trends screen.
+/// Populated by the server only when `period == "year"`.
+struct MonthRollup: Codable, Identifiable, Hashable {
+    let monthStart: Date
+    let sessionCount: Int
+    let durationMin: Double
+
+    /// Stable identity for `ForEach`/`Identifiable`; mirrors `monthStart`.
+    /// - Returns: The `monthStart` date.
+    var id: Date { monthStart }
+
+    enum CodingKeys: String, CodingKey {
+        case monthStart = "month_start"
+        case sessionCount = "session_count"
+        case durationMin = "duration_min"
+    }
+}
+
+/// One calendar day's workouts within a `WeekDetail` response.
+struct DayGroup: Codable, Identifiable, Hashable {
+    let date: Date
+    let workouts: [ActivityWorkoutSummary]
+
+    /// Stable identity for `ForEach`/`Identifiable`; mirrors the day's date.
+    /// - Returns: The `date` value.
+    var id: Date { date }
+}
+
+/// Full week detail returned by `GET /activity/week`.
+/// Contains each day that had at least one workout, with the workouts for that day.
+struct WeekDetail: Codable, Hashable {
+    let weekStart: Date
+    let weekEnd: Date
+    let dayGroups: [DayGroup]
+
+    enum CodingKeys: String, CodingKey {
+        case weekStart = "week_start"
+        case weekEnd = "week_end"
+        case dayGroups = "day_groups"
     }
 }
 
@@ -287,22 +331,31 @@ struct ActivityTypesResponse: Codable {
 }
 
 /// Week/month/year trend summary powering the Trends screen and feed strip.
+/// `byType` replaces the former `byGroup` — both strength types collapse into
+/// a single entry with `activityType == "Weights"`.
+/// `weeks` is populated only when `period == "month"`.
+/// `months` is populated only when `period == "year"`.
 struct ActivitySummary: Codable, Hashable {
     let period: String
     let periodStart: Date
     let periodEnd: Date
     let totals: ActivityTotals
     let deltas: ActivityDeltas
-    let byGroup: [GroupBreakdown]
+    let byType: [TypeBreakdown]
+    let weeks: [WeekRollup]
+    let months: [MonthRollup]
     let volumeSeries: [VolumeBucket]
     let topLifts: [TopLift]
+
     enum CodingKeys: String, CodingKey {
         case period
         case periodStart = "period_start"
         case periodEnd = "period_end"
         case totals
         case deltas
-        case byGroup = "by_group"
+        case byType = "by_type"
+        case weeks
+        case months
         case volumeSeries = "volume_series"
         case topLifts = "top_lifts"
     }

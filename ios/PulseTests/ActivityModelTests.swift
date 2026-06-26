@@ -36,18 +36,34 @@ final class ActivityModelTests: XCTestCase {
         XCTAssertEqual(d.strengthTotals?.volumeLbs, 1950.0)
     }
 
-    /// Verifies `ActivitySummary` decodes correctly from the `activity_summary` fixture, including totals, deltas, by-group breakdown, volume series, and top lifts.
+    /// Verifies `ActivitySummary` decodes correctly from the `activity_summary` fixture,
+    /// including totals, deltas, by-type breakdown, months, volume series, and top lifts.
     func testDecodeSummary() throws {
         let s = try JSONDecoder.pulseDefault().decode(ActivitySummary.self, from: loadFixture("activity_summary"))
-        XCTAssertEqual(s.totals.workoutCount, 4)
-        XCTAssertEqual(s.deltas.workoutCount.pct, 0.3333)
+        XCTAssertEqual(s.totals.workoutCount, 48)
+        XCTAssertEqual(s.deltas.workoutCount.pct, 0.1429)
         XCTAssertNil(s.deltas.totalActiveEnergyCal.pct)
-        XCTAssertEqual(s.byGroup.count, 2)
-        XCTAssertEqual(s.byGroup.first?.group, "weights")
-        XCTAssertEqual(s.byGroup.first?.subtypes.first?.activityType, "TraditionalStrengthTraining")
+        // by_type — both strength types collapsed server-side into "Weights"
+        XCTAssertEqual(s.byType.count, 2)
+        XCTAssertEqual(s.byType.first?.activityType, "Weights")
+        XCTAssertEqual(s.byType.first?.count, 34)
+        // months populated for year period; weeks empty
+        XCTAssertEqual(s.months.count, 2)
+        XCTAssertEqual(s.months.first?.sessionCount, 8)
+        XCTAssertTrue(s.weeks.isEmpty)
         XCTAssertEqual(s.volumeSeries.count, 2)
         XCTAssertEqual(s.topLifts[0].bestReps, 6)
         XCTAssertTrue(s.topLifts[0].isPr)
+    }
+
+    /// Verifies `WeekDetail` decodes correctly from the `week_detail` fixture,
+    /// including `weekStart`, `weekEnd`, and the nested day groups with workouts.
+    func testDecodeWeekDetail() throws {
+        let wd = try JSONDecoder.pulseDefault().decode(WeekDetail.self, from: loadFixture("week_detail"))
+        XCTAssertEqual(wd.dayGroups.count, 2)
+        XCTAssertEqual(wd.dayGroups.first?.workouts.count, 1)
+        XCTAssertEqual(wd.dayGroups.first?.workouts.first?.activityType, "TraditionalStrengthTraining")
+        XCTAssertEqual(wd.dayGroups[1].workouts.first?.distanceKm, 5.1)
     }
 
     /// Verifies `ActivityTypesResponse` decodes from the `activity_types` fixture,

@@ -43,6 +43,20 @@ extension PulseClient {
         return try await fetch(url: url)
     }
 
+    /// Fetch the workouts for a specific calendar week, grouped by day
+    /// (`GET /activity/week`).
+    /// - Parameter anchor: A date inside the target week; nil defaults to the current week.
+    /// - Returns: A `WeekDetail` with one `DayGroup` per active day in the week.
+    /// - Throws: `PulseError` on transport, auth, or decoding failure.
+    func activityWeek(anchor: Date?) async throws -> WeekDetail {
+        var query: [URLQueryItem] = []
+        if let anchor {
+            query.append(URLQueryItem(name: "anchor", value: DateOnly.string(from: anchor)))
+        }
+        let url = try http.makeURL(path: "/activity/week", query: query)
+        return try await fetch(url: url)
+    }
+
     /// Fetch the list of all activity types with their current cardio classification
     /// and workout count (`GET /activity/types`).
     /// - Returns: An `ActivityTypesResponse` containing every distinct activity type

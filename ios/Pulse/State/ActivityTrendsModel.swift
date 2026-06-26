@@ -5,7 +5,7 @@ import Foundation
 @Observable
 final class ActivityTrendsModel {
     private(set) var state: LoadState<ActivitySummary> = .idle
-    private(set) var period: ActivityPeriod = .week
+    private(set) var period: ActivityPeriod = .year
     private weak var auth: AuthSession?
     /// Bumped on every `load`; a load whose captured value no longer matches has been
     /// superseded by a newer period selection and must discard its result.
