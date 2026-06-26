@@ -116,7 +116,8 @@ struct ActivityTrendsView: View {
 
     /// Two headline metric tiles: Time and Sessions with period-over-period delta badges.
     /// For the Year period, Time is formatted as days+hours+minutes and Sessions
-    /// includes a sessions-per-month caption (`workoutCount / 12` rounded).
+    /// includes a sessions-per-month caption averaged over the months that have
+    /// occurred so far (the `months` count), not a hardcoded 12.
     /// - Parameter s: The loaded activity summary.
     /// - Returns: An `HStack` of two metric tile views.
     private func headline(_ s: ActivitySummary) -> some View {
@@ -125,8 +126,8 @@ struct ActivityTrendsView: View {
                 ? s.totals.totalDurationMin.asDurationWithDays
                 : s.totals.totalDurationMin.asDurationFromMinutes
             metricTile("Time", value: timeValue, delta: s.deltas.totalDurationMin)
-            let perMonth = model.period == .year
-                ? "\(Int((Double(s.totals.workoutCount) / 12).rounded()))/mo"
+            let perMonth = (model.period == .year && !s.months.isEmpty)
+                ? "\(Int((Double(s.totals.workoutCount) / Double(s.months.count)).rounded()))/mo"
                 : nil
             metricTile(
                 "Sessions",
@@ -205,7 +206,7 @@ struct ActivityTrendsView: View {
                             .foregroundStyle(Theme.FG.primary)
                         Spacer()
                         Text(
-                            "\(Int(entry.durationMin.rounded())) min"
+                            byTypeDuration(entry.durationMin)
                             + " · \(Int((entry.share * 100).rounded()))%"
                         )
                         .font(.system(size: 12))
@@ -218,66 +219,72 @@ struct ActivityTrendsView: View {
         .ctpCard()
     }
 
+    /// Formats a by-type duration: days+hours+minutes on the Year period (where
+    /// totals span days) and hours+minutes on the Month period.
+    /// - Parameter minutes: The type's total duration in minutes.
+    /// - Returns: A compact duration string sized to the current period.
+    private func byTypeDuration(_ minutes: Double) -> String {
+        model.period == .year
+            ? minutes.asDurationWithDays
+            : minutes.asDurationFromMinutes
+    }
+
     // MARK: - Period Breakdown
 
-    /// A card listing sub-period breakdowns: months (for Year) or weeks (for Month).
-    /// Month rows navigate to `MonthTrendsView`; week rows navigate to `WeekTrendsView`.
+    /// The sub-period breakdown section: months (for Year) or weeks (for Month),
+    /// rendered as a Measures-style header plus a single card of separated,
+    /// tappable rows. Month rows navigate to `MonthTrendsView`; week rows to
+    /// `WeekTrendsView`.
     /// - Parameter s: The loaded activity summary.
-    /// - Returns: A padded card with one tappable row per sub-period, or `EmptyView` when empty.
+    /// - Returns: The breakdown section, or `EmptyView` when there is nothing to show.
     @ViewBuilder
     private func periodBreakdownCard(_ s: ActivitySummary) -> some View {
         if !s.months.isEmpty {
-            VStack(alignment: .leading, spacing: 10) {
-                activityCardTitle("By month")
-                VStack(spacing: 8) {
-                    ForEach(s.months) { month in
+            VStack(alignment: .leading, spacing: 8) {
+                ActivitySectionHeader(title: "By month", count: s.months.count, unit: "month")
+                VStack(spacing: 0) {
+                    let rows = Array(s.months.enumerated())
+                    ForEach(rows, id: \.element.id) { idx, month in
                         monthRow(month)
-                    }
-                }
-            }
-            .padding(16)
-            .ctpCard()
-        } else if !s.weeks.isEmpty {
-            VStack(alignment: .leading, spacing: 10) {
-                activityCardTitle("By week")
-                VStack(spacing: 8) {
-                    ForEach(s.weeks) { week in
-                        Button {
-                            onOpenWeek(week.weekStart)
-                        } label: {
-                            WeekRollupRow(week: week)
-                                .contentShape(Rectangle())
+                        if idx < rows.count - 1 {
+                            Rectangle()
+                                .fill(Theme.separator)
+                                .frame(height: 0.5)
                         }
-                        .buttonStyle(.plain)
                     }
                 }
+                .padding(.horizontal, 14)
+                .ctpCard()
             }
-            .padding(16)
-            .ctpCard()
+        } else if !s.weeks.isEmpty {
+            WeekBreakdownSection(weeks: s.weeks, onOpenWeek: onOpenWeek)
         }
     }
 
-    /// A tappable month-breakdown row showing the abbreviated month, session count, and time.
-    /// Tapping navigates to the month's week drill-down via `onOpenMonth`.
+    /// A tappable month-breakdown row: full month name, session count, total time,
+    /// and a chevron affordance. Tapping navigates to the month's week drill-down.
     /// - Parameter month: The `MonthRollup` to render.
     /// - Returns: A plain-style `Button` wrapping a full-width `HStack` row.
     private func monthRow(_ month: MonthRollup) -> some View {
         Button {
             onOpenMonth(month.monthStart)
         } label: {
-            HStack {
-                Text(month.monthStart.formatted(.dateTime.month(.abbreviated)))
-                    .font(.system(size: 13, weight: .semibold))
+            HStack(spacing: 10) {
+                Text(month.monthStart.formatted(.dateTime.month(.wide)))
+                    .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(Theme.FG.primary)
-                    .frame(width: 36, alignment: .leading)
-                Text("\(month.sessionCount) sessions")
+                Spacer()
+                Text("\(month.sessionCount) \(month.sessionCount == 1 ? "session" : "sessions")")
                     .font(.system(size: 12))
                     .foregroundStyle(Theme.FG.secondary)
-                Spacer()
-                Text(month.durationMin.asDurationFromMinutes)
-                    .font(.system(size: 12))
+                Text(month.durationMin.asDurationWithDays)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(Theme.FG.tertiary)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(Theme.FG.tertiary)
             }
+            .padding(.vertical, 13)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

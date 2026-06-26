@@ -10,9 +10,9 @@ struct WeekRollupRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            HStack {
+            HStack(spacing: 8) {
                 Text("Week of \(week.weekStart.formatted(.dateTime.month(.abbreviated).day()))")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(Theme.FG.primary)
                 Spacer()
                 Text(
@@ -21,6 +21,9 @@ struct WeekRollupRow: View {
                 )
                 .font(.system(size: 12))
                 .foregroundStyle(Theme.FG.tertiary)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Theme.FG.tertiary)
             }
             if !week.byType.isEmpty {
                 Text(

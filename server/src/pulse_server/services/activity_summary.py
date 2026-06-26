@@ -320,26 +320,30 @@ def weeks_in_month(
     return out
 
 
-def months_in_year(rows: list[dict], year: int) -> list[MonthRollup]:
-    """Bucket workout rows by calendar month for a full year, including zero months.
+def months_in_year(rows: list[dict], year: int, through_month: int = 12) -> list[MonthRollup]:
+    """Bucket workout rows by calendar month for a year, up to ``through_month``.
 
-    All twelve months are always present in the output; months with no activity
-    have ``session_count=0`` and ``duration_min=0.0``.  Rows whose
+    Months ``1..through_month`` are present in the output; months with no
+    activity have ``session_count=0`` and ``duration_min=0.0``. Months after
+    ``through_month`` are omitted entirely so months that have not occurred yet
+    (relative to the period being viewed) are never shown. Rows whose
     ``local_date`` falls outside ``year`` are silently ignored.
 
     **Inputs:**
     - rows (list[dict]): Each dict must have ``local_date`` (date),
       ``activity_type`` (str), and ``duration_min`` (float | None) keys.
     - year (int): The calendar year to roll up.
+    - through_month (int): Highest month number to emit (1-12). Defaults to 12
+      (the full year); callers pass the anchor's month to exclude future months.
 
     **Outputs:**
-    - list[MonthRollup]: Twelve entries, one per month Jan-Dec, ordered
-      chronologically.
+    - list[MonthRollup]: One entry per month from January through
+      ``through_month``, ordered chronologically.
     """
-    monthly: dict[int, list[dict]] = {m: [] for m in range(1, 13)}
+    monthly: dict[int, list[dict]] = {m: [] for m in range(1, through_month + 1)}
     for r in rows:
         d: DateValue = r["local_date"]
-        if d.year == year:
+        if d.year == year and d.month <= through_month:
             monthly[d.month].append(r)
     return [
         MonthRollup(
@@ -347,7 +351,7 @@ def months_in_year(rows: list[dict], year: int) -> list[MonthRollup]:
             session_count=len(monthly[month]),
             duration_min=sum(float(r["duration_min"] or 0) for r in monthly[month]),
         )
-        for month in range(1, 13)
+        for month in range(1, through_month + 1)
     ]
 
 

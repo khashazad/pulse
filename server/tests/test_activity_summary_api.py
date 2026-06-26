@@ -66,7 +66,7 @@ def test_summary_assembles_totals_deltas_and_by_type(rest_client) -> None:
 
 
 def test_summary_year_has_months_and_by_type_no_by_group(rest_client) -> None:
-    """period=year response has months (12 entries), by_type, and no by_group key."""
+    """period=year response has months through the anchor month, by_type, and no by_group key."""
     cur = [
         {
             "activity_type": "Running",
@@ -112,10 +112,10 @@ def test_summary_year_has_months_and_by_type_no_by_group(rest_client) -> None:
     body = resp.json()
     # No by_group on the wire anymore.
     assert "by_group" not in body
-    # 12 MonthRollup entries for the year.
-    assert len(body["months"]) == 12
+    # Months Jan through the anchor month (June 2026) — future months excluded.
+    assert len(body["months"]) == 6
     assert body["months"][0]["month_start"] == "2026-01-01"
-    assert body["months"][11]["month_start"] == "2026-12-01"
+    assert body["months"][5]["month_start"] == "2026-06-01"
     # Both strength types merged into a single "Weights" by_type row.
     by_label = {t["activity_type"]: t for t in body["by_type"]}
     assert set(by_label.keys()) == {"Running", "Weights"}
@@ -274,12 +274,13 @@ def test_summary_month_energy_balance_has_weekly_buckets(rest_client) -> None:
     assert eb[1]["intake_cal_per_day"] is None
 
 
-def test_summary_year_energy_balance_has_12_buckets(rest_client) -> None:
-    """period=year response has 12 EnergyBalanceBucket entries, one per calendar month.
+def test_summary_year_energy_balance_buckets_through_anchor_month(rest_client) -> None:
+    """period=year response has one EnergyBalanceBucket per month, Jan through the anchor month.
 
     With no workout, calorie, or weight data, every bucket has None/0.0 for all
     numeric fields.  Labels are three-letter month abbreviations; bucket_start
-    values are the first of each month.
+    values are the first of each month.  Months after the anchor (June 2026 here)
+    are excluded.
     """
     with (
         patch("pulse_server.services.activity_service.ActivityReadRepository") as repo_cls,
@@ -302,9 +303,9 @@ def test_summary_year_energy_balance_has_12_buckets(rest_client) -> None:
     assert resp.status_code == 200
     body = resp.json()
     eb = body["energy_balance"]
-    assert len(eb) == 12
+    assert len(eb) == 6
     assert eb[0]["label"] == "Jan"
-    assert eb[11]["label"] == "Dec"
+    assert eb[5]["label"] == "Jun"
     assert eb[0]["bucket_start"] == "2026-01-01"
 
 
