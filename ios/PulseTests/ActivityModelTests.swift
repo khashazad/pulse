@@ -36,13 +36,15 @@ final class ActivityModelTests: XCTestCase {
         XCTAssertEqual(d.strengthTotals?.volumeLbs, 1950.0)
     }
 
-    /// Verifies `ActivitySummary` decodes correctly from the `activity_summary` fixture, including totals, deltas, by-type breakdown, volume series, and top lifts.
+    /// Verifies `ActivitySummary` decodes correctly from the `activity_summary` fixture, including totals, deltas, by-group breakdown, volume series, and top lifts.
     func testDecodeSummary() throws {
         let s = try JSONDecoder.pulseDefault().decode(ActivitySummary.self, from: loadFixture("activity_summary"))
         XCTAssertEqual(s.totals.workoutCount, 4)
         XCTAssertEqual(s.deltas.workoutCount.pct, 0.3333)
         XCTAssertNil(s.deltas.totalActiveEnergyCal.pct)
-        XCTAssertEqual(s.byType.count, 2)
+        XCTAssertEqual(s.byGroup.count, 2)
+        XCTAssertEqual(s.byGroup.first?.group, "weights")
+        XCTAssertEqual(s.byGroup.first?.subtypes.first?.activityType, "TraditionalStrengthTraining")
         XCTAssertEqual(s.volumeSeries.count, 2)
         XCTAssertEqual(s.topLifts[0].bestReps, 6)
         XCTAssertTrue(s.topLifts[0].isPr)

@@ -77,6 +77,20 @@ final class ActivityClientTests: XCTestCase {
         XCTAssertTrue(query.contains("limit=50"))
     }
 
+    /// `activityWorkouts(group:)` sends the group query item and omits type.
+    func testWorkoutsSendsGroup() async throws {
+        let json = try loadFixture("activity_feed_page")
+        var captured: URLRequest?
+        let client = makeClient { req in
+            captured = req
+            return (HTTPURLResponse(url: req.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, json)
+        }
+        _ = try await client.activityWorkouts(before: nil, beforeId: nil, type: nil, group: "weights")
+        let query = captured?.url?.query ?? ""
+        XCTAssertTrue(query.contains("group=weights"))
+        XCTAssertFalse(query.contains("type="))
+    }
+
     /// Verifies `activityWorkoutDetail(id:)` requests the correct `/activity/workouts/<id>` path and decodes the response.
     func testWorkoutDetailPath() async throws {
         let json = try loadFixture("activity_workout_detail")

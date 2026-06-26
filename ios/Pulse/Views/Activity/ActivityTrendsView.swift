@@ -34,7 +34,7 @@ struct ActivityTrendsView: View {
     }
 
     /// Switches on `model.state` to render a loading spinner, an error view, or the
-    /// full summary content (headline deltas, volume chart, by-type card, top lifts).
+    /// full summary content (headline deltas, volume chart, by-group card, top lifts).
     /// - Returns: The view for the current load state.
     @ViewBuilder private var content: some View {
         switch model.state {
@@ -47,7 +47,7 @@ struct ActivityTrendsView: View {
         case let .loaded(s):
             headline(s)
             if !s.volumeSeries.isEmpty { volumeCard(s) }
-            if !s.byType.isEmpty { byTypeCard(s) }
+            if !s.byGroup.isEmpty { byGroupCard(s) }
             if !s.topLifts.isEmpty { topLiftsCard(s) }
         }
     }
@@ -103,27 +103,40 @@ struct ActivityTrendsView: View {
         .padding(16).ctpCard()
     }
 
-    /// A card with a stacked bar chart and legend showing the duration share by activity type.
+    /// A card showing one bar per parent group (Weights/Cardio), with a legend listing
+    /// each group's subtypes and their within-group share.
     /// - Parameter s: The loaded activity summary.
-    /// - Returns: A padded card view with a horizontal bar chart and per-type rows.
-    private func byTypeCard(_ s: ActivitySummary) -> some View {
+    /// - Returns: A padded card with the grouped bar and a per-subtype legend.
+    private func byGroupCard(_ s: ActivitySummary) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            cardTitle("By type")
-            Chart(s.byType) { slice in
-                BarMark(x: .value("Minutes", slice.durationMin))
-                    .foregroundStyle(ActivityType.color(slice.activityType))
+            cardTitle("By group")
+            Chart(s.byGroup) { group in
+                BarMark(x: .value("Minutes", group.durationMin))
+                    .foregroundStyle(ActivityGroup(rawValue: group.group)?.color ?? Theme.CTP.overlay1)
             }
             .chartXAxis(.hidden)
             .frame(height: 36)
-            VStack(spacing: 6) {
-                ForEach(s.byType) { slice in
+            VStack(spacing: 8) {
+                ForEach(s.byGroup) { group in
+                    let ag = ActivityGroup(rawValue: group.group)
+                    let color = ag?.color ?? Theme.CTP.overlay1
                     HStack(spacing: 8) {
-                        Circle().fill(ActivityType.color(slice.activityType)).frame(width: 8, height: 8)
-                        Text(ActivityType.displayName(slice.activityType))
-                            .font(.system(size: 13)).foregroundStyle(Theme.FG.primary)
+                        Circle().fill(color).frame(width: 8, height: 8)
+                        Text(ag?.displayName ?? group.group)
+                            .font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.FG.primary)
                         Spacer()
-                        Text("\(Int(slice.durationMin.rounded())) min · \(Int((slice.share * 100).rounded()))%")
+                        Text("\(Int(group.durationMin.rounded())) min · \(Int((group.share * 100).rounded()))%")
                             .font(.system(size: 12)).foregroundStyle(Theme.FG.tertiary)
+                    }
+                    ForEach(group.subtypes) { sub in
+                        HStack(spacing: 8) {
+                            Text(ActivityType.displayName(sub.activityType))
+                                .font(.system(size: 12)).foregroundStyle(Theme.FG.secondary)
+                            Spacer()
+                            Text("\(Int(sub.durationMin.rounded())) min · \(Int((sub.share * 100).rounded()))%")
+                                .font(.system(size: 11)).foregroundStyle(Theme.FG.tertiary)
+                        }
+                        .padding(.leading, 16)
                     }
                 }
             }

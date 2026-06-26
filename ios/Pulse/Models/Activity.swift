@@ -202,6 +202,26 @@ struct TypeBreakdown: Codable, Identifiable, Hashable {
     }
 }
 
+/// One parent group (weights/cardio) with its duration share and subtype detail.
+struct GroupBreakdown: Codable, Identifiable, Hashable {
+    let group: String
+    let count: Int
+    let durationMin: Double
+    let share: Double
+    let subtypes: [TypeBreakdown]
+
+    /// Stable identity for `ForEach`/`Identifiable`; mirrors the group name.
+    /// - Returns: The group string ("weights" or "cardio").
+    var id: String { group }
+    enum CodingKeys: String, CodingKey {
+        case group
+        case count
+        case durationMin = "duration_min"
+        case share
+        case subtypes
+    }
+}
+
 /// Strength volume + workout time for one sub-bucket of the period.
 struct VolumeBucket: Codable, Identifiable, Hashable {
     let bucketStart: Date
@@ -241,7 +261,7 @@ struct ActivitySummary: Codable, Hashable {
     let periodEnd: Date
     let totals: ActivityTotals
     let deltas: ActivityDeltas
-    let byType: [TypeBreakdown]
+    let byGroup: [GroupBreakdown]
     let volumeSeries: [VolumeBucket]
     let topLifts: [TopLift]
     enum CodingKeys: String, CodingKey {
@@ -250,7 +270,7 @@ struct ActivitySummary: Codable, Hashable {
         case periodEnd = "period_end"
         case totals
         case deltas
-        case byType = "by_type"
+        case byGroup = "by_group"
         case volumeSeries = "volume_series"
         case topLifts = "top_lifts"
     }
