@@ -80,10 +80,22 @@ struct RootView: View {
                             case .trends:
                                 ActivityTrendsView(
                                     auth: auth,
-                                    onManageTypes: { activityPath.append(ActivityRoute.types) }
+                                    onManageTypes: { activityPath.append(ActivityRoute.types) },
+                                    onOpenMonth: { activityPath.append(ActivityRoute.month($0)) },
+                                    onOpenWeek: { activityPath.append(ActivityRoute.week($0)) }
                                 )
                             case .types:
                                 ActivityTypesView(auth: auth)
+                            case let .month(anchor):
+                                MonthTrendsView(
+                                    anchor: anchor,
+                                    onOpenWeek: { activityPath.append(ActivityRoute.week($0)) }
+                                )
+                            case let .week(anchor):
+                                WeekTrendsView(
+                                    anchor: anchor,
+                                    onOpenWorkout: { activityPath.append(ActivityRoute.workout($0)) }
+                                )
                             }
                         }
                     }

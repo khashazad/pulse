@@ -190,6 +190,26 @@ final class ActivityClientTests: XCTestCase {
         XCTAssertEqual(result.count, 34)
     }
 
+    /// Verifies `activityWeek(anchor:)` sends `GET /activity/week` with the
+    /// `anchor` query parameter, attaches the bearer header, and decodes the
+    /// response into a `WeekDetail` with the correct number of day groups.
+    func testActivityWeekSendsAnchorAndDecodesWeekDetail() async throws {
+        let json = try loadFixture("week_detail")
+        var captured: URLRequest?
+        let client = makeClient { req in
+            captured = req
+            return (HTTPURLResponse(url: req.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, json)
+        }
+        let anchor = DateOnly.formatter.date(from: "2026-06-24")!
+        let detail = try await client.activityWeek(anchor: anchor)
+        XCTAssertEqual(detail.dayGroups.count, 2)
+        XCTAssertEqual(captured?.url?.path, "/activity/week")
+        XCTAssertEqual(captured?.httpMethod ?? "GET", "GET")
+        let query = captured?.url?.query ?? ""
+        XCTAssertTrue(query.contains("anchor=2026-06-24"))
+        XCTAssertEqual(captured?.value(forHTTPHeaderField: "Authorization"), "Bearer session-k")
+    }
+
     /// Verifies `setActivityTypeCardio(_:isCardio:)` returns `PulseError.notFound`
     /// when the server responds with 404 for an unknown activity type.
     func testSetActivityTypeCardio404MapsToNotFound() async throws {

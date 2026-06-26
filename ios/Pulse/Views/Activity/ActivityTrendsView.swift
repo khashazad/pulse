@@ -5,23 +5,37 @@ private let prBadgeCornerRadius: CGFloat = 5
 
 /// Trends screen: Year / Month period selector (default Year), two headline
 /// metric tiles (Time and Sessions with period-over-period delta badges), a
-/// flat by-type breakdown card, a period breakdown list (months for Year,
-/// weeks for Month — not yet tappable), and a Strength section containing the
-/// volume-over-time chart and top lifts.
+/// flat by-type breakdown card, a tappable period breakdown list (months for
+/// Year, weeks for Month), and a Strength section with a volume chart and top lifts.
 struct ActivityTrendsView: View {
     @State private var model: ActivityTrendsModel
 
     /// Called when the user taps the manage-types toolbar button.
     private let onManageTypes: () -> Void
+    /// Called when the user taps a month row in the Year period view.
+    private let onOpenMonth: (Date) -> Void
+    /// Called when the user taps a week row in the Month period view.
+    private let onOpenWeek: (Date) -> Void
 
-    /// Initializes the view with the shared auth session and a navigation callback.
+    /// Initializes the view with the shared auth session and navigation callbacks.
     /// - Parameters:
     ///   - auth: The app's authenticated session.
     ///   - onManageTypes: Invoked when the user taps the toolbar button to open
     ///     the activity-types management screen.
-    init(auth: AuthSession, onManageTypes: @escaping () -> Void) {
+    ///   - onOpenMonth: Invoked with the month's start date when the user taps a
+    ///     month row in the Year period breakdown.
+    ///   - onOpenWeek: Invoked with the week's start date when the user taps a
+    ///     week row in the Month period breakdown.
+    init(
+        auth: AuthSession,
+        onManageTypes: @escaping () -> Void,
+        onOpenMonth: @escaping (Date) -> Void,
+        onOpenWeek: @escaping (Date) -> Void
+    ) {
         _model = State(initialValue: ActivityTrendsModel(auth: auth))
         self.onManageTypes = onManageTypes
+        self.onOpenMonth = onOpenMonth
+        self.onOpenWeek = onOpenWeek
     }
 
     var body: some View {
@@ -190,9 +204,9 @@ struct ActivityTrendsView: View {
     // MARK: - Period Breakdown
 
     /// A card listing sub-period breakdowns: months (for Year) or weeks (for Month).
-    /// Rows are not tappable yet — drill-down navigation is a later task.
+    /// Month rows navigate to `MonthTrendsView`; week rows navigate to `WeekTrendsView`.
     /// - Parameter s: The loaded activity summary.
-    /// - Returns: A padded card with one row per sub-period, or `EmptyView` when empty.
+    /// - Returns: A padded card with one tappable row per sub-period, or `EmptyView` when empty.
     @ViewBuilder
     private func periodBreakdownCard(_ s: ActivitySummary) -> some View {
         if model.period == .year, !s.months.isEmpty {
@@ -211,7 +225,13 @@ struct ActivityTrendsView: View {
                 cardTitle("By week")
                 VStack(spacing: 8) {
                     ForEach(s.weeks) { week in
-                        weekRow(week)
+                        Button {
+                            onOpenWeek(week.weekStart)
+                        } label: {
+                            WeekRollupRow(week: week)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
             }
@@ -220,53 +240,30 @@ struct ActivityTrendsView: View {
         }
     }
 
-    /// A single month-breakdown row showing the abbreviated month, session count, and time.
+    /// A tappable month-breakdown row showing the abbreviated month, session count, and time.
+    /// Tapping navigates to the month's week drill-down via `onOpenMonth`.
     /// - Parameter month: The `MonthRollup` to render.
-    /// - Returns: A full-width `HStack` row.
+    /// - Returns: A plain-style `Button` wrapping a full-width `HStack` row.
     private func monthRow(_ month: MonthRollup) -> some View {
-        HStack {
-            Text(month.monthStart.formatted(.dateTime.month(.abbreviated)))
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(Theme.FG.primary)
-                .frame(width: 36, alignment: .leading)
-            Text("\(month.sessionCount) sessions")
-                .font(.system(size: 12))
-                .foregroundStyle(Theme.FG.secondary)
-            Spacer()
-            Text(month.durationMin.asDurationFromMinutes)
-                .font(.system(size: 12))
-                .foregroundStyle(Theme.FG.tertiary)
-        }
-    }
-
-    /// A single week-breakdown row showing the week-start date, session count, time,
-    /// and a secondary line of per-type frequency chips (e.g. "Weights 3 · Running 2").
-    /// - Parameter week: The `WeekRollup` to render.
-    /// - Returns: A `VStack` row with headline and type-frequency sub-line.
-    private func weekRow(_ week: WeekRollup) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
+        Button {
+            onOpenMonth(month.monthStart)
+        } label: {
             HStack {
-                Text("Week of \(week.weekStart.formatted(.dateTime.month(.abbreviated).day()))")
+                Text(month.monthStart.formatted(.dateTime.month(.abbreviated)))
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(Theme.FG.primary)
+                    .frame(width: 36, alignment: .leading)
+                Text("\(month.sessionCount) sessions")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.FG.secondary)
                 Spacer()
-                Text(
-                    "\(week.sessionCount) · "
-                    + week.durationMin.asDurationFromMinutes
-                )
-                .font(.system(size: 12))
-                .foregroundStyle(Theme.FG.tertiary)
+                Text(month.durationMin.asDurationFromMinutes)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.FG.tertiary)
             }
-            if !week.byType.isEmpty {
-                Text(
-                    week.byType.map {
-                        "\(ActivityType.displayName($0.activityType)) \($0.count)"
-                    }.joined(separator: " · ")
-                )
-                .font(.system(size: 11))
-                .foregroundStyle(Theme.FG.tertiary)
-            }
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Strength Section

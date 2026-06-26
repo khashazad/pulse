@@ -12,4 +12,8 @@ enum ActivityRoute: Hashable {
     case trends
     /// The activity types management screen (cardio classification toggles).
     case types
+    /// A month drill-down screen anchored to the given date.
+    case month(Date)
+    /// A week drill-down screen anchored to the given date.
+    case week(Date)
 }
