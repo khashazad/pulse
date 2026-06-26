@@ -19,8 +19,9 @@ extension Double {
 
     /// The value, interpreted as a count of minutes, formatted with days, hours, and minutes.
     /// Used for the Year Trends headline where totals can span multiple days.
-    /// Always emits minutes; days and hours are omitted when zero.
-    /// - Returns: E.g. "2d 3h 40m" for 3820 minutes, or "45m" for 45 minutes.
+    /// Days and hours are omitted when zero. Minutes are omitted when zero unless
+    /// they are the only component (e.g. 120 min → "2h", 0 min → "0m").
+    /// - Returns: E.g. "2d 3h 40m" for 3820 minutes, "2h" for 120 minutes, or "45m" for 45 minutes.
     var asDurationWithDays: String {
         let total = Int(rounded())
         let days = total / (60 * 24)
@@ -30,7 +31,7 @@ extension Double {
         var parts: [String] = []
         if days > 0 { parts.append("\(days)d") }
         if hours > 0 { parts.append("\(hours)h") }
-        parts.append("\(mins)m")
+        if mins > 0 || parts.isEmpty { parts.append("\(mins)m") }
         return parts.joined(separator: " ")
     }
 }

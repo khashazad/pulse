@@ -10,7 +10,6 @@ from pulse_server.services.activity_summary import (
     breakdown_label,
     bucket_volume,
     compute_top_lifts,
-    days_in_week,
     energy_balance,
     est_one_rep_max,
     months_in_year,
@@ -192,40 +191,6 @@ def test_months_in_year_returns_twelve_entries_with_correct_counts() -> None:
 
     # All other months are empty.
     assert all(r.session_count == 0 for i, r in enumerate(rollups) if i != 5)
-
-
-# ---------------------------------------------------------------------------
-# days_in_week
-# ---------------------------------------------------------------------------
-
-
-def test_days_in_week_returns_seven_days_with_counts() -> None:
-    """days_in_week returns 7 day dicts Mon-Sun with correct workout counts."""
-    week_start = date(2026, 6, 22)  # Monday
-    week_end = date(2026, 6, 28)  # Sunday
-    rows = [
-        # Two workouts on Monday.
-        {"local_date": date(2026, 6, 22), "activity_type": "Running", "duration_min": 30.0},
-        {"local_date": date(2026, 6, 22), "activity_type": "Cycling", "duration_min": 45.0},
-        # One workout on Thursday.
-        {"local_date": date(2026, 6, 25), "activity_type": "Running", "duration_min": 35.0},
-    ]
-    days = days_in_week(rows, week_start, week_end)
-
-    assert len(days) == 7
-    assert days[0]["date"] == date(2026, 6, 22)
-    assert days[-1]["date"] == date(2026, 6, 28)
-
-    # Monday: 2 workouts, 75 min total.
-    assert days[0]["workout_count"] == 2
-    assert days[0]["duration_min"] == 75.0
-
-    # Thursday (index 3): 1 workout, 35 min.
-    assert days[3]["workout_count"] == 1
-    assert days[3]["duration_min"] == 35.0
-
-    # Other days: 0 workouts.
-    assert all(days[i]["workout_count"] == 0 for i in range(1, 7) if i != 3)
 
 
 # ---------------------------------------------------------------------------

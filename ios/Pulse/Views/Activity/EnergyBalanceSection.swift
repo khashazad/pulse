@@ -88,11 +88,7 @@ struct EnergyBalanceSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Energy balance".uppercased())
-                .font(.system(size: 11, weight: .semibold))
-                .tracking(0.8)
-                .foregroundStyle(Theme.FG.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            activityCardTitle("Energy balance")
             VStack(spacing: 12) {
                 ForEach(buckets) { bucket in
                     EnergyBalanceBucketRow(bucket: bucket)

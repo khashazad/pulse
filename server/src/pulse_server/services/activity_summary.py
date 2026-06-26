@@ -235,23 +235,23 @@ def rollup_by_type(rows: list[dict]) -> list[TypeBreakdown]:
       ``duration_min`` descending.  Each entry's ``share`` is its fraction of
       the total duration (0-1).
     """
-    agg: dict[str, dict[str, float]] = {}
+    durations: dict[str, float] = {}
+    counts: dict[str, int] = {}
     for r in rows:
         label = breakdown_label(r["activity_type"])
-        a = agg.setdefault(label, {"duration": 0.0, "count": 0.0})
-        a["duration"] += float(r["duration_min"] or 0)
-        a["count"] += 1
-    if not agg:
+        durations[label] = durations.get(label, 0.0) + float(r["duration_min"] or 0)
+        counts[label] = counts.get(label, 0) + 1
+    if not durations:
         return []
-    total = sum(a["duration"] for a in agg.values()) or 1.0
+    total = sum(durations.values()) or 1.0
     out = [
         TypeBreakdown(
             activity_type=label,
-            count=int(a["count"]),
-            duration_min=a["duration"],
-            share=a["duration"] / total,
+            count=counts[label],
+            duration_min=dur,
+            share=dur / total,
         )
-        for label, a in agg.items()
+        for label, dur in durations.items()
     ]
     out.sort(key=lambda t: t.duration_min, reverse=True)
     return out
@@ -485,11 +485,11 @@ def energy_balance(
 
         # --- Estimated maintenance ---
         est_maintenance_per_day: float | None
-        if weight_delta_lb is None or intake_cal_per_day is None:
+        if weight_delta_lb is None or intake_cal_per_day is None or weight_span_days is None:
             est_maintenance_per_day = None
         else:
             est_maintenance_per_day = intake_cal_per_day - (
-                weight_delta_lb * 3500 / weight_span_days  # type: ignore[operator]
+                weight_delta_lb * 3500 / weight_span_days
             )
 
         results.append(
@@ -508,40 +508,3 @@ def energy_balance(
         )
 
     return results
-
-
-def days_in_week(
-    rows: list[dict],
-    week_start: DateValue,
-    week_end: DateValue,
-) -> list[dict]:
-    """Produce a per-day skeleton for the week with workout count and total duration.
-
-    All days from ``week_start`` through ``week_end`` are always present;
-    days with no activity have ``workout_count=0`` and ``duration_min=0.0``.
-    Workout-level summaries (feed rows) are attached at the service layer;
-    this function returns only the aggregated day-level counts.
-
-    **Inputs:**
-    - rows (list[dict]): Each dict must have ``local_date`` (date) and
-      ``duration_min`` (float | None) keys.  Only rows inside
-      ``[week_start, week_end]`` are counted.
-    - week_start (date): First day of the week (Monday).
-    - week_end (date): Last day of the week (Sunday).
-
-    **Outputs:**
-    - list[dict]: One dict per day with keys ``date`` (date),
-      ``workout_count`` (int), and ``duration_min`` (float), ordered
-      chronologically.
-    """
-    daily: dict[DateValue, dict] = {}
-    cursor = week_start
-    while cursor <= week_end:
-        daily[cursor] = {"date": cursor, "workout_count": 0, "duration_min": 0.0}
-        cursor += TimeDeltaValue(days=1)
-    for r in rows:
-        d: DateValue = r["local_date"]
-        if d in daily:
-            daily[d]["workout_count"] += 1
-            daily[d]["duration_min"] += float(r["duration_min"] or 0)
-    return [daily[d] for d in sorted(daily)]

@@ -50,6 +50,39 @@ MAX_FEED_LIMIT = 100
 DEFAULT_FEED_LIMIT = 50
 
 
+def _make_workout_summary(row: dict, briefs: dict) -> ActivityWorkoutSummary:
+    """Build an ``ActivityWorkoutSummary`` from one workout row and a briefs lookup.
+
+    Extracts the ``linked_strength_workout_id`` from ``row``, resolves the
+    corresponding brief from ``briefs`` (if present), and constructs the summary
+    DTO.  Used identically in both the feed list and the week-detail view.
+
+    **Inputs:**
+    - row (dict): A workout row with keys ``id``, ``activity_type``, ``start_time``,
+      ``end_time``, ``duration_min``, ``active_energy_cal``, ``distance_km``, and
+      ``linked_strength_workout_id``.
+    - briefs (dict): Mapping of strength workout UUID → brief dict, as returned
+      by :meth:`ActivityReadRepository.strength_briefs`.
+
+    **Outputs:**
+    - ActivityWorkoutSummary: The assembled summary DTO, with ``has_strength_detail``
+      and ``strength_brief`` populated from the lookup result.
+    """
+    sw_id = row["linked_strength_workout_id"]
+    brief = briefs.get(sw_id) if sw_id else None
+    return ActivityWorkoutSummary(
+        id=row["id"],
+        activity_type=row["activity_type"],
+        start_time=row["start_time"],
+        end_time=row["end_time"],
+        duration_min=row["duration_min"],
+        active_energy_cal=row["active_energy_cal"],
+        distance_km=row["distance_km"],
+        has_strength_detail=brief is not None,
+        strength_brief=StrengthBrief(**brief) if brief else None,
+    )
+
+
 def _set_volume(row: dict) -> float:
     """Volume contribution of one strength set: ``weight_lbs * reps``.
 
@@ -104,23 +137,7 @@ async def list_workout_feed(
     rows = await repo.list_workouts(user_key, before, before_id, limit, activity_type)
     linked_ids = [r["linked_strength_workout_id"] for r in rows if r["linked_strength_workout_id"]]
     briefs = await repo.strength_briefs(linked_ids) if linked_ids else {}
-    items: list[ActivityWorkoutSummary] = []
-    for r in rows:
-        sw_id = r["linked_strength_workout_id"]
-        brief = briefs.get(sw_id) if sw_id else None
-        items.append(
-            ActivityWorkoutSummary(
-                id=r["id"],
-                activity_type=r["activity_type"],
-                start_time=r["start_time"],
-                end_time=r["end_time"],
-                duration_min=r["duration_min"],
-                active_energy_cal=r["active_energy_cal"],
-                distance_km=r["distance_km"],
-                has_strength_detail=brief is not None,
-                strength_brief=StrengthBrief(**brief) if brief else None,
-            )
-        )
+    items: list[ActivityWorkoutSummary] = [_make_workout_summary(r, briefs) for r in rows]
     page_full = len(rows) == limit
     next_before = rows[-1]["start_time"] if page_full else None
     next_before_id = rows[-1]["id"] if page_full else None
@@ -432,21 +449,8 @@ async def get_week_detail(
 
     by_date: dict[DateValue, list[ActivityWorkoutSummary]] = {}
     for r in rows:
-        sw_id = r["linked_strength_workout_id"]
-        brief = briefs.get(sw_id) if sw_id else None
-        summary = ActivityWorkoutSummary(
-            id=r["id"],
-            activity_type=r["activity_type"],
-            start_time=r["start_time"],
-            end_time=r["end_time"],
-            duration_min=r["duration_min"],
-            active_energy_cal=r["active_energy_cal"],
-            distance_km=r["distance_km"],
-            has_strength_detail=brief is not None,
-            strength_brief=StrengthBrief(**brief) if brief else None,
-        )
         d: DateValue = r["local_date"]
-        by_date.setdefault(d, []).append(summary)
+        by_date.setdefault(d, []).append(_make_workout_summary(r, briefs))
 
     day_groups: list[DayGroup] = [
         DayGroup(

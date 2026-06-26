@@ -126,7 +126,7 @@ struct ActivityTrendsView: View {
                 : s.totals.totalDurationMin.asDurationFromMinutes
             metricTile("Time", value: timeValue, delta: s.deltas.totalDurationMin)
             let perMonth = model.period == .year
-                ? "\(max(1, s.totals.workoutCount) / 12)/mo"
+                ? "\(s.totals.workoutCount / 12)/mo"
                 : nil
             metricTile(
                 "Sessions",
@@ -187,7 +187,7 @@ struct ActivityTrendsView: View {
     /// - Returns: A padded card view with chart and per-type rows.
     private func byTypeCard(_ s: ActivitySummary) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            cardTitle("By type")
+            activityCardTitle("By type")
             Chart(s.byType) { entry in
                 BarMark(x: .value("Minutes", entry.durationMin))
                     .foregroundStyle(ActivityType.color(entry.activityType))
@@ -226,9 +226,9 @@ struct ActivityTrendsView: View {
     /// - Returns: A padded card with one tappable row per sub-period, or `EmptyView` when empty.
     @ViewBuilder
     private func periodBreakdownCard(_ s: ActivitySummary) -> some View {
-        if model.period == .year, !s.months.isEmpty {
+        if !s.months.isEmpty {
             VStack(alignment: .leading, spacing: 10) {
-                cardTitle("By month")
+                activityCardTitle("By month")
                 VStack(spacing: 8) {
                     ForEach(s.months) { month in
                         monthRow(month)
@@ -237,9 +237,9 @@ struct ActivityTrendsView: View {
             }
             .padding(16)
             .ctpCard()
-        } else if model.period == .month, !s.weeks.isEmpty {
+        } else if !s.weeks.isEmpty {
             VStack(alignment: .leading, spacing: 10) {
-                cardTitle("By week")
+                activityCardTitle("By week")
                 VStack(spacing: 8) {
                     ForEach(s.weeks) { week in
                         Button {
@@ -311,7 +311,7 @@ struct ActivityTrendsView: View {
     /// - Returns: A padded card view with a title and bar chart.
     private func volumeCard(_ s: ActivitySummary) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            cardTitle("Volume over time")
+            activityCardTitle("Volume over time")
             Chart(s.volumeSeries) { bucket in
                 BarMark(
                     x: .value("Date", bucket.bucketStart, unit: .day),
@@ -331,7 +331,7 @@ struct ActivityTrendsView: View {
     /// - Returns: A padded card view with one row per top lift.
     private func topLiftsCard(_ s: ActivitySummary) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            cardTitle("Top lifts")
+            activityCardTitle("Top lifts")
             VStack(spacing: 8) {
                 ForEach(s.topLifts) { lift in
                     HStack {
@@ -364,16 +364,4 @@ struct ActivityTrendsView: View {
         .ctpCard()
     }
 
-    // MARK: - Shared
-
-    /// A small uppercased section title for a card.
-    /// - Parameter text: The label to display.
-    /// - Returns: A full-width styled `Text` view.
-    private func cardTitle(_ text: String) -> some View {
-        Text(text.uppercased())
-            .font(.system(size: 11, weight: .semibold))
-            .tracking(0.8)
-            .foregroundStyle(Theme.FG.secondary)
-            .frame(maxWidth: .infinity, alignment: .leading)
-    }
 }
