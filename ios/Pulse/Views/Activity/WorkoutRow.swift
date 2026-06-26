@@ -6,11 +6,10 @@ struct WorkoutRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Circle().fill(ActivityGroup.of(workout.activityType).color).frame(width: 10, height: 10)
+            Circle()
+                .fill(ActivityType.color(workout.activityType))
+                .frame(width: 10, height: 10)
             VStack(alignment: .leading, spacing: 3) {
-                Text(ActivityGroup.of(workout.activityType).displayName.uppercased())
-                    .font(.system(size: 9, weight: .semibold)).tracking(0.6)
-                    .foregroundStyle(ActivityGroup.of(workout.activityType).color)
                 Text(ActivityType.displayName(workout.activityType))
                     .font(.system(size: 15, weight: .semibold)).foregroundStyle(Theme.FG.primary)
                 Text(subtitle).font(.system(size: 12)).foregroundStyle(Theme.FG.secondary)

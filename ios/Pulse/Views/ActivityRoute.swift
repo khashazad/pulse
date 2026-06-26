@@ -8,8 +8,8 @@ import Foundation
 enum ActivityRoute: Hashable {
     /// A single workout detail screen, identified by the workout's UUID.
     case workout(UUID)
-    /// The activity trends screen (week / month / year breakdowns).
-    case trends
+    /// The all-activities feed screen (pushed from the Trends root).
+    case feed
     /// The activity types management screen (cardio classification toggles).
     case types
     /// A month drill-down screen anchored to the given date.

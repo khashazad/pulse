@@ -6,17 +6,15 @@ extension PulseClient {
     ///   - before: Opaque `start_time` cursor from the prior page's `nextBefore`; nil for the first page.
     ///   - beforeId: Opaque id tiebreaker from the prior page's `nextBeforeId`; nil for the first page.
     ///   - type: Optional exact `activity_type` filter; nil for all types.
-    ///   - group: Optional top-level group filter (`"weights"` or `"cardio"`); nil for all groups.
     ///   - limit: Page size, 1–100 (default 50).
     /// - Returns: A `WorkoutFeedPage` of summaries plus the composite cursor for the next page.
     /// - Throws: `PulseError` on transport, auth, or decoding failure.
     func activityWorkouts(before: String?, beforeId: String?, type: String?,
-                          group: String? = nil, limit: Int = 50) async throws -> WorkoutFeedPage {
+                          limit: Int = 50) async throws -> WorkoutFeedPage {
         var query = [URLQueryItem(name: "limit", value: String(limit))]
         if let before { query.append(URLQueryItem(name: "before", value: before)) }
         if let beforeId { query.append(URLQueryItem(name: "before_id", value: beforeId)) }
         if let type { query.append(URLQueryItem(name: "type", value: type)) }
-        if let group { query.append(URLQueryItem(name: "group", value: group)) }
         let url = try http.makeURL(path: "/activity/workouts", query: query)
         return try await fetch(url: url)
     }

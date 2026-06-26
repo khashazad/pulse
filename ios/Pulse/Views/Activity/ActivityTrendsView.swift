@@ -16,6 +16,8 @@ struct ActivityTrendsView: View {
     private let onOpenMonth: (Date) -> Void
     /// Called when the user taps a week row in the Month period view.
     private let onOpenWeek: (Date) -> Void
+    /// Called when the user taps the all-activities toolbar button.
+    private let onOpenFeed: () -> Void
 
     /// Initializes the view with the shared auth session and navigation callbacks.
     /// - Parameters:
@@ -26,16 +28,20 @@ struct ActivityTrendsView: View {
     ///     month row in the Year period breakdown.
     ///   - onOpenWeek: Invoked with the week's start date when the user taps a
     ///     week row in the Month period breakdown.
+    ///   - onOpenFeed: Invoked when the user taps the all-activities toolbar button
+    ///     to open the paginated workout feed.
     init(
         auth: AuthSession,
         onManageTypes: @escaping () -> Void,
         onOpenMonth: @escaping (Date) -> Void,
-        onOpenWeek: @escaping (Date) -> Void
+        onOpenWeek: @escaping (Date) -> Void,
+        onOpenFeed: @escaping () -> Void
     ) {
         _model = State(initialValue: ActivityTrendsModel(auth: auth))
         self.onManageTypes = onManageTypes
         self.onOpenMonth = onOpenMonth
         self.onOpenWeek = onOpenWeek
+        self.onOpenFeed = onOpenFeed
     }
 
     var body: some View {
@@ -59,6 +65,14 @@ struct ActivityTrendsView: View {
         .navigationTitle("Trends")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    onOpenFeed()
+                } label: {
+                    Image(systemName: "list.bullet")
+                        .foregroundStyle(Theme.CTP.mauve)
+                }
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
                     onManageTypes()

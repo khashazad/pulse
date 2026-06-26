@@ -3,11 +3,11 @@ import XCTest
 
 final class ActivityFeedModelTests: XCTestCase {
     /// Constructs an `ActivityWorkoutSummary` stub for use in grouping tests.
-    /// Inputs:
+    /// - Parameters:
     ///   - id: UUID string assigned to the summary.
     ///   - iso: ISO-8601 timestamp string used for both `startTime` and `endTime`.
     ///   - type: activity type string (defaults to `"Running"`).
-    /// Outputs: a minimally populated `ActivityWorkoutSummary`.
+    /// - Returns: A minimally populated `ActivityWorkoutSummary`.
     private func summary(id: String, _ iso: String, type: String = "Running") -> ActivityWorkoutSummary {
         ActivityWorkoutSummary(
             id: UUID(uuidString: id)!, activityType: type,
@@ -17,7 +17,8 @@ final class ActivityFeedModelTests: XCTestCase {
             hasStrengthDetail: false, strengthBrief: nil)
     }
 
-    /// Verifies `groupByWeek(_:calendar:)` assigns workouts to the correct week buckets, orders weeks newest-first, and sorts workouts newest-first within each bucket.
+    /// Verifies `groupByWeek(_:calendar:)` assigns workouts to the correct week buckets,
+    /// orders weeks newest-first, and sorts workouts newest-first within each bucket.
     func testGroupByWeekOrdersNewestFirstAndSplitsWeeks() {
         var cal = Calendar(identifier: .gregorian)
         cal.firstWeekday = 2 // Monday, to match server Mon-Sun weeks
@@ -39,5 +40,23 @@ final class ActivityFeedModelTests: XCTestCase {
     /// Verifies `groupByWeek(_:calendar:)` returns an empty array when given no workouts.
     func testGroupByWeekEmpty() {
         XCTAssertTrue(ActivityFeedModel.groupByWeek([], calendar: .current).isEmpty)
+    }
+
+    /// Verifies that `groupByWeek` correctly places workouts belonging to three distinct
+    /// week buckets and that each section contains the expected workouts.
+    func testGroupByWeekThreeDistinctWeeks() {
+        var cal = Calendar(identifier: .gregorian)
+        cal.firstWeekday = 2
+        cal.timeZone = TimeZone(identifier: "UTC")!
+        let items = [
+            summary(id: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA", "2026-06-08T10:00:00Z"), // wk C
+            summary(id: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB", "2026-06-15T10:00:00Z"), // wk B
+            summary(id: "CCCCCCCC-CCCC-CCCC-CCCC-CCCCCCCCCCCC", "2026-06-22T10:00:00Z")  // wk A
+        ]
+        let sections = ActivityFeedModel.groupByWeek(items, calendar: cal)
+        XCTAssertEqual(sections.count, 3, "Three separate weeks expected")
+        XCTAssertEqual(sections[0].workouts.first?.id,
+                       UUID(uuidString: "CCCCCCCC-CCCC-CCCC-CCCC-CCCCCCCCCCCC"),
+                       "Newest week should come first")
     }
 }

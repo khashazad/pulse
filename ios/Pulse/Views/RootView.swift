@@ -68,21 +68,21 @@ struct RootView: View {
                     }
                 case .activity:
                     NavigationStack(path: $activityPath) {
-                        ActivityTabView(
+                        ActivityTrendsView(
                             auth: auth,
-                            onOpenWorkout: { id in activityPath.append(ActivityRoute.workout(id)) },
-                            onOpenTrends: { activityPath.append(ActivityRoute.trends) }
+                            onManageTypes: { activityPath.append(ActivityRoute.types) },
+                            onOpenMonth: { activityPath.append(ActivityRoute.month($0)) },
+                            onOpenWeek: { activityPath.append(ActivityRoute.week($0)) },
+                            onOpenFeed: { activityPath.append(ActivityRoute.feed) }
                         )
                         .navigationDestination(for: ActivityRoute.self) { route in
                             switch route {
                             case let .workout(id):
                                 WorkoutDetailView(id: id, auth: auth)
-                            case .trends:
-                                ActivityTrendsView(
+                            case .feed:
+                                ActivityTabView(
                                     auth: auth,
-                                    onManageTypes: { activityPath.append(ActivityRoute.types) },
-                                    onOpenMonth: { activityPath.append(ActivityRoute.month($0)) },
-                                    onOpenWeek: { activityPath.append(ActivityRoute.week($0)) }
+                                    onOpenWorkout: { id in activityPath.append(ActivityRoute.workout(id)) }
                                 )
                             case .types:
                                 ActivityTypesView(auth: auth)
