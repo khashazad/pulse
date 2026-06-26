@@ -1,23 +1,20 @@
 import SwiftUI
 
-/// Activity feed root: a tap-through week summary strip, type filter chips,
-/// and a chronological feed grouped by week with infinite scroll.
+/// All-activities feed: a non-tappable week summary strip, a single activity-type
+/// filter chip row, and a chronological feed grouped by week with infinite scroll.
+/// This view is pushed from `ActivityTrendsView`; Trends is the Activity tab root.
 struct ActivityTabView: View {
     let auth: AuthSession
     let onOpenWorkout: (UUID) -> Void
-    let onOpenTrends: () -> Void
     @State private var model: ActivityFeedModel
 
-    /// Initializes the view with the shared auth session and navigation callbacks.
+    /// Initializes the view with the shared auth session and a workout-open callback.
     /// - Parameters:
     ///   - auth: The app's authenticated session.
     ///   - onOpenWorkout: Called with the workout's UUID when the user taps a row.
-    ///   - onOpenTrends: Called when the user taps the summary strip to open trends.
-    init(auth: AuthSession, onOpenWorkout: @escaping (UUID) -> Void,
-         onOpenTrends: @escaping () -> Void) {
+    init(auth: AuthSession, onOpenWorkout: @escaping (UUID) -> Void) {
         self.auth = auth
         self.onOpenWorkout = onOpenWorkout
-        self.onOpenTrends = onOpenTrends
         _model = State(initialValue: ActivityFeedModel(auth: auth))
     }
 
@@ -26,7 +23,10 @@ struct ActivityTabView: View {
             Theme.BG.primary.ignoresSafeArea()
             content
         }
-        .navigationTitle("Activity")
+        .navigationTitle("All Activities")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(Theme.BG.primary, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
         .task { if case .idle = model.state { await model.loadFirst() } }
     }
 
@@ -51,7 +51,7 @@ struct ActivityTabView: View {
         }
     }
 
-    /// The scrollable workout feed with summary strip, filter chips, and week-grouped rows.
+    /// The scrollable workout feed with summary strip, type filter chips, and week-grouped rows.
     /// - Returns: A `ScrollView` containing the full feed layout.
     private var feed: some View {
         ScrollView {
@@ -78,22 +78,17 @@ struct ActivityTabView: View {
         }
     }
 
-    /// Tappable strip showing this week's duration, session count, and calories.
+    /// Non-tappable strip showing this week's duration, session count, and calories.
     /// - Parameter s: The current week's activity summary.
-    /// - Returns: A card-styled button that fires `onOpenTrends`.
+    /// - Returns: A card-styled info strip.
     private func summaryStrip(_ s: ActivitySummary) -> some View {
-        Button { onOpenTrends() } label: {
-            HStack(spacing: 18) {
-                metric(s.totals.totalDurationMin.asDurationFromMinutes, "this week")
-                metric("\(s.totals.workoutCount)", "sessions")
-                metric("\(Int(s.totals.totalActiveEnergyCal.rounded()))", "kcal")
-                Spacer()
-                Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Theme.FG.tertiary)
-            }
-            .padding(16).ctpCard()
+        HStack(spacing: 18) {
+            metric(s.totals.totalDurationMin.asDurationFromMinutes, "this week")
+            metric("\(s.totals.workoutCount)", "sessions")
+            metric("\(Int(s.totals.totalActiveEnergyCal.rounded()))", "kcal")
+            Spacer()
         }
-        .buttonStyle(.plain)
+        .padding(16).ctpCard()
     }
 
     /// A single headline metric column for the summary strip.
@@ -109,35 +104,16 @@ struct ActivityTabView: View {
         }
     }
 
-    /// Two filter rows: parent groups (All / Weights / Cardio), then the selected
-    /// group's subtypes when a group is active.
-    /// - Returns: A vertical stack of one or two horizontally-scrolling chip rows.
+    /// A single chip row: "All" followed by one chip per known activity type.
+    /// Tapping a chip reloads the feed filtered to that type.
+    /// - Returns: A horizontally scrolling row of pill-shaped filter buttons.
     private var filterChips: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    chip("All", active: model.groupFilter == nil) { Task { await model.setGroup(nil) } }
-                    ForEach(ActivityGroup.allCases) { group in
-                        chip(group.displayName, active: model.groupFilter == group) {
-                            Task { await model.setGroup(group) }
-                        }
-                    }
-                }
-            }
-            if let group = model.groupFilter {
-                let subtypes = model.availableSubtypes(in: group)
-                if !subtypes.isEmpty {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 8) {
-                            chip("All \(group.displayName)", active: model.subtypeFilter == nil) {
-                                Task { await model.setSubtype(nil) }
-                            }
-                            ForEach(subtypes, id: \.self) { type in
-                                chip(ActivityType.displayName(type), active: model.subtypeFilter == type) {
-                                    Task { await model.setSubtype(type) }
-                                }
-                            }
-                        }
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                chip("All", active: model.typeFilter == nil) { Task { await model.setType(nil) } }
+                ForEach(model.availableTypes, id: \.self) { type in
+                    chip(ActivityType.displayName(type), active: model.typeFilter == type) {
+                        Task { await model.setType(type) }
                     }
                 }
             }

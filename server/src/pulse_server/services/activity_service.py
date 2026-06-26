@@ -1,42 +1,86 @@
-"""Activity read business logic: assemble feed pages, detail, and summaries
-from ActivityReadRepository rows into the response DTOs."""
+"""Activity read business logic: assemble feed pages, detail, summaries, and
+activity-type settings from ActivityReadRepository rows into the response DTOs."""
 
 from __future__ import annotations
 
+import re
 from datetime import date as DateValue
 from datetime import datetime as DateTimeValue
 from uuid import UUID
 
+from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pulse_server.models.activity import (
-    WEIGHTS_ACTIVITY_TYPES,
     ActivityDeltas,
     ActivityPeriod,
     ActivitySummary,
     ActivityTotals,
+    ActivityTypeSetting,
+    ActivityTypesResponse,
     ActivityWorkoutDetail,
     ActivityWorkoutSummary,
+    DayGroup,
     MetricDelta,
     StrengthBrief,
     StrengthTotals,
+    WeekDetail,
     WorkoutExercise,
     WorkoutFeedPage,
     WorkoutSet,
 )
 from pulse_server.repositories.activity import ActivityReadRepository
+from pulse_server.services.activity_cardio import effective_is_cardio
 from pulse_server.services.activity_summary import (
     bucket_volume,
     compute_top_lifts,
+    energy_balance,
     est_one_rep_max,
+    months_in_year,
     pct_change,
     period_bounds,
     previous_bounds,
-    rollup_by_group,
+    rollup_by_type,
+    weeks_in_month,
 )
+from pulse_server.services.summary_service import daily_calorie_totals
+from pulse_server.services.weight_service import list_weight_range
 
 MAX_FEED_LIMIT = 100
 DEFAULT_FEED_LIMIT = 50
+
+
+def _make_workout_summary(row: dict, briefs: dict) -> ActivityWorkoutSummary:
+    """Build an ``ActivityWorkoutSummary`` from one workout row and a briefs lookup.
+
+    Extracts the ``linked_strength_workout_id`` from ``row``, resolves the
+    corresponding brief from ``briefs`` (if present), and constructs the summary
+    DTO.  Used identically in both the feed list and the week-detail view.
+
+    **Inputs:**
+    - row (dict): A workout row with keys ``id``, ``activity_type``, ``start_time``,
+      ``end_time``, ``duration_min``, ``active_energy_cal``, ``distance_km``, and
+      ``linked_strength_workout_id``.
+    - briefs (dict): Mapping of strength workout UUID → brief dict, as returned
+      by :meth:`ActivityReadRepository.strength_briefs`.
+
+    **Outputs:**
+    - ActivityWorkoutSummary: The assembled summary DTO, with ``has_strength_detail``
+      and ``strength_brief`` populated from the lookup result.
+    """
+    sw_id = row["linked_strength_workout_id"]
+    brief = briefs.get(sw_id) if sw_id else None
+    return ActivityWorkoutSummary(
+        id=row["id"],
+        activity_type=row["activity_type"],
+        start_time=row["start_time"],
+        end_time=row["end_time"],
+        duration_min=row["duration_min"],
+        active_energy_cal=row["active_energy_cal"],
+        distance_km=row["distance_km"],
+        has_strength_detail=brief is not None,
+        strength_brief=StrengthBrief(**brief) if brief else None,
+    )
 
 
 def _set_volume(row: dict) -> float:
@@ -73,7 +117,6 @@ async def list_workout_feed(
     before_id: UUID | None,
     limit: int,
     activity_type: str | None,
-    group: str | None = None,
 ) -> WorkoutFeedPage:
     """Build one page of the workout feed, enriching strength rows with briefs.
 
@@ -84,7 +127,6 @@ async def list_workout_feed(
     - before_id (UUID | None): Id tiebreaker paired with ``before``.
     - limit (int): Page size (clamped to ``MAX_FEED_LIMIT``).
     - activity_type (str | None): Optional exact type filter.
-    - group (str | None): Optional ``"weights"``/``"cardio"`` group filter.
 
     **Outputs:**
     - WorkoutFeedPage: Items newest-first plus the composite ``(next_before,
@@ -92,26 +134,10 @@ async def list_workout_feed(
     """
     limit = max(1, min(limit, MAX_FEED_LIMIT))
     repo = ActivityReadRepository(session)
-    rows = await repo.list_workouts(user_key, before, before_id, limit, activity_type, group=group)
+    rows = await repo.list_workouts(user_key, before, before_id, limit, activity_type)
     linked_ids = [r["linked_strength_workout_id"] for r in rows if r["linked_strength_workout_id"]]
     briefs = await repo.strength_briefs(linked_ids) if linked_ids else {}
-    items: list[ActivityWorkoutSummary] = []
-    for r in rows:
-        sw_id = r["linked_strength_workout_id"]
-        brief = briefs.get(sw_id) if sw_id else None
-        items.append(
-            ActivityWorkoutSummary(
-                id=r["id"],
-                activity_type=r["activity_type"],
-                start_time=r["start_time"],
-                end_time=r["end_time"],
-                duration_min=r["duration_min"],
-                active_energy_cal=r["active_energy_cal"],
-                distance_km=r["distance_km"],
-                has_strength_detail=brief is not None,
-                strength_brief=StrengthBrief(**brief) if brief else None,
-            )
-        )
+    items: list[ActivityWorkoutSummary] = [_make_workout_summary(r, briefs) for r in rows]
     page_full = len(rows) == limit
     next_before = rows[-1]["start_time"] if page_full else None
     next_before_id = rows[-1]["id"] if page_full else None
@@ -289,8 +315,24 @@ async def build_summary(
     """Assemble the week/month/year trend summary for a period.
 
     Fetches current and previous period workouts plus full strength history,
-    then delegates to the pure-math helpers in ``activity_summary`` to
-    produce totals, deltas, by-type breakdown, volume series, and top lifts.
+    then delegates to the pure-math helpers in ``activity_summary`` to produce
+    totals, deltas, by-type breakdown, period-level week/month rollups, volume
+    series, top lifts, and energy-balance buckets.
+
+    Both strength activity types are collapsed into a single ``"Weights"``
+    label in ``by_type``.  ``weeks`` is populated only when ``period=="month"``
+    (one entry per ISO week clamped to the month); ``months`` is populated only
+    when ``period=="year"`` (always 12 entries).
+
+    ``energy_balance`` is assembled for ``month`` and ``year`` periods: for
+    ``month`` there is one bucket per ISO week (reusing the already-computed
+    ``weeks`` list); for ``year`` there is one bucket per calendar month
+    (Jan-Dec of ``anchor.year``).  ``week`` period yields ``[]``.  When
+    energy-balance buckets are non-empty, three extra queries are issued:
+    ``daily_calorie_totals``, ``list_weight_range`` (both over ``[start, end]``
+    exactly — no ±7-day expansion, which would breach the 366-day cap for the
+    year period), and ``repo.cardio_overrides`` to resolve which activity types
+    count as cardio.
 
     **Inputs:**
     - session (AsyncSession): Active database session.
@@ -302,7 +344,8 @@ async def build_summary(
 
     **Outputs:**
     - ActivitySummary: Assembled trend summary including totals, period-over-period
-      deltas, by-type breakdown, volume series, and top lifts.
+      deltas, by-type breakdown, week/month rollups, volume series, top lifts,
+      and energy-balance buckets.
     """
     start, end = period_bounds(period, anchor)
     p_start, p_end = previous_bounds(period, anchor)
@@ -318,13 +361,204 @@ async def build_summary(
             cur_t.total_active_energy_cal, prev_t.total_active_energy_cal
         ),
     )
+
+    # Compute week rollups once so we can reuse the list for energy-balance buckets
+    # rather than calling weeks_in_month twice.
+    weeks = weeks_in_month(cur, start, end) if period == "month" else []
+
+    # Build the energy-balance bucket descriptors (start, end, label) for the period.
+    # week → no buckets; month → one per ISO week; year → one per calendar month.
+    if period == "month":
+        eb_buckets: list[tuple[DateValue, DateValue, str]] = [
+            (w.week_start, w.week_end, f"Week of {w.week_start:%b %-d}") for w in weeks
+        ]
+    elif period == "year":
+        eb_buckets = []
+        for m in range(1, 13):
+            m_start, m_end = period_bounds("month", DateValue(anchor.year, m, 1))
+            eb_buckets.append((m_start, m_end, f"{m_start:%b}"))
+    else:
+        eb_buckets = []
+
+    # Fetch supporting data and compute energy-balance only when there are buckets.
+    # The fetch range is [start, end] exactly — no ±7-day expansion — because the
+    # year period spans 364 days and adding 7 days would exceed the 366-day cap in
+    # list_weight_range / daily_calorie_totals.
+    if eb_buckets:
+        intake_rows = await daily_calorie_totals(session, user_key, start, end)
+        intake_by_day = {row.log_date: row.calories for row in intake_rows}
+        weight_rows = await list_weight_range(session, user_key, start, end)
+        weight_readings = [(r.log_date, float(r.weight_lb)) for r in weight_rows]
+        overrides = await repo.cardio_overrides(user_key)
+        cardio_by_day: dict[DateValue, float] = {}
+        for r in cur:
+            if effective_is_cardio(r["activity_type"], overrides):
+                d = r["local_date"]
+                cardio_by_day[d] = cardio_by_day.get(d, 0.0) + float(r["active_energy_cal"] or 0)
+        eb = energy_balance(eb_buckets, intake_by_day, cardio_by_day, weight_readings)
+    else:
+        eb = []
+
     return ActivitySummary(
         period=period,
         period_start=start,
         period_end=end,
         totals=cur_t,
         deltas=deltas,
-        by_group=rollup_by_group(cur, WEIGHTS_ACTIVITY_TYPES),
+        by_type=rollup_by_type(cur),
+        weeks=weeks,
+        months=months_in_year(cur, anchor.year) if period == "year" else [],
         volume_series=bucket_volume(_build_vol_rows(history, start, end), period, start, end),
         top_lifts=compute_top_lifts(history, period_start=start),
+        energy_balance=eb,
+    )
+
+
+async def get_week_detail(
+    session: AsyncSession,
+    user_key: str,
+    anchor: DateValue,
+    tz: str,
+) -> WeekDetail:
+    """Build the day-grouped workout view for the Mon-Sun week containing ``anchor``.
+
+    Fetches workouts in range via ``workouts_in_range``, enriches any strength
+    rows with ``strength_briefs``, then groups workouts by their ``local_date``
+    into :class:`DayGroup` objects.  Only days that have at least one workout
+    appear in the result.  Days are ordered newest-first; workouts within a day
+    are also ordered newest-first by ``start_time``.
+
+    **Inputs:**
+    - session (AsyncSession): Active database session.
+    - user_key (str): Owning user's scoping key.
+    - anchor (date): Any date inside the target week; ``period_bounds("week", anchor)``
+      derives the Mon-Sun bounds.
+    - tz (str): IANA timezone name passed through to ``workouts_in_range`` for
+      correct UTC-to-local date bucketing.
+
+    **Outputs:**
+    - WeekDetail: Assembled week detail with ``week_start``, ``week_end``, and
+      the ``day_groups`` list (empty when the week has no workouts).
+    """
+    start, end = period_bounds("week", anchor)
+    repo = ActivityReadRepository(session)
+    rows = await repo.workouts_in_range(user_key, start, end, tz=tz)
+
+    linked_ids = [r["linked_strength_workout_id"] for r in rows if r["linked_strength_workout_id"]]
+    briefs = await repo.strength_briefs(linked_ids) if linked_ids else {}
+
+    by_date: dict[DateValue, list[ActivityWorkoutSummary]] = {}
+    for r in rows:
+        d: DateValue = r["local_date"]
+        by_date.setdefault(d, []).append(_make_workout_summary(r, briefs))
+
+    day_groups: list[DayGroup] = [
+        DayGroup(
+            date=d,
+            workouts=sorted(ws, key=lambda w: w.start_time, reverse=True),
+        )
+        for d, ws in sorted(by_date.items(), reverse=True)
+    ]
+
+    return WeekDetail(week_start=start, week_end=end, day_groups=day_groups)
+
+
+def _display_name(activity_type: str) -> str:
+    """Derive a human-readable display label from a camelCase activity type string.
+
+    Inserts a space before each uppercase letter that is preceded by a lowercase
+    letter so that, e.g., ``"TraditionalStrengthTraining"`` becomes
+    ``"Traditional Strength Training"``. Single-word types (e.g. ``"Running"``)
+    are returned unchanged.
+
+    Args:
+        activity_type (str): The bare Apple Health activity type string
+            (e.g. ``"TraditionalStrengthTraining"``).
+
+    Returns:
+        str: The space-separated display label (e.g.
+            ``"Traditional Strength Training"``).
+
+    Raises:
+        None
+    """
+    return re.sub(r"(?<=[a-z])(?=[A-Z])", " ", activity_type)
+
+
+async def list_activity_types(
+    session: AsyncSession,
+    user_key: str,
+) -> ActivityTypesResponse:
+    """Return all activity types the user has recorded, enriched with effective cardio flags.
+
+    Fetches the distinct activity types and their workout counts from the
+    repository, loads per-type cardio overrides, resolves each type's effective
+    ``is_cardio`` flag via :func:`effective_is_cardio`, and returns the list
+    sorted by count descending (the repository already returns it in that order).
+
+    Args:
+        session (AsyncSession): Active database session.
+        user_key (str): Owning user's scoping key.
+
+    Returns:
+        ActivityTypesResponse: List of :class:`ActivityTypeSetting` items,
+            each carrying the type string, a best-effort display name,
+            the workout count, and the resolved cardio flag.
+
+    Raises:
+        sqlalchemy.exc.SQLAlchemyError: On any database execution failure.
+    """
+    repo = ActivityReadRepository(session)
+    types = await repo.distinct_activity_types(user_key)
+    overrides = await repo.cardio_overrides(user_key)
+    settings: list[ActivityTypeSetting] = [
+        ActivityTypeSetting(
+            activity_type=t["activity_type"],
+            display_name=_display_name(t["activity_type"]),
+            count=t["count"],
+            is_cardio=effective_is_cardio(t["activity_type"], overrides),
+        )
+        for t in types
+    ]
+    return ActivityTypesResponse(types=settings)
+
+
+async def set_activity_type_cardio(
+    session: AsyncSession,
+    user_key: str,
+    activity_type: str,
+    is_cardio: bool,
+) -> ActivityTypeSetting:
+    """Set the cardio flag for one of the user's activity types and return the updated setting.
+
+    Validates that the activity type exists (i.e. the user has at least one
+    workout with that type) before writing the override. Raises HTTP 404 when
+    the type is unknown so the router can propagate it without extra handling.
+
+    Args:
+        session (AsyncSession): Active database session.
+        user_key (str): Owning user's scoping key.
+        activity_type (str): The Apple Health activity type to update.
+        is_cardio (bool): The new cardio flag value.
+
+    Returns:
+        ActivityTypeSetting: The updated setting reflecting the new ``is_cardio``
+            value, the type's current workout count, and its display name.
+
+    Raises:
+        fastapi.HTTPException: HTTP 404 when the activity type has no recorded
+            workouts for this user.
+        sqlalchemy.exc.SQLAlchemyError: On any database execution failure.
+    """
+    repo = ActivityReadRepository(session)
+    types = await repo.distinct_activity_types(user_key)
+    type_counts = {t["activity_type"]: t["count"] for t in types}
+    if activity_type not in type_counts:
+        raise HTTPException(status_code=404, detail="activity type not found")
+    await repo.set_cardio_override(user_key, activity_type, is_cardio)
+    return ActivityTypeSetting(
+        activity_type=activity_type,
+        display_name=_display_name(activity_type),
+        count=type_counts[activity_type],
+        is_cardio=is_cardio,
     )

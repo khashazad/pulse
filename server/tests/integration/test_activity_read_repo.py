@@ -8,11 +8,13 @@ from uuid import uuid4
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import insert
+from sqlalchemy import insert, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from pulse_server import db
 from pulse_server.repositories.activity import ActivityReadRepository
 from pulse_server.repositories.tables import (
+    activity_type_settings,
     apple_workouts,
     daily_activity,
     strength_sets,
@@ -218,6 +220,42 @@ async def test_workouts_in_range_filters_by_date(session) -> None:
     assert len(rows) == 1 and rows[0]["activity_type"] == "Running"
 
 
+async def test_workouts_in_range_includes_local_date(session) -> None:
+    """workouts_in_range rows include a local_date field matching the workout's calendar date in tz.
+
+    T0 is 2026-06-24 18:00 UTC; querying in UTC the local_date should be 2026-06-24.
+
+    **Inputs:**
+    - session: Live async session with a clean activity-table slate.
+
+    **Outputs:**
+    - None: Asserts via pytest.
+
+    **Raises:**
+    - AssertionError: If ``local_date`` is absent from the returned row or has the wrong value.
+    """
+    wid = uuid4()
+    async with session.begin_nested():
+        await session.execute(
+            insert(apple_workouts).values(
+                id=wid,
+                user_key=UK,
+                activity_type="Running",
+                start_time=T0,
+                end_time=T0 + timedelta(minutes=30),
+                duration_min=30,
+                active_energy_cal=300,
+            )
+        )
+    repo = ActivityReadRepository(session)
+    rows = await repo.workouts_in_range(UK, date(2026, 6, 24), date(2026, 6, 24), tz="UTC")
+    assert len(rows) == 1, "expected exactly one row in range"
+    assert "local_date" in rows[0], "workouts_in_range rows must include local_date"
+    assert rows[0]["local_date"] == date(2026, 6, 24), (
+        f"expected local_date=2026-06-24, got {rows[0]['local_date']!r}"
+    )
+
+
 async def test_strength_history_returns_joined_rows(session) -> None:
     """strength_history joins sets to workouts and returns date, duration, and set fields."""
     from datetime import date
@@ -255,35 +293,6 @@ async def test_strength_history_returns_joined_rows(session) -> None:
     assert r["workout_id"] == sw
 
 
-async def test_list_workouts_filters_by_group(session) -> None:
-    """group='weights' returns only strength types; 'cardio' returns the rest."""
-    rows = [
-        ("TraditionalStrengthTraining", uuid4()),
-        ("FunctionalStrengthTraining", uuid4()),
-        ("Running", uuid4()),
-        ("Cycling", uuid4()),
-    ]
-    for i, (atype, wid) in enumerate(rows):
-        await session.execute(
-            insert(apple_workouts).values(
-                id=wid,
-                user_key=UK,
-                activity_type=atype,
-                start_time=T0 - timedelta(hours=i),
-                end_time=T0 - timedelta(hours=i) + timedelta(minutes=30),
-            )
-        )
-    await session.commit()
-    repo = ActivityReadRepository(session)
-    weights = await repo.list_workouts(UK, None, None, 50, None, group="weights")
-    assert {r["activity_type"] for r in weights} == {
-        "TraditionalStrengthTraining",
-        "FunctionalStrengthTraining",
-    }
-    cardio = await repo.list_workouts(UK, None, None, 50, None, group="cardio")
-    assert {r["activity_type"] for r in cardio} == {"Running", "Cycling"}
-
-
 async def test_workouts_in_range_timezone_bucketing(session) -> None:
     """workouts_in_range uses tz for date bucketing, not UTC."""
     # 2026-06-22 02:30 UTC == 2026-06-21 22:30 America/Toronto (UTC-4 in June).
@@ -314,3 +323,203 @@ async def test_workouts_in_range_timezone_bucketing(session) -> None:
         "workout whose UTC date is June 22 should appear on June 21 Toronto"
     )
     assert len(rows_jun22) == 0, "workout should not appear on June 22 Toronto"
+
+
+async def test_distinct_activity_types_returns_counts_descending(session) -> None:
+    """distinct_activity_types returns rows ordered by count DESC then activity_type ASC.
+
+    Seeds 2 Running and 1 TraditionalStrengthTraining workouts and asserts the
+    returned list has Running first (higher count) followed by
+    TraditionalStrengthTraining.
+
+    Args:
+        session: Async SQLAlchemy session with a clean activity-table slate.
+
+    Returns:
+        None
+
+    Raises:
+        AssertionError: If order or count values are incorrect.
+    """
+    for i, atype in enumerate(["Running", "Running", "TraditionalStrengthTraining"]):
+        await session.execute(
+            insert(apple_workouts).values(
+                id=uuid4(),
+                user_key=UK,
+                activity_type=atype,
+                start_time=T0 - timedelta(hours=i),
+                end_time=T0 - timedelta(hours=i) + timedelta(minutes=30),
+            )
+        )
+    await session.commit()
+
+    repo = ActivityReadRepository(session)
+    rows = await repo.distinct_activity_types(UK)
+    assert rows == [
+        {"activity_type": "Running", "count": 2},
+        {"activity_type": "TraditionalStrengthTraining", "count": 1},
+    ]
+
+
+async def test_set_cardio_override_then_cardio_overrides_reflects_value(session) -> None:
+    """set_cardio_override writes a row; cardio_overrides reads it back correctly.
+
+    Args:
+        session: Async SQLAlchemy session with a clean activity-table slate.
+
+    Returns:
+        None
+
+    Raises:
+        AssertionError: If cardio_overrides does not reflect the written value.
+    """
+    await session.execute(activity_type_settings.delete())
+    await session.commit()
+
+    repo = ActivityReadRepository(session)
+    await repo.set_cardio_override(UK, "Running", True)
+    await session.commit()
+
+    result = await repo.cardio_overrides(UK)
+    assert result == {"Running": True}
+
+
+async def test_set_cardio_override_upserts_not_duplicates(session) -> None:
+    """A second set_cardio_override on the same (user, type) updates in-place.
+
+    Asserts that the row count stays at 1, is_cardio is replaced, and
+    updated_at does not regress after the second call.
+
+    Args:
+        session: Async SQLAlchemy session with a clean activity-table slate.
+
+    Returns:
+        None
+
+    Raises:
+        AssertionError: If the upsert duplicates the row, fails to flip is_cardio,
+            or regresses updated_at.
+    """
+    import asyncio
+
+    await session.execute(activity_type_settings.delete())
+    await session.commit()
+
+    repo = ActivityReadRepository(session)
+    await repo.set_cardio_override(UK, "Running", True)
+    await session.commit()
+
+    first_row = (
+        (
+            await session.execute(
+                select(activity_type_settings).where(
+                    activity_type_settings.c.user_key == UK,
+                    activity_type_settings.c.activity_type == "Running",
+                )
+            )
+        )
+        .mappings()
+        .one()
+    )
+    first_updated_at = first_row["updated_at"]
+
+    await asyncio.sleep(0.05)
+
+    await repo.set_cardio_override(UK, "Running", False)
+    await session.commit()
+
+    overrides = await repo.cardio_overrides(UK)
+    assert len(overrides) == 1, "upsert must not duplicate the row"
+    assert overrides["Running"] is False, "is_cardio must be replaced by the second call"
+
+    second_row = (
+        (
+            await session.execute(
+                select(activity_type_settings).where(
+                    activity_type_settings.c.user_key == UK,
+                    activity_type_settings.c.activity_type == "Running",
+                )
+            )
+        )
+        .mappings()
+        .one()
+    )
+    assert second_row["updated_at"] >= first_updated_at, "updated_at must not regress after upsert"
+
+
+async def test_activity_type_settings_round_trip_and_upsert(session) -> None:
+    """Insert a row into activity_type_settings, read it back, then upsert to flip is_cardio.
+
+    Verifies the composite PK, the round-trip column values, and that ON CONFLICT DO UPDATE
+    replaces the existing row (is_cardio flips from the initial value to the updated one).
+
+    Args:
+        session: Async SQLAlchemy session with a clean activity-table slate (from the
+            module-level ``session`` fixture).
+
+    Returns:
+        None: This is a pytest test — it asserts rather than returning a value.
+
+    Raises:
+        sqlalchemy.exc.ProgrammingError: If the ``activity_type_settings`` table does not
+            exist in the test database (expected failure in the RED phase).
+        AssertionError: If round-trip values or upsert behaviour are incorrect.
+    """
+    # Clean up any rows from previous runs (table may have data from a prior session).
+    await session.execute(activity_type_settings.delete())
+    await session.commit()
+
+    # Insert the initial row.
+    await session.execute(
+        insert(activity_type_settings).values(
+            user_key=UK,
+            activity_type="Running",
+            is_cardio=True,
+        )
+    )
+    await session.commit()
+
+    # Round-trip: read back and assert all columns.
+    row = (
+        (
+            await session.execute(
+                select(activity_type_settings).where(
+                    activity_type_settings.c.user_key == UK,
+                    activity_type_settings.c.activity_type == "Running",
+                )
+            )
+        )
+        .mappings()
+        .one()
+    )
+    assert row["user_key"] == UK
+    assert row["activity_type"] == "Running"
+    assert row["is_cardio"] is True
+    assert row["updated_at"] is not None
+
+    # Upsert: flip is_cardio to False via ON CONFLICT DO UPDATE (replaces existing row).
+    upsert_stmt = (
+        pg_insert(activity_type_settings)
+        .values(user_key=UK, activity_type="Running", is_cardio=False)
+        .on_conflict_do_update(
+            index_elements=["user_key", "activity_type"],
+            set_={"is_cardio": False},
+        )
+    )
+    await session.execute(upsert_stmt)
+    await session.commit()
+
+    # Confirm the upsert replaced the row (still one row, is_cardio now False).
+    rows = (
+        (
+            await session.execute(
+                select(activity_type_settings).where(
+                    activity_type_settings.c.user_key == UK,
+                )
+            )
+        )
+        .mappings()
+        .all()
+    )
+    assert len(rows) == 1, "upsert must not duplicate the row"
+    assert rows[0]["is_cardio"] is False, "upsert must overwrite is_cardio"

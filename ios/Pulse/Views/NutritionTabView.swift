@@ -78,49 +78,41 @@ struct NutritionTabView: View {
     var body: some View {
         ZStack {
             Theme.BG.primary.ignoresSafeArea()
-            VStack(spacing: 0) {
-                sectionPicker
-                activeSection
+            TabView(selection: $section) {
+                LogView(onOpenDate: onOpenDate)
+                    .tag(Section.intake)
+                foodPage
+                    .tag(Section.food)
+                PrepView()
+                    .tag(Section.prep)
             }
+            .tabViewStyle(.page(indexDisplayMode: .never))
         }
-        .navigationTitle("Nutrition")
+        .navigationTitle(section.rawValue)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(Theme.BG.primary, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
     }
 
     // MARK: - Private helpers
 
-    /// Segmented control that switches between Intake, Food, and Prep.
-    /// - Returns: The Catppuccin-styled `CTPSegmented` control pinned above the active section.
-    private var sectionPicker: some View {
-        CTPSegmented(selection: $section, options: Section.allCases) { $0.rawValue }
-            .padding(.horizontal, 16)
-            .padding(.top, 8)
-            .padding(.bottom, 6)
-    }
-
-    /// The content area for the currently selected sub-section.
-    /// Renders `LogView`, `FoodTabView` (or a spinner), or `PrepView`.
-    /// - Returns: A view matching the current `section` selection.
-    @ViewBuilder private var activeSection: some View {
-        switch section {
-        case .intake:
-            LogView(onOpenDate: onOpenDate)
-        case .food:
-            if let mealsModel, let foodsModel {
-                FoodTabView(
-                    mealsModel: mealsModel,
-                    foodsModel: foodsModel,
-                    onOpenMeal: onOpenMeal,
-                    onOpenFood: onOpenFood,
-                    onOpenPortion: onOpenPortion,
-                    auth: auth
-                )
-            } else {
-                ProgressView()
-                    .tint(Theme.CTP.mauve)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
-        case .prep:
-            PrepView()
+    /// The Food sub-section page, or a spinner while its models are still
+    /// bootstrapping. Used as one page of the swipe-paged section pager.
+    /// - Returns: `FoodTabView` once the models load, otherwise a centered spinner.
+    @ViewBuilder private var foodPage: some View {
+        if let mealsModel, let foodsModel {
+            FoodTabView(
+                mealsModel: mealsModel,
+                foodsModel: foodsModel,
+                onOpenMeal: onOpenMeal,
+                onOpenFood: onOpenFood,
+                onOpenPortion: onOpenPortion,
+                auth: auth
+            )
+        } else {
+            ProgressView()
+                .tint(Theme.CTP.mauve)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 }

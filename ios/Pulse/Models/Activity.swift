@@ -202,23 +202,67 @@ struct TypeBreakdown: Codable, Identifiable, Hashable {
     }
 }
 
-/// One parent group (weights/cardio) with its duration share and subtype detail.
-struct GroupBreakdown: Codable, Identifiable, Hashable {
-    let group: String
-    let count: Int
+/// Weekly rollup for the period breakdown shown on the Month Trends screen.
+/// Populated by the server only when `period == "month"`.
+struct WeekRollup: Codable, Identifiable, Hashable {
+    let weekStart: Date
+    let weekEnd: Date
+    let sessionCount: Int
     let durationMin: Double
-    let share: Double
-    let subtypes: [TypeBreakdown]
+    let byType: [TypeBreakdown]
 
-    /// Stable identity for `ForEach`/`Identifiable`; mirrors the group name.
-    /// - Returns: The group string ("weights" or "cardio").
-    var id: String { group }
+    /// Stable identity for `ForEach`/`Identifiable`; mirrors `weekStart`.
+    /// - Returns: The `weekStart` date.
+    var id: Date { weekStart }
+
     enum CodingKeys: String, CodingKey {
-        case group
-        case count
+        case weekStart = "week_start"
+        case weekEnd = "week_end"
+        case sessionCount = "session_count"
         case durationMin = "duration_min"
-        case share
-        case subtypes
+        case byType = "by_type"
+    }
+}
+
+/// Monthly rollup for the period breakdown shown on the Year Trends screen.
+/// Populated by the server only when `period == "year"`.
+struct MonthRollup: Codable, Identifiable, Hashable {
+    let monthStart: Date
+    let sessionCount: Int
+    let durationMin: Double
+
+    /// Stable identity for `ForEach`/`Identifiable`; mirrors `monthStart`.
+    /// - Returns: The `monthStart` date.
+    var id: Date { monthStart }
+
+    enum CodingKeys: String, CodingKey {
+        case monthStart = "month_start"
+        case sessionCount = "session_count"
+        case durationMin = "duration_min"
+    }
+}
+
+/// One calendar day's workouts within a `WeekDetail` response.
+struct DayGroup: Codable, Identifiable, Hashable {
+    let date: Date
+    let workouts: [ActivityWorkoutSummary]
+
+    /// Stable identity for `ForEach`/`Identifiable`; mirrors the day's date.
+    /// - Returns: The `date` value.
+    var id: Date { date }
+}
+
+/// Full week detail returned by `GET /activity/week`.
+/// Contains each day that had at least one workout, with the workouts for that day.
+struct WeekDetail: Codable, Hashable {
+    let weekStart: Date
+    let weekEnd: Date
+    let dayGroups: [DayGroup]
+
+    enum CodingKeys: String, CodingKey {
+        case weekStart = "week_start"
+        case weekEnd = "week_end"
+        case dayGroups = "day_groups"
     }
 }
 
@@ -254,24 +298,138 @@ struct TopLift: Codable, Identifiable, Hashable {
     }
 }
 
+/// One activity type's cardio classification, count, and display name.
+/// Used both in the `GET /activity/types` list response and as the return
+/// value of `PUT /activity/types/{activity_type}`.
+struct ActivityTypeSetting: Codable, Identifiable, Hashable {
+    /// The raw activity type string as stored in `apple_workouts.activity_type`.
+    let activityType: String
+    /// Human-readable label for the type (e.g. "Traditional Strength Training").
+    let displayName: String
+    /// Total number of imported workouts with this activity type.
+    let count: Int
+    /// Whether this type is classified as cardio for summary grouping.
+    let isCardio: Bool
+
+    /// Stable identity for `ForEach`/`Identifiable`; mirrors `activityType`.
+    /// - Returns: The raw `activityType` string.
+    var id: String { activityType }
+
+    enum CodingKeys: String, CodingKey {
+        case activityType = "activity_type"
+        case displayName = "display_name"
+        case count
+        case isCardio = "is_cardio"
+    }
+}
+
+/// Envelope returned by `GET /activity/types`.
+struct ActivityTypesResponse: Codable {
+    /// All activity types found in the imported workouts, with their
+    /// current `is_cardio` setting and workout count.
+    let types: [ActivityTypeSetting]
+}
+
+/// One time-bucket of energy-balance inputs combining dietary intake, cardio
+/// expenditure, and weight change.  Populated by the server for `period=month`
+/// (weekly buckets) and `period=year` (monthly buckets); empty for `period=week`.
+struct EnergyBalanceBucket: Codable, Identifiable, Hashable {
+    /// Start of the bucket interval (inclusive).
+    let bucketStart: Date
+    /// End of the bucket interval (inclusive).
+    let bucketEnd: Date
+    /// Short human label for the bucket (e.g. "Jan", "W1").
+    let label: String
+    /// Average dietary intake in kcal/day for the bucket, or `nil` when no
+    /// nutrition data was logged for the period.
+    let intakeCalPerDay: Double?
+    /// Total active-energy cardio burn for the bucket in kcal.
+    let cardioCalTotal: Double
+    /// Body weight at the start of the bucket in lb, or `nil` when unknown.
+    let weightStart: Double?
+    /// Body weight at the end of the bucket in lb, or `nil` when unknown.
+    let weightEnd: Double?
+    /// Net weight change over the bucket in lb (positive = gained), or `nil`
+    /// when fewer than two weight readings exist in the span.
+    let weightDeltaLb: Double?
+    /// Number of days spanned by the weight readings, or `nil` when unknown.
+    let weightSpanDays: Int?
+    /// Estimated maintenance calories per day derived from the three inputs,
+    /// or `nil` when insufficient data is available.
+    let estMaintenancePerDay: Double?
+
+    /// Stable identity for `ForEach`/`Identifiable`; mirrors `bucketStart`.
+    /// - Returns: The `bucketStart` date.
+    var id: Date { bucketStart }
+
+    enum CodingKeys: String, CodingKey {
+        case bucketStart = "bucket_start"
+        case bucketEnd = "bucket_end"
+        case label
+        case intakeCalPerDay = "intake_cal_per_day"
+        case cardioCalTotal = "cardio_cal_total"
+        case weightStart = "weight_start"
+        case weightEnd = "weight_end"
+        case weightDeltaLb = "weight_delta_lb"
+        case weightSpanDays = "weight_span_days"
+        case estMaintenancePerDay = "est_maintenance_per_day"
+    }
+}
+
 /// Week/month/year trend summary powering the Trends screen and feed strip.
+/// `byType` replaces the former `byGroup` — both strength types collapse into
+/// a single entry with `activityType == "Weights"`.
+/// `weeks` is populated only when `period == "month"`.
+/// `months` is populated only when `period == "year"`.
+/// `energyBalance` is populated for month/year periods; empty for week and for
+/// older server responses that pre-date the field.
 struct ActivitySummary: Codable, Hashable {
     let period: String
     let periodStart: Date
     let periodEnd: Date
     let totals: ActivityTotals
     let deltas: ActivityDeltas
-    let byGroup: [GroupBreakdown]
+    let byType: [TypeBreakdown]
+    let weeks: [WeekRollup]
+    let months: [MonthRollup]
     let volumeSeries: [VolumeBucket]
     let topLifts: [TopLift]
+    /// Energy-balance buckets for the period.  Decoded leniently — defaults to
+    /// `[]` when the key is absent so older server responses remain decodable.
+    let energyBalance: [EnergyBalanceBucket]
+
     enum CodingKeys: String, CodingKey {
         case period
         case periodStart = "period_start"
         case periodEnd = "period_end"
         case totals
         case deltas
-        case byGroup = "by_group"
+        case byType = "by_type"
+        case weeks
+        case months
         case volumeSeries = "volume_series"
         case topLifts = "top_lifts"
+        case energyBalance = "energy_balance"
+    }
+
+    /// Decodes all summary fields, falling back to an empty array for the
+    /// period-collection fields (`weeks`, `months`, `energy_balance`) when their
+    /// keys are absent — so a new client degrades gracefully against an older
+    /// server that predates those fields rather than failing the whole decode.
+    /// - Parameter decoder: The decoder to read from.
+    /// - Throws: `DecodingError` when any required field is missing or malformed.
+    init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        period = try c.decode(String.self, forKey: .period)
+        periodStart = try c.decode(Date.self, forKey: .periodStart)
+        periodEnd = try c.decode(Date.self, forKey: .periodEnd)
+        totals = try c.decode(ActivityTotals.self, forKey: .totals)
+        deltas = try c.decode(ActivityDeltas.self, forKey: .deltas)
+        byType = try c.decode([TypeBreakdown].self, forKey: .byType)
+        weeks = try c.decodeIfPresent([WeekRollup].self, forKey: .weeks) ?? []
+        months = try c.decodeIfPresent([MonthRollup].self, forKey: .months) ?? []
+        volumeSeries = try c.decode([VolumeBucket].self, forKey: .volumeSeries)
+        topLifts = try c.decode([TopLift].self, forKey: .topLifts)
+        energyBalance = try c.decodeIfPresent([EnergyBalanceBucket].self, forKey: .energyBalance) ?? []
     }
 }

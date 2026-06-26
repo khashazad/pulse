@@ -457,6 +457,14 @@ create table if not exists daily_activity (
   primary key (user_key, date)
 );
 
+create table if not exists activity_type_settings (
+  user_key text not null,
+  activity_type text not null,
+  is_cardio boolean not null,
+  updated_at timestamptz not null default now(),
+  primary key (user_key, activity_type)
+);
+
 -- Keep public tables off the Supabase Data API surface (lints 0026/0027,
 -- pg_graphql anon/authenticated table exposed). The backend connects as the
 -- `postgres` owner, which is unaffected by these grants. Guarded on role

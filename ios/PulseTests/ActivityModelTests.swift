@@ -36,17 +36,101 @@ final class ActivityModelTests: XCTestCase {
         XCTAssertEqual(d.strengthTotals?.volumeLbs, 1950.0)
     }
 
-    /// Verifies `ActivitySummary` decodes correctly from the `activity_summary` fixture, including totals, deltas, by-group breakdown, volume series, and top lifts.
+    /// Verifies `ActivitySummary` decodes correctly from the `activity_summary` fixture,
+    /// including totals, deltas, by-type breakdown, months, volume series, and top lifts.
     func testDecodeSummary() throws {
         let s = try JSONDecoder.pulseDefault().decode(ActivitySummary.self, from: loadFixture("activity_summary"))
-        XCTAssertEqual(s.totals.workoutCount, 4)
-        XCTAssertEqual(s.deltas.workoutCount.pct, 0.3333)
+        XCTAssertEqual(s.totals.workoutCount, 48)
+        XCTAssertEqual(s.deltas.workoutCount.pct, 0.1429)
         XCTAssertNil(s.deltas.totalActiveEnergyCal.pct)
-        XCTAssertEqual(s.byGroup.count, 2)
-        XCTAssertEqual(s.byGroup.first?.group, "weights")
-        XCTAssertEqual(s.byGroup.first?.subtypes.first?.activityType, "TraditionalStrengthTraining")
+        // by_type — both strength types collapsed server-side into "Weights"
+        XCTAssertEqual(s.byType.count, 2)
+        XCTAssertEqual(s.byType.first?.activityType, "Weights")
+        XCTAssertEqual(s.byType.first?.count, 34)
+        // months populated for year period; weeks empty
+        XCTAssertEqual(s.months.count, 2)
+        XCTAssertEqual(s.months.first?.sessionCount, 8)
+        XCTAssertTrue(s.weeks.isEmpty)
         XCTAssertEqual(s.volumeSeries.count, 2)
         XCTAssertEqual(s.topLifts[0].bestReps, 6)
         XCTAssertTrue(s.topLifts[0].isPr)
+    }
+
+    /// Verifies `ActivitySummary` decodes `energy_balance` with both fully-populated
+    /// and null-heavy buckets, confirming that `id == bucketStart` and that JSON
+    /// `null` fields map to `nil` optionals.
+    func testDecodeEnergyBalance() throws {
+        let s = try JSONDecoder.pulseDefault().decode(ActivitySummary.self, from: loadFixture("activity_summary"))
+        XCTAssertEqual(s.energyBalance.count, 2)
+
+        let b0 = s.energyBalance[0]
+        XCTAssertEqual(b0.label, "Jan")
+        XCTAssertEqual(b0.intakeCalPerDay, 2100.0)
+        XCTAssertEqual(b0.cardioCalTotal, 1200.0)
+        XCTAssertEqual(b0.weightDeltaLb, -1.2)
+        XCTAssertEqual(b0.estMaintenancePerDay, 2580.0)
+        XCTAssertEqual(b0.id, b0.bucketStart)
+
+        let b1 = s.energyBalance[1]
+        XCTAssertEqual(b1.label, "Feb")
+        XCTAssertNil(b1.intakeCalPerDay)
+        XCTAssertNil(b1.weightStart)
+        XCTAssertNil(b1.weightDeltaLb)
+        XCTAssertNil(b1.estMaintenancePerDay)
+    }
+
+    /// Verifies `ActivitySummary` decodes without throwing when the period-collection
+    /// keys (`weeks`, `months`, `energy_balance`) are absent — as an older server that
+    /// predates those fields would respond — falling back to empty arrays rather than
+    /// failing the whole decode.
+    func testDecodeSummaryMissingPeriodCollectionsDegradesToEmpty() throws {
+        let data = try loadFixture("activity_summary")
+        guard var obj = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return XCTFail("fixture is not a JSON object")
+        }
+        obj.removeValue(forKey: "weeks")
+        obj.removeValue(forKey: "months")
+        obj.removeValue(forKey: "energy_balance")
+        let stripped = try JSONSerialization.data(withJSONObject: obj)
+
+        let s = try JSONDecoder.pulseDefault().decode(ActivitySummary.self, from: stripped)
+        XCTAssertTrue(s.weeks.isEmpty)
+        XCTAssertTrue(s.months.isEmpty)
+        XCTAssertTrue(s.energyBalance.isEmpty)
+    }
+
+    /// Verifies `WeekDetail` decodes correctly from the `week_detail` fixture,
+    /// including `weekStart`, `weekEnd`, and the nested day groups with workouts.
+    func testDecodeWeekDetail() throws {
+        let wd = try JSONDecoder.pulseDefault().decode(WeekDetail.self, from: loadFixture("week_detail"))
+        XCTAssertEqual(wd.dayGroups.count, 2)
+        XCTAssertEqual(wd.dayGroups.first?.workouts.count, 1)
+        XCTAssertEqual(wd.dayGroups.first?.workouts.first?.activityType, "TraditionalStrengthTraining")
+        XCTAssertEqual(wd.dayGroups[1].workouts.first?.distanceKm, 5.1)
+    }
+
+    /// Verifies `ActivityTypesResponse` decodes from the `activity_types` fixture,
+    /// mapping `activity_type`, `display_name`, `count`, and `is_cardio` correctly,
+    /// and that `id` equals `activityType` for each entry.
+    func testDecodeActivityTypes() throws {
+        let response = try JSONDecoder.pulseDefault().decode(
+            ActivityTypesResponse.self,
+            from: loadFixture("activity_types")
+        )
+        XCTAssertEqual(response.types.count, 2)
+
+        let running = response.types[0]
+        XCTAssertEqual(running.activityType, "Running")
+        XCTAssertEqual(running.displayName, "Running")
+        XCTAssertEqual(running.count, 12)
+        XCTAssertTrue(running.isCardio)
+        XCTAssertEqual(running.id, running.activityType)
+
+        let strength = response.types[1]
+        XCTAssertEqual(strength.activityType, "TraditionalStrengthTraining")
+        XCTAssertEqual(strength.displayName, "Traditional Strength Training")
+        XCTAssertEqual(strength.count, 34)
+        XCTAssertFalse(strength.isCardio)
+        XCTAssertEqual(strength.id, strength.activityType)
     }
 }

@@ -139,16 +139,6 @@ class TypeBreakdown(BaseModel):
     share: float
 
 
-class GroupBreakdown(BaseModel):
-    """One parent group (weights/cardio) with its duration share and subtype detail."""
-
-    group: str
-    count: int
-    duration_min: float
-    share: float
-    subtypes: list[TypeBreakdown]
-
-
 class VolumeBucket(BaseModel):
     """Strength volume + workout time for one sub-bucket of the period."""
 
@@ -169,13 +159,132 @@ class TopLift(BaseModel):
 
 
 class ActivitySummary(BaseModel):
-    """Week/month/year trend summary powering the Trends screen and feed strip."""
+    """Week/month/year trend summary powering the Trends screen and feed strip.
+
+    ``by_type`` replaces the former ``by_group`` field: both strength activity
+    types are collapsed into a single ``"Weights"`` label; every other type maps
+    to itself.  ``weeks`` is populated only when ``period == "month"``; ``months``
+    is populated only when ``period == "year"``; both default to ``[]`` otherwise.
+
+    ``energy_balance`` carries per-bucket intake/cardio/weight/maintenance figures:
+    one bucket per week when ``period == "month"``, one per calendar month when
+    ``period == "year"``, and ``[]`` when ``period == "week"``.
+    """
 
     period: ActivityPeriod
     period_start: DateValue
     period_end: DateValue
     totals: ActivityTotals
     deltas: ActivityDeltas
-    by_group: list[GroupBreakdown]
+    by_type: list[TypeBreakdown]
+    weeks: list[WeekRollup] = []
+    months: list[MonthRollup] = []
     volume_series: list[VolumeBucket]
     top_lifts: list[TopLift]
+    energy_balance: list[EnergyBalanceBucket] = []
+
+
+class WeekRollup(BaseModel):
+    """One Monday-anchored week within a month: clamped bounds, session count,
+    total duration, and per-type breakdown."""
+
+    week_start: DateValue
+    """Inclusive start of the week, clamped to the enclosing month's bounds."""
+    week_end: DateValue
+    """Inclusive end of the week, clamped to the enclosing month's bounds."""
+    session_count: int
+    """Number of workouts that fall in this week."""
+    duration_min: float
+    """Total workout duration in minutes for this week."""
+    by_type: list[TypeBreakdown]
+    """Per-breakdown-label duration rollup for this week, sorted duration desc."""
+
+
+class MonthRollup(BaseModel):
+    """One calendar month with session count and total duration totals."""
+
+    month_start: DateValue
+    """First day of the month (always day=1)."""
+    session_count: int
+    """Number of workouts in this month."""
+    duration_min: float
+    """Total workout duration in minutes for this month."""
+
+
+class DayGroup(BaseModel):
+    """One calendar day in the week drill-down: the day's date and its workouts."""
+
+    date: DateValue
+    workouts: list[ActivityWorkoutSummary]
+
+
+class WeekDetail(BaseModel):
+    """Day-grouped workout view for a single Mon-Sun week.
+
+    ``day_groups`` contains only days that have workouts, ordered newest-day first.
+    Workouts within each day are also ordered newest-first by ``start_time``.
+    """
+
+    week_start: DateValue
+    week_end: DateValue
+    day_groups: list[DayGroup]
+
+
+class ActivityTypeSetting(BaseModel):
+    """One activity type with its best-effort display name, workout count, and
+    effective cardio flag."""
+
+    activity_type: str
+    display_name: str
+    count: int
+    is_cardio: bool
+
+
+class ActivityTypesResponse(BaseModel):
+    """All activity types a user has recorded, with per-type cardio flags,
+    sorted by count descending."""
+
+    types: list[ActivityTypeSetting]
+
+
+class EnergyBalanceBucket(BaseModel):
+    """Energy-balance figures for one time bucket.
+
+    Combines nutrition intake, cardio active-calories, and weight readings
+    into a per-bucket snapshot that supports maintenance-calorie estimation.
+    All numeric fields are ``float`` so Pydantic coerces ``Decimal`` DB values
+    when rows are mapped here. Fields are ``None`` when the underlying data is
+    absent for that bucket (e.g. no logged intake days, or insufficient weight
+    readings to compute a span).
+    """
+
+    bucket_start: DateValue
+    """Inclusive start date of the bucket."""
+    bucket_end: DateValue
+    """Inclusive end date of the bucket."""
+    label: str
+    """Human-readable label for the bucket (e.g. 'Week 1', 'June 2026')."""
+    intake_cal_per_day: float | None
+    """Average daily calorie intake across logged days in this bucket; None if no days logged."""
+    cardio_cal_total: float
+    """Sum of cardio active-calories for every day in this bucket; 0.0 when none."""
+    weight_start: float | None
+    """Weight (lbs) of the reading nearest to bucket_start within the +-7-day window;
+    None if absent."""
+    weight_end: float | None
+    """Weight (lbs) of the reading nearest to bucket_end within the +-7-day window;
+    None if absent."""
+    weight_delta_lb: float | None
+    """weight_end - weight_start; None when either endpoint is absent or both share the same
+    date."""
+    weight_span_days: int | None
+    """Calendar days between the two weight readings (min 1); None when delta is None."""
+    est_maintenance_per_day: float | None
+    """Estimated maintenance calories per day; None when intake or weight delta is unavailable."""
+
+
+# ``ActivitySummary`` references ``WeekRollup``/``MonthRollup``/``EnergyBalanceBucket``
+# defined below it; with ``from __future__ import annotations`` those forward refs
+# leave the model incomplete until first use. Rebuild eagerly so any code path that
+# inspects the model's fields sees the resolved schema.
+ActivitySummary.model_rebuild()

@@ -10,6 +10,8 @@ enum ActivityType {
         // These camel-cased names contain no lowercase substring like "hiit", so the
         // substring fallback below would mis-bucket them — match them by exact name first.
         switch raw {
+        // Server-collapsed label for all strength types in by_type breakdowns.
+        case "Weights": return Theme.CTP.mauve
         case "TraditionalStrengthTraining", "FunctionalStrengthTraining": return Theme.CTP.mauve
         case "HighIntensityIntervalTraining": return Theme.CTP.peach
         case "Other": return Theme.CTP.overlay1

@@ -13,10 +13,15 @@ from typing import Any
 from uuid import UUID
 
 from sqlalchemy import Date, and_, cast, func, or_, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from pulse_server.models.activity import WEIGHTS_ACTIVITY_TYPES
-from pulse_server.repositories.tables import apple_workouts, strength_sets, strength_workouts
+from pulse_server.repositories.tables import (
+    activity_type_settings,
+    apple_workouts,
+    strength_sets,
+    strength_workouts,
+)
 
 
 class ActivityReadRepository:
@@ -37,9 +42,8 @@ class ActivityReadRepository:
         before_id: UUID | None,
         limit: int,
         activity_type: str | None,
-        group: str | None = None,
     ) -> list[dict[str, Any]]:
-        """Return workouts newest-first, optionally filtered by type or group, with a cursor.
+        """Return workouts newest-first, optionally filtered by exact activity type, with a cursor.
 
         Orders by ``(start_time desc, id desc)`` so the ordering is total even when
         two workouts share an exact ``start_time``. The cursor is the composite
@@ -53,7 +57,6 @@ class ActivityReadRepository:
         - before_id (UUID | None): Id tiebreaker for rows sharing ``before``'s start_time.
         - limit (int): Max rows to return.
         - activity_type (str | None): Optional exact ``activity_type`` filter.
-        - group (str | None): Optional ``"weights"``/``"cardio"`` filter over activity_type.
 
         **Outputs:**
         - list[dict[str, Any]]: Apple workout rows ordered by ``(start_time, id)`` desc.
@@ -61,10 +64,6 @@ class ActivityReadRepository:
         stmt = select(*apple_workouts.c).where(apple_workouts.c.user_key == user_key)
         if activity_type is not None:
             stmt = stmt.where(apple_workouts.c.activity_type == activity_type)
-        if group == "weights":
-            stmt = stmt.where(apple_workouts.c.activity_type.in_(WEIGHTS_ACTIVITY_TYPES))
-        elif group == "cardio":
-            stmt = stmt.where(apple_workouts.c.activity_type.notin_(WEIGHTS_ACTIVITY_TYPES))
         if before is not None:
             if before_id is not None:
                 stmt = stmt.where(
@@ -176,8 +175,10 @@ class ActivityReadRepository:
           UTC-to-local conversion before the date comparison.
 
         **Outputs:**
-        - list[dict[str, Any]]: Rows with ``activity_type``, ``duration_min``,
-          ``active_energy_cal``, and ``start_time``, ordered by ``start_time`` asc.
+        - list[dict[str, Any]]: Rows with ``id``, ``activity_type``,
+          ``start_time``, ``end_time``, ``duration_min``, ``active_energy_cal``,
+          ``distance_km``, ``linked_strength_workout_id``, and ``local_date``
+          (the workout's calendar date in ``tz``), ordered by ``start_time`` asc.
 
         **Raises:**
         - SQLAlchemyError: On any database execution failure.
@@ -185,10 +186,15 @@ class ActivityReadRepository:
         col = cast(func.timezone(tz, apple_workouts.c.start_time), Date)
         stmt = (
             select(
+                apple_workouts.c.id,
                 apple_workouts.c.activity_type,
+                apple_workouts.c.start_time,
+                apple_workouts.c.end_time,
                 apple_workouts.c.duration_min,
                 apple_workouts.c.active_energy_cal,
-                apple_workouts.c.start_time,
+                apple_workouts.c.distance_km,
+                apple_workouts.c.linked_strength_workout_id,
+                col.label("local_date"),
             )
             .where(apple_workouts.c.user_key == user_key)
             .where(col >= start)
@@ -197,6 +203,88 @@ class ActivityReadRepository:
         )
         result = await self._session.execute(stmt)
         return [dict(r) for r in result.mappings()]
+
+    async def distinct_activity_types(self, user_key: str) -> list[dict]:
+        """Return distinct activity types for a user with their workout counts.
+
+        Queries ``apple_workouts`` grouped by ``activity_type``, ordered by
+        ``count`` descending then ``activity_type`` ascending so the most-frequent
+        types appear first.
+
+        Args:
+            user_key (str): Owning user's scoping key.
+
+        Returns:
+            list[dict]: Each dict contains ``activity_type`` (str) and ``count``
+                (int), ordered by count DESC, activity_type ASC.
+
+        Raises:
+            sqlalchemy.exc.SQLAlchemyError: On any database execution failure.
+        """
+        stmt = (
+            select(
+                apple_workouts.c.activity_type,
+                func.count().label("count"),
+            )
+            .where(apple_workouts.c.user_key == user_key)
+            .group_by(apple_workouts.c.activity_type)
+            .order_by(func.count().desc(), apple_workouts.c.activity_type.asc())
+        )
+        result = await self._session.execute(stmt)
+        return [
+            {"activity_type": row["activity_type"], "count": int(row["count"])}
+            for row in result.mappings()
+        ]
+
+    async def cardio_overrides(self, user_key: str) -> dict[str, bool]:
+        """Return the cardio flag for every activity type the user has configured.
+
+        Args:
+            user_key (str): Owning user's scoping key.
+
+        Returns:
+            dict[str, bool]: Mapping of ``activity_type`` to ``is_cardio`` for all
+                rows in ``activity_type_settings`` belonging to the user.
+
+        Raises:
+            sqlalchemy.exc.SQLAlchemyError: On any database execution failure.
+        """
+        stmt = select(
+            activity_type_settings.c.activity_type,
+            activity_type_settings.c.is_cardio,
+        ).where(activity_type_settings.c.user_key == user_key)
+        result = await self._session.execute(stmt)
+        return {row["activity_type"]: row["is_cardio"] for row in result.mappings()}
+
+    async def set_cardio_override(self, user_key: str, activity_type: str, is_cardio: bool) -> None:
+        """Upsert the cardio flag for one activity type.
+
+        Inserts a new row or, when ``(user_key, activity_type)`` already exists,
+        updates the existing row.  ``updated_at`` is explicitly included in the
+        ``set_`` clause so that subsequent flips advance the timestamp — the column
+        carries ``DEFAULT now()`` which fires only on INSERT and would otherwise
+        freeze on every subsequent update.
+
+        Args:
+            user_key (str): Owning user's scoping key.
+            activity_type (str): The Apple Health activity type name.
+            is_cardio (bool): Whether this activity type should be treated as cardio.
+
+        Returns:
+            None
+
+        Raises:
+            sqlalchemy.exc.SQLAlchemyError: On any database execution failure.
+        """
+        stmt = (
+            pg_insert(activity_type_settings)
+            .values(user_key=user_key, activity_type=activity_type, is_cardio=is_cardio)
+            .on_conflict_do_update(
+                index_elements=["user_key", "activity_type"],
+                set_={"is_cardio": is_cardio, "updated_at": func.now()},
+            )
+        )
+        await self._session.execute(stmt)
 
     async def strength_history(
         self,

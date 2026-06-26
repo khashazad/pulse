@@ -25,6 +25,8 @@ Tables defined here:
 - ``apple_workouts`` — one row per Apple Health workout session (summary stats only).
 - ``strength_workouts`` / ``strength_sets`` — Hevy session headers and their sets.
 - ``daily_activity`` — per-day Apple activity summary (active energy, exercise, stand).
+- ``activity_type_settings`` — per-user, per-activity-type flag controlling whether the
+  type is treated as cardio (``is_cardio``); composite PK ``(user_key, activity_type)``.
 
 Every table is scoped by ``user_key`` so the same schema supports the
 multi-user model while the legacy single-user deployment uses one fixed key.
@@ -418,6 +420,16 @@ daily_activity = Table(
     Column("stand_goal", Integer, nullable=False),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     PrimaryKeyConstraint("user_key", "date", name="daily_activity_pkey"),
+)
+
+activity_type_settings = Table(
+    "activity_type_settings",
+    metadata,
+    Column("user_key", Text, nullable=False),
+    Column("activity_type", Text, nullable=False),
+    Column("is_cardio", Boolean, nullable=False),
+    Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    PrimaryKeyConstraint("user_key", "activity_type", name="activity_type_settings_pkey"),
 )
 
 progress_photo_tags = Table(

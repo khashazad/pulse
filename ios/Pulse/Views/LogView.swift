@@ -21,25 +21,11 @@ struct LogView: View {
         ZStack {
             Theme.BG.primary.ignoresSafeArea()
             VStack(spacing: 0) {
-                segmented
+                periodBar
                     .padding(.horizontal, 16)
-                    .padding(.top, 4)
+                    .padding(.top, 6)
                     .padding(.bottom, 8)
                 content
-            }
-        }
-        .navigationTitle(title)
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbarBackground(Theme.BG.primary, for: .navigationBar)
-        .toolbarBackground(.visible, for: .navigationBar)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    showDatePicker = true
-                } label: {
-                    Image(systemName: "calendar")
-                        .foregroundStyle(Theme.CTP.mauve)
-                }
             }
         }
         .sheet(isPresented: $showDatePicker) {
@@ -51,23 +37,46 @@ struct LogView: View {
         }
     }
 
-    private var title: String {
-        switch subTab {
-        case .today: "Today"
-        case .week:  "This week"
-        case .month: "This month"
-        case .year:  "This year"
+    /// Top period selector: Today/Week/Month/Year toggle chips plus a "Pick a
+    /// date" action chip that opens the date picker. A non-scrolling row so it
+    /// never competes with the section pager's horizontal swipe.
+    /// - Returns: A single row of period chips.
+    private var periodBar: some View {
+        HStack(spacing: 8) {
+            periodChip("Today", .today)
+            periodChip("Week", .week)
+            periodChip("Month", .month)
+            periodChip("Year", .year)
+            Spacer(minLength: 6)
+            Button { showDatePicker = true } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "calendar").font(.system(size: 12, weight: .semibold))
+                    Text("Pick a date").font(.system(size: 13, weight: .medium))
+                }
+                .foregroundStyle(Theme.FG.secondary)
+                .padding(.horizontal, 12).padding(.vertical, 6)
+                .background(RoundedRectangle(cornerRadius: Theme.Layout.chipRadius)
+                    .fill(Theme.BG.tertiary))
+            }
+            .buttonStyle(.plain)
         }
     }
 
-    private var segmented: some View {
-        Picker("", selection: $subTab) {
-            Text("Today").tag(LogSubTab.today)
-            Text("Week").tag(LogSubTab.week)
-            Text("Month").tag(LogSubTab.month)
-            Text("Year").tag(LogSubTab.year)
+    /// A single period toggle chip.
+    /// - Parameters:
+    ///   - label: The chip's display text.
+    ///   - tab: The period this chip selects when tapped.
+    /// - Returns: A pill button that selects `tab` and highlights when it is current.
+    private func periodChip(_ label: String, _ tab: LogSubTab) -> some View {
+        let active = subTab == tab
+        return Button { subTab = tab } label: {
+            Text(label).font(.system(size: 13, weight: active ? .semibold : .medium))
+                .foregroundStyle(active ? Theme.CTP.base : Theme.FG.secondary)
+                .padding(.horizontal, 12).padding(.vertical, 6)
+                .background(RoundedRectangle(cornerRadius: Theme.Layout.chipRadius)
+                    .fill(active ? Theme.tint : Theme.BG.tertiary))
         }
-        .pickerStyle(.segmented)
+        .buttonStyle(.plain)
     }
 
     @ViewBuilder
