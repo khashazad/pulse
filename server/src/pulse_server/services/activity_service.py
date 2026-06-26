@@ -1,12 +1,14 @@
-"""Activity read business logic: assemble feed pages, detail, and summaries
-from ActivityReadRepository rows into the response DTOs."""
+"""Activity read business logic: assemble feed pages, detail, summaries, and
+activity-type settings from ActivityReadRepository rows into the response DTOs."""
 
 from __future__ import annotations
 
+import re
 from datetime import date as DateValue
 from datetime import datetime as DateTimeValue
 from uuid import UUID
 
+from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pulse_server.models.activity import (
@@ -15,6 +17,8 @@ from pulse_server.models.activity import (
     ActivityPeriod,
     ActivitySummary,
     ActivityTotals,
+    ActivityTypeSetting,
+    ActivityTypesResponse,
     ActivityWorkoutDetail,
     ActivityWorkoutSummary,
     MetricDelta,
@@ -25,6 +29,7 @@ from pulse_server.models.activity import (
     WorkoutSet,
 )
 from pulse_server.repositories.activity import ActivityReadRepository
+from pulse_server.services.activity_cardio import effective_is_cardio
 from pulse_server.services.activity_summary import (
     bucket_volume,
     compute_top_lifts,
@@ -327,4 +332,105 @@ async def build_summary(
         by_group=rollup_by_group(cur, WEIGHTS_ACTIVITY_TYPES),
         volume_series=bucket_volume(_build_vol_rows(history, start, end), period, start, end),
         top_lifts=compute_top_lifts(history, period_start=start),
+    )
+
+
+def _display_name(activity_type: str) -> str:
+    """Derive a human-readable display label from a camelCase activity type string.
+
+    Inserts a space before each uppercase letter that is preceded by a lowercase
+    letter so that, e.g., ``"TraditionalStrengthTraining"`` becomes
+    ``"Traditional Strength Training"``. Single-word types (e.g. ``"Running"``)
+    are returned unchanged.
+
+    Args:
+        activity_type (str): The bare Apple Health activity type string
+            (e.g. ``"TraditionalStrengthTraining"``).
+
+    Returns:
+        str: The space-separated display label (e.g.
+            ``"Traditional Strength Training"``).
+
+    Raises:
+        None
+    """
+    return re.sub(r"(?<=[a-z])(?=[A-Z])", " ", activity_type)
+
+
+async def list_activity_types(
+    session: AsyncSession,
+    user_key: str,
+) -> ActivityTypesResponse:
+    """Return all activity types the user has recorded, enriched with effective cardio flags.
+
+    Fetches the distinct activity types and their workout counts from the
+    repository, loads per-type cardio overrides, resolves each type's effective
+    ``is_cardio`` flag via :func:`effective_is_cardio`, and returns the list
+    sorted by count descending (the repository already returns it in that order).
+
+    Args:
+        session (AsyncSession): Active database session.
+        user_key (str): Owning user's scoping key.
+
+    Returns:
+        ActivityTypesResponse: List of :class:`ActivityTypeSetting` items,
+            each carrying the type string, a best-effort display name,
+            the workout count, and the resolved cardio flag.
+
+    Raises:
+        sqlalchemy.exc.SQLAlchemyError: On any database execution failure.
+    """
+    repo = ActivityReadRepository(session)
+    types = await repo.distinct_activity_types(user_key)
+    overrides = await repo.cardio_overrides(user_key)
+    settings: list[ActivityTypeSetting] = [
+        ActivityTypeSetting(
+            activity_type=t["activity_type"],
+            display_name=_display_name(t["activity_type"]),
+            count=t["count"],
+            is_cardio=effective_is_cardio(t["activity_type"], overrides),
+        )
+        for t in types
+    ]
+    return ActivityTypesResponse(types=settings)
+
+
+async def set_activity_type_cardio(
+    session: AsyncSession,
+    user_key: str,
+    activity_type: str,
+    is_cardio: bool,
+) -> ActivityTypeSetting:
+    """Set the cardio flag for one of the user's activity types and return the updated setting.
+
+    Validates that the activity type exists (i.e. the user has at least one
+    workout with that type) before writing the override. Raises HTTP 404 when
+    the type is unknown so the router can propagate it without extra handling.
+
+    Args:
+        session (AsyncSession): Active database session.
+        user_key (str): Owning user's scoping key.
+        activity_type (str): The Apple Health activity type to update.
+        is_cardio (bool): The new cardio flag value.
+
+    Returns:
+        ActivityTypeSetting: The updated setting reflecting the new ``is_cardio``
+            value, the type's current workout count, and its display name.
+
+    Raises:
+        fastapi.HTTPException: HTTP 404 when the activity type has no recorded
+            workouts for this user.
+        sqlalchemy.exc.SQLAlchemyError: On any database execution failure.
+    """
+    repo = ActivityReadRepository(session)
+    types = await repo.distinct_activity_types(user_key)
+    type_counts = {t["activity_type"]: t["count"] for t in types}
+    if activity_type not in type_counts:
+        raise HTTPException(status_code=404, detail="activity type not found")
+    await repo.set_cardio_override(user_key, activity_type, is_cardio)
+    return ActivityTypeSetting(
+        activity_type=activity_type,
+        display_name=_display_name(activity_type),
+        count=type_counts[activity_type],
+        is_cardio=is_cardio,
     )

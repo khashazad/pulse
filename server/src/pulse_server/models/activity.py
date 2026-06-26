@@ -179,3 +179,20 @@ class ActivitySummary(BaseModel):
     by_group: list[GroupBreakdown]
     volume_series: list[VolumeBucket]
     top_lifts: list[TopLift]
+
+
+class ActivityTypeSetting(BaseModel):
+    """One activity type with its best-effort display name, workout count, and
+    effective cardio flag."""
+
+    activity_type: str
+    display_name: str
+    count: int
+    is_cardio: bool
+
+
+class ActivityTypesResponse(BaseModel):
+    """All activity types a user has recorded, with per-type cardio flags,
+    sorted by count descending."""
+
+    types: list[ActivityTypeSetting]

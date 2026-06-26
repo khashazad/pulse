@@ -1,4 +1,4 @@
-"""HTTP endpoints for browsing workouts and activity trends."""
+"""HTTP endpoints for browsing workouts, activity trends, and activity-type settings."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ from uuid import UUID
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pulse_server.auth import require_session
@@ -16,6 +17,8 @@ from pulse_server.db import get_session_dependency
 from pulse_server.models.activity import (
     ActivityPeriod,
     ActivitySummary,
+    ActivityTypeSetting,
+    ActivityTypesResponse,
     ActivityWorkoutDetail,
     WorkoutFeedPage,
 )
@@ -23,7 +26,9 @@ from pulse_server.services.activity_service import (
     DEFAULT_FEED_LIMIT,
     build_summary,
     get_workout_detail,
+    list_activity_types,
     list_workout_feed,
+    set_activity_type_cardio,
 )
 
 settings = get_settings()
@@ -116,3 +121,56 @@ async def get_workout_detail_endpoint(
     if detail is None:
         raise HTTPException(status_code=404, detail="workout not found")
     return detail
+
+
+class CardioFlagUpdate(BaseModel):
+    """Request body for PUT /activity/types/{activity_type}."""
+
+    is_cardio: bool
+
+
+@router.get("/activity/types", response_model=ActivityTypesResponse)
+async def get_activity_types(
+    request: Request,
+    session: AsyncSession = Depends(get_session_dependency),
+) -> ActivityTypesResponse:
+    """Return all activity types the user has recorded with their effective cardio flags.
+
+    **Inputs:**
+    - request (Request): Provides ``user_key`` via ``request.state.user_key``.
+    - session (AsyncSession): DB session dependency.
+
+    **Outputs:**
+    - ActivityTypesResponse: List of activity types sorted by workout count
+      descending, each carrying ``activity_type``, ``display_name``, ``count``,
+      and the resolved ``is_cardio`` flag.
+    """
+    return await list_activity_types(session, request.state.user_key)
+
+
+@router.put("/activity/types/{activity_type}", response_model=ActivityTypeSetting)
+async def put_activity_type_cardio(
+    request: Request,
+    activity_type: str,
+    body: CardioFlagUpdate,
+    session: AsyncSession = Depends(get_session_dependency),
+) -> ActivityTypeSetting:
+    """Set the cardio flag for one of the user's recorded activity types.
+
+    **Inputs:**
+    - request (Request): Provides ``user_key`` via ``request.state.user_key``.
+    - activity_type (str): The Apple Health activity type to update (URL path).
+    - body (CardioFlagUpdate): JSON body with ``is_cardio: bool``.
+    - session (AsyncSession): DB session dependency.
+
+    **Outputs:**
+    - ActivityTypeSetting: The updated setting with the new ``is_cardio`` value,
+      the type's current workout count, and its display name.
+
+    **Raises/Throws:**
+    - HTTPException(404): When the activity type has no recorded workouts for
+      this user (propagated from the service layer).
+    """
+    return await set_activity_type_cardio(
+        session, request.state.user_key, activity_type, body.is_cardio
+    )
