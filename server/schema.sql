@@ -289,13 +289,6 @@ create unique index if not exists uq_progress_photos_user_idem
   on progress_photos (user_key, idempotency_key)
   where idempotency_key is not null;
 
--- Object-storage cutover (2026-06) complete: photo bytes live in the S3 store
--- (display/archive/thumb objects under each row's storage_key_prefix).
-alter table progress_photos drop column if exists photo;
-alter table progress_photos drop column if exists photo_thumb;
-alter table progress_photos add column if not exists storage_key_prefix text;
-alter table progress_photos alter column storage_key_prefix set not null;
-
 create table if not exists weight_entries (
   id uuid primary key default gen_random_uuid(),
   user_key text not null,
