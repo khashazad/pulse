@@ -183,7 +183,8 @@ class ActivityReadRepository:
 
         **Outputs:**
         - list[dict[str, Any]]: Rows with ``activity_type``, ``duration_min``,
-          ``active_energy_cal``, and ``start_time``, ordered by ``start_time`` asc.
+          ``active_energy_cal``, ``start_time``, and ``local_date`` (the
+          workout's calendar date in ``tz``), ordered by ``start_time`` asc.
 
         **Raises:**
         - SQLAlchemyError: On any database execution failure.
@@ -195,6 +196,7 @@ class ActivityReadRepository:
                 apple_workouts.c.duration_min,
                 apple_workouts.c.active_energy_cal,
                 apple_workouts.c.start_time,
+                col.label("local_date"),
             )
             .where(apple_workouts.c.user_key == user_key)
             .where(col >= start)

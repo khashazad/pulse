@@ -220,6 +220,42 @@ async def test_workouts_in_range_filters_by_date(session) -> None:
     assert len(rows) == 1 and rows[0]["activity_type"] == "Running"
 
 
+async def test_workouts_in_range_includes_local_date(session) -> None:
+    """workouts_in_range rows include a local_date field matching the workout's calendar date in tz.
+
+    T0 is 2026-06-24 18:00 UTC; querying in UTC the local_date should be 2026-06-24.
+
+    **Inputs:**
+    - session: Live async session with a clean activity-table slate.
+
+    **Outputs:**
+    - None: Asserts via pytest.
+
+    **Raises:**
+    - AssertionError: If ``local_date`` is absent from the returned row or has the wrong value.
+    """
+    wid = uuid4()
+    async with session.begin_nested():
+        await session.execute(
+            insert(apple_workouts).values(
+                id=wid,
+                user_key=UK,
+                activity_type="Running",
+                start_time=T0,
+                end_time=T0 + timedelta(minutes=30),
+                duration_min=30,
+                active_energy_cal=300,
+            )
+        )
+    repo = ActivityReadRepository(session)
+    rows = await repo.workouts_in_range(UK, date(2026, 6, 24), date(2026, 6, 24), tz="UTC")
+    assert len(rows) == 1, "expected exactly one row in range"
+    assert "local_date" in rows[0], "workouts_in_range rows must include local_date"
+    assert rows[0]["local_date"] == date(2026, 6, 24), (
+        f"expected local_date=2026-06-24, got {rows[0]['local_date']!r}"
+    )
+
+
 async def test_strength_history_returns_joined_rows(session) -> None:
     """strength_history joins sets to workouts and returns date, duration, and set fields."""
     from datetime import date

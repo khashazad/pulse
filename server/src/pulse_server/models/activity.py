@@ -181,6 +181,33 @@ class ActivitySummary(BaseModel):
     top_lifts: list[TopLift]
 
 
+class WeekRollup(BaseModel):
+    """One Monday-anchored week within a month: clamped bounds, session count,
+    total duration, and per-type breakdown."""
+
+    week_start: DateValue
+    """Inclusive start of the week, clamped to the enclosing month's bounds."""
+    week_end: DateValue
+    """Inclusive end of the week, clamped to the enclosing month's bounds."""
+    session_count: int
+    """Number of workouts that fall in this week."""
+    duration_min: float
+    """Total workout duration in minutes for this week."""
+    by_type: list[TypeBreakdown]
+    """Per-breakdown-label duration rollup for this week, sorted duration desc."""
+
+
+class MonthRollup(BaseModel):
+    """One calendar month with session count and total duration totals."""
+
+    month_start: DateValue
+    """First day of the month (always day=1)."""
+    session_count: int
+    """Number of workouts in this month."""
+    duration_min: float
+    """Total workout duration in minutes for this month."""
+
+
 class ActivityTypeSetting(BaseModel):
     """One activity type with its best-effort display name, workout count, and
     effective cardio flag."""
