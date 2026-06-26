@@ -10,6 +10,7 @@ from datetime import timedelta as TimeDeltaValue
 from pulse_server.models.activity import (
     WEIGHTS_ACTIVITY_TYPES,
     ActivityPeriod,
+    EnergyBalanceBucket,
     MonthRollup,
     TopLift,
     TypeBreakdown,
@@ -348,6 +349,165 @@ def months_in_year(rows: list[dict], year: int) -> list[MonthRollup]:
         )
         for month in range(1, 13)
     ]
+
+
+# ---------------------------------------------------------------------------
+# Energy-balance math (pure; no DB)
+# ---------------------------------------------------------------------------
+
+
+def _weight_endpoints(
+    readings: list[tuple[DateValue, float]],
+    start: DateValue,
+    end: DateValue,
+) -> tuple[tuple[DateValue, float] | None, tuple[DateValue, float] | None]:
+    """Find the nearest weight readings to each boundary of a bucket.
+
+    ``w_start`` is chosen from readings whose date falls in ``[start - 7d, end]``,
+    picking the one closest to ``start``; ties break to the earlier date.
+    ``w_end`` is chosen from readings whose date falls in ``[start, end + 7d]``,
+    picking the one closest to ``end``; ties break to the later date.
+
+    **Args:**
+    - readings (list[tuple[date, float]]): All weight readings as ``(date, weight_lb)``
+      pairs, in any order.
+    - start (date): Inclusive start of the bucket.
+    - end (date): Inclusive end of the bucket.
+
+    **Returns:**
+    - tuple[tuple[date, float] | None, tuple[date, float] | None]: ``(w_start, w_end)``
+      where each is ``(date, weight_lb)`` or ``None`` when no eligible reading exists.
+
+    **Raises:**
+    - Nothing. Returns ``(None, None)`` when the readings list is empty.
+    """
+    seven = TimeDeltaValue(days=7)
+
+    start_candidates = [r for r in readings if start - seven <= r[0] <= end]
+    end_candidates = [r for r in readings if start <= r[0] <= end + seven]
+
+    w_start: tuple[DateValue, float] | None = None
+    if start_candidates:
+        # Closest to start; ties → earlier date (ascending by date = natural min).
+        w_start = min(start_candidates, key=lambda r: (abs((r[0] - start).days), r[0]))
+
+    w_end: tuple[DateValue, float] | None = None
+    if end_candidates:
+        # Closest to end; ties → later date (negate ordinal so later comes first).
+        w_end = min(
+            end_candidates,
+            key=lambda r: (abs((r[0] - end).days), -r[0].toordinal()),
+        )
+
+    return w_start, w_end
+
+
+def energy_balance(
+    buckets: list[tuple[DateValue, DateValue, str]],
+    intake_by_day: dict[DateValue, int],
+    cardio_by_day: dict[DateValue, float],
+    weight_readings: list[tuple[DateValue, float]],
+) -> list[EnergyBalanceBucket]:
+    """Combine per-day nutrition, cardio, and weight readings into per-bucket energy-balance
+    figures.
+
+    For each bucket ``(start, end, label)`` the function computes:
+
+    - **intake_cal_per_day**: average daily calories across days with a logged entry
+      in ``[start, end]``; ``None`` if no days were logged.
+    - **cardio_cal_total**: sum of active-calorie entries from ``cardio_by_day`` whose
+      date falls in ``[start, end]``; ``0.0`` when none exist.
+    - **weight endpoints** via :func:`_weight_endpoints`: the reading closest to
+      ``start`` (window ``[start - 7d, end]``) and the reading closest to ``end``
+      (window ``[start, end + 7d]``).  If either is absent, or both share the same
+      date, all weight and maintenance fields are ``None``.
+    - **weight_delta_lb**: ``w_end.weight - w_start.weight``.
+    - **weight_span_days**: ``max(1, (w_end.date - w_start.date).days)``.
+    - **est_maintenance_per_day**: ``intake_cal_per_day - (weight_delta_lb * 3500 /
+      weight_span_days)``; ``None`` when either ``intake_cal_per_day`` or
+      ``weight_delta_lb`` is ``None``.
+
+    This function is pure: it performs no DB access or I/O. All inputs must be
+    pre-fetched by the caller.
+
+    **Args:**
+    - buckets (list[tuple[date, date, str]]): Sequence of ``(start, end, label)`` tuples
+      defining the time windows to evaluate.
+    - intake_by_day (dict[date, int]): Calories logged per day (only days that have an
+      entry are present; missing dates mean no log that day).
+    - cardio_by_day (dict[date, float]): Summed cardio active-calories per day; only
+      days with cardio contributions are present.
+    - weight_readings (list[tuple[date, float]]): Weight readings as ``(date, weight_lb)``
+      pairs, in any order.
+
+    **Returns:**
+    - list[EnergyBalanceBucket]: One ``EnergyBalanceBucket`` per input bucket, in the
+      same order as ``buckets``.
+
+    **Raises:**
+    - Nothing. Absent data yields ``None`` / ``0.0`` per field rather than an exception.
+    """
+    results: list[EnergyBalanceBucket] = []
+
+    for start, end, label in buckets:
+        # --- Intake ---
+        logged_days = [d for d in intake_by_day if start <= d <= end]
+        intake_cal_per_day: float | None
+        if logged_days:
+            intake_cal_per_day = sum(intake_by_day[d] for d in logged_days) / len(logged_days)
+        else:
+            intake_cal_per_day = None
+
+        # --- Cardio ---
+        cardio_cal_total = sum(
+            (cardio_by_day[d] for d in cardio_by_day if start <= d <= end),
+            0.0,
+        )
+
+        # --- Weight endpoints ---
+        w_start, w_end = _weight_endpoints(weight_readings, start, end)
+
+        weight_start: float | None
+        weight_end: float | None
+        weight_delta_lb: float | None
+        weight_span_days: int | None
+
+        if w_start is None or w_end is None or w_start[0] == w_end[0]:
+            weight_start = None
+            weight_end = None
+            weight_delta_lb = None
+            weight_span_days = None
+        else:
+            weight_start = w_start[1]
+            weight_end = w_end[1]
+            weight_delta_lb = w_end[1] - w_start[1]
+            weight_span_days = max(1, (w_end[0] - w_start[0]).days)
+
+        # --- Estimated maintenance ---
+        est_maintenance_per_day: float | None
+        if weight_delta_lb is None or intake_cal_per_day is None:
+            est_maintenance_per_day = None
+        else:
+            est_maintenance_per_day = intake_cal_per_day - (
+                weight_delta_lb * 3500 / weight_span_days  # type: ignore[operator]
+            )
+
+        results.append(
+            EnergyBalanceBucket(
+                bucket_start=start,
+                bucket_end=end,
+                label=label,
+                intake_cal_per_day=intake_cal_per_day,
+                cardio_cal_total=cardio_cal_total,
+                weight_start=weight_start,
+                weight_end=weight_end,
+                weight_delta_lb=weight_delta_lb,
+                weight_span_days=weight_span_days,
+                est_maintenance_per_day=est_maintenance_per_day,
+            )
+        )
+
+    return results
 
 
 def days_in_week(

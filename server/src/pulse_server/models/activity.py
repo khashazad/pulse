@@ -240,3 +240,39 @@ class ActivityTypesResponse(BaseModel):
     sorted by count descending."""
 
     types: list[ActivityTypeSetting]
+
+
+class EnergyBalanceBucket(BaseModel):
+    """Energy-balance figures for one time bucket.
+
+    Combines nutrition intake, cardio active-calories, and weight readings
+    into a per-bucket snapshot that supports maintenance-calorie estimation.
+    All numeric fields are ``float`` so Pydantic coerces ``Decimal`` DB values
+    when rows are mapped here. Fields are ``None`` when the underlying data is
+    absent for that bucket (e.g. no logged intake days, or insufficient weight
+    readings to compute a span).
+    """
+
+    bucket_start: DateValue
+    """Inclusive start date of the bucket."""
+    bucket_end: DateValue
+    """Inclusive end date of the bucket."""
+    label: str
+    """Human-readable label for the bucket (e.g. 'Week 1', 'June 2026')."""
+    intake_cal_per_day: float | None
+    """Average daily calorie intake across logged days in this bucket; None if no days logged."""
+    cardio_cal_total: float
+    """Sum of cardio active-calories for every day in this bucket; 0.0 when none."""
+    weight_start: float | None
+    """Weight (lbs) of the reading nearest to bucket_start within the +-7-day window;
+    None if absent."""
+    weight_end: float | None
+    """Weight (lbs) of the reading nearest to bucket_end within the +-7-day window;
+    None if absent."""
+    weight_delta_lb: float | None
+    """weight_end - weight_start; None when either endpoint is absent or both share the same
+    date."""
+    weight_span_days: int | None
+    """Calendar days between the two weight readings (min 1); None when delta is None."""
+    est_maintenance_per_day: float | None
+    """Estimated maintenance calories per day; None when intake or weight delta is unavailable."""

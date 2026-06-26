@@ -4,11 +4,14 @@ from __future__ import annotations
 
 from datetime import date
 
+import pytest
+
 from pulse_server.services.activity_summary import (
     breakdown_label,
     bucket_volume,
     compute_top_lifts,
     days_in_week,
+    energy_balance,
     est_one_rep_max,
     months_in_year,
     pct_change,
@@ -223,3 +226,114 @@ def test_days_in_week_returns_seven_days_with_counts() -> None:
 
     # Other days: 0 workouts.
     assert all(days[i]["workout_count"] == 0 for i in range(1, 7) if i != 3)
+
+
+# ---------------------------------------------------------------------------
+# energy_balance
+# ---------------------------------------------------------------------------
+
+
+def test_energy_balance_full_bucket() -> None:
+    """Full data bucket: hand-verify intake avg, cardio sum, weight endpoints, maintenance.
+
+    Bucket: 2026-06-01 → 2026-06-07.
+    - 3 logged days (2000 + 2200 + 1800 = 6000 kcal); intake_cal_per_day = 2000.0
+    - 2 cardio days: 300 + 250 = 550.0 kcal total
+    - weight_start = 180.0 (Jun 1, dist 0); weight_end = 178.0 (Jun 7, dist 0)
+    - weight_delta_lb = -2.0; weight_span_days = 6
+    - est_maintenance_per_day = 2000.0 - (-2.0 * 3500 / 6) ≈ 3166.667
+    """
+    bucket = (date(2026, 6, 1), date(2026, 6, 7), "Week 1")
+    intake = {date(2026, 6, 1): 2000, date(2026, 6, 2): 2200, date(2026, 6, 3): 1800}
+    cardio = {date(2026, 6, 1): 300.0, date(2026, 6, 4): 250.0}
+    weights = [(date(2026, 6, 1), 180.0), (date(2026, 6, 7), 178.0)]
+
+    result = energy_balance([bucket], intake, cardio, weights)
+    assert len(result) == 1
+    b = result[0]
+
+    assert b.bucket_start == date(2026, 6, 1)
+    assert b.bucket_end == date(2026, 6, 7)
+    assert b.label == "Week 1"
+    assert b.intake_cal_per_day == pytest.approx(2000.0)
+    assert b.cardio_cal_total == pytest.approx(550.0)
+    assert b.weight_start == pytest.approx(180.0)
+    assert b.weight_end == pytest.approx(178.0)
+    assert b.weight_delta_lb == pytest.approx(-2.0)
+    assert b.weight_span_days == 6
+    expected_maintenance = 2000.0 - (-2.0 * 3500 / 6)
+    assert b.est_maintenance_per_day == pytest.approx(expected_maintenance)
+
+
+def test_energy_balance_weight_readings_outside_bucket_within_fallback() -> None:
+    """Weight readings outside the bucket but within ±7 days are used; span from their dates.
+
+    Bucket: 2026-06-10 → 2026-06-16.
+    - Jun 4 reading (181.0): 6 days before start, within the start-7d=Jun 3 lower bound → used as w_start.
+    - Jun 20 reading (179.0): 4 days after end, within the end+7d=Jun 23 upper bound → used as w_end.
+    - weight_span_days = (Jun 20 - Jun 4).days = 16
+    """
+    bucket = (date(2026, 6, 10), date(2026, 6, 16), "Week 2")
+    intake = {date(2026, 6, 11): 2100, date(2026, 6, 12): 1900}
+    cardio: dict[date, float] = {}
+    weights = [(date(2026, 6, 4), 181.0), (date(2026, 6, 20), 179.0)]
+
+    result = energy_balance([bucket], intake, cardio, weights)
+    b = result[0]
+
+    assert b.weight_start == pytest.approx(181.0)
+    assert b.weight_end == pytest.approx(179.0)
+    assert b.weight_delta_lb == pytest.approx(-2.0)
+    assert b.weight_span_days == 16
+    assert b.est_maintenance_per_day is not None
+
+
+def test_energy_balance_single_weight_reading_yields_none_weight_fields() -> None:
+    """A single weight reading (same date for w_start and w_end) → weight + maintenance all None."""
+    bucket = (date(2026, 6, 10), date(2026, 6, 16), "Week 2")
+    intake = {date(2026, 6, 12): 2000}
+    cardio = {date(2026, 6, 12): 300.0}
+    weights = [(date(2026, 6, 12), 180.0)]
+
+    result = energy_balance([bucket], intake, cardio, weights)
+    b = result[0]
+
+    assert b.weight_start is None
+    assert b.weight_end is None
+    assert b.weight_delta_lb is None
+    assert b.weight_span_days is None
+    assert b.est_maintenance_per_day is None
+    # Intake and cardio are still computed.
+    assert b.intake_cal_per_day == pytest.approx(2000.0)
+    assert b.cardio_cal_total == pytest.approx(300.0)
+
+
+def test_energy_balance_no_logged_intake() -> None:
+    """No intake logged → intake_cal_per_day and est_maintenance_per_day are None; cardio still sums."""
+    bucket = (date(2026, 6, 1), date(2026, 6, 7), "Week 1")
+    intake: dict[date, int] = {}
+    cardio = {date(2026, 6, 1): 300.0, date(2026, 6, 2): 200.0}
+    weights = [(date(2026, 6, 1), 180.0), (date(2026, 6, 7), 178.0)]
+
+    result = energy_balance([bucket], intake, cardio, weights)
+    b = result[0]
+
+    assert b.intake_cal_per_day is None
+    assert b.est_maintenance_per_day is None
+    assert b.cardio_cal_total == pytest.approx(500.0)
+
+
+def test_energy_balance_zero_data() -> None:
+    """No data at all → intake/weight/maintenance None; cardio is 0.0."""
+    bucket = (date(2026, 6, 1), date(2026, 6, 7), "Week 1")
+
+    result = energy_balance([bucket], {}, {}, [])
+    b = result[0]
+
+    assert b.intake_cal_per_day is None
+    assert b.cardio_cal_total == 0.0
+    assert b.weight_start is None
+    assert b.weight_end is None
+    assert b.weight_delta_lb is None
+    assert b.weight_span_days is None
+    assert b.est_maintenance_per_day is None
