@@ -84,46 +84,6 @@ def previous_bounds(period: ActivityPeriod, anchor: DateValue) -> tuple[DateValu
     return period_bounds(period, start - TimeDeltaValue(days=1))
 
 
-def rollup_by_type(rows: list[dict], top_n: int = 5) -> list[TypeBreakdown]:
-    """Aggregate duration by ``activity_type``, keep top N, bucket the rest as Other.
-
-    **Inputs:**
-    - rows (list[dict]): Rows with ``activity_type`` and ``duration_min`` keys.
-    - top_n (int): Number of named types to keep before bucketing.
-
-    **Outputs:**
-    - list[TypeBreakdown]: Sorted desc by duration, each with its share (0..1) of
-      total duration; a trailing ``Other`` slice when more than ``top_n`` types.
-    """
-    agg: dict[str, dict[str, float]] = {}
-    for r in rows:
-        a = agg.setdefault(r["activity_type"], {"duration": 0.0, "count": 0.0})
-        a["duration"] += float(r["duration_min"] or 0)
-        a["count"] += 1
-    total = sum(a["duration"] for a in agg.values()) or 1.0
-    ordered = sorted(agg.items(), key=lambda kv: kv[1]["duration"], reverse=True)
-    out: list[TypeBreakdown] = []
-    for name, a in ordered[:top_n]:
-        out.append(
-            TypeBreakdown(
-                activity_type=name,
-                count=int(a["count"]),
-                duration_min=a["duration"],
-                share=a["duration"] / total,
-            )
-        )
-    rest = ordered[top_n:]
-    if rest:
-        dur = sum(a["duration"] for _, a in rest)
-        count = sum(a["count"] for _, a in rest)
-        out.append(
-            TypeBreakdown(
-                activity_type="Other", count=int(count), duration_min=dur, share=dur / total
-            )
-        )
-    return out
-
-
 def rollup_by_group(
     rows: list[dict], weights_types: set[str] | frozenset[str]
 ) -> list[GroupBreakdown]:

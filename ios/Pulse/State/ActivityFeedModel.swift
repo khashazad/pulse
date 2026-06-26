@@ -1,7 +1,8 @@
 import Foundation
 
 /// Feed view model: paginates the workout feed, groups loaded workouts into
-/// week sections, applies an optional type filter, and loads the week summary strip.
+/// week sections, applies an optional two-level group→subtype filter, and loads
+/// the week summary strip.
 @Observable
 final class ActivityFeedModel {
     /// One Mon–Sun group of workouts, newest workout first.

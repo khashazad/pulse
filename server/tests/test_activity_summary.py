@@ -11,7 +11,6 @@ from pulse_server.services.activity_summary import (
     pct_change,
     period_bounds,
     rollup_by_group,
-    rollup_by_type,
 )
 
 
@@ -43,15 +42,6 @@ def test_week_bounds_monday_to_sunday() -> None:
     """A week period spans Monday..Sunday containing the anchor."""
     start, end = period_bounds("week", date(2026, 6, 24))  # a Wednesday
     assert start == date(2026, 6, 22) and end == date(2026, 6, 28)
-
-
-def test_rollup_caps_to_top_n_with_other() -> None:
-    """rollup_by_type keeps the top N by duration and buckets the rest as Other."""
-    rows = [{"activity_type": f"T{i}", "duration_min": float(10 - i)} for i in range(7)]
-    out = rollup_by_type(rows, top_n=5)
-    assert len(out) == 6  # 5 + Other
-    assert out[-1].activity_type == "Other"
-    assert round(sum(t.share for t in out), 5) == 1.0
 
 
 def test_top_lifts_flags_pr_against_history() -> None:
