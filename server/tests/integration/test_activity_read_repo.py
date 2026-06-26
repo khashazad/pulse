@@ -318,6 +318,128 @@ async def test_workouts_in_range_timezone_bucketing(session) -> None:
     assert len(rows_jun22) == 0, "workout should not appear on June 22 Toronto"
 
 
+async def test_distinct_activity_types_returns_counts_descending(session) -> None:
+    """distinct_activity_types returns rows ordered by count DESC then activity_type ASC.
+
+    Seeds 2 Running and 1 TraditionalStrengthTraining workouts and asserts the
+    returned list has Running first (higher count) followed by
+    TraditionalStrengthTraining.
+
+    Args:
+        session: Async SQLAlchemy session with a clean activity-table slate.
+
+    Returns:
+        None
+
+    Raises:
+        AssertionError: If order or count values are incorrect.
+    """
+    for i, atype in enumerate(["Running", "Running", "TraditionalStrengthTraining"]):
+        await session.execute(
+            insert(apple_workouts).values(
+                id=uuid4(),
+                user_key=UK,
+                activity_type=atype,
+                start_time=T0 - timedelta(hours=i),
+                end_time=T0 - timedelta(hours=i) + timedelta(minutes=30),
+            )
+        )
+    await session.commit()
+
+    repo = ActivityReadRepository(session)
+    rows = await repo.distinct_activity_types(UK)
+    assert rows == [
+        {"activity_type": "Running", "count": 2},
+        {"activity_type": "TraditionalStrengthTraining", "count": 1},
+    ]
+
+
+async def test_set_cardio_override_then_cardio_overrides_reflects_value(session) -> None:
+    """set_cardio_override writes a row; cardio_overrides reads it back correctly.
+
+    Args:
+        session: Async SQLAlchemy session with a clean activity-table slate.
+
+    Returns:
+        None
+
+    Raises:
+        AssertionError: If cardio_overrides does not reflect the written value.
+    """
+    await session.execute(activity_type_settings.delete())
+    await session.commit()
+
+    repo = ActivityReadRepository(session)
+    await repo.set_cardio_override(UK, "Running", True)
+    await session.commit()
+
+    result = await repo.cardio_overrides(UK)
+    assert result == {"Running": True}
+
+
+async def test_set_cardio_override_upserts_not_duplicates(session) -> None:
+    """A second set_cardio_override on the same (user, type) updates in-place.
+
+    Asserts that the row count stays at 1, is_cardio is replaced, and
+    updated_at does not regress after the second call.
+
+    Args:
+        session: Async SQLAlchemy session with a clean activity-table slate.
+
+    Returns:
+        None
+
+    Raises:
+        AssertionError: If the upsert duplicates the row, fails to flip is_cardio,
+            or regresses updated_at.
+    """
+    import asyncio
+
+    await session.execute(activity_type_settings.delete())
+    await session.commit()
+
+    repo = ActivityReadRepository(session)
+    await repo.set_cardio_override(UK, "Running", True)
+    await session.commit()
+
+    first_row = (
+        (
+            await session.execute(
+                select(activity_type_settings).where(
+                    activity_type_settings.c.user_key == UK,
+                    activity_type_settings.c.activity_type == "Running",
+                )
+            )
+        )
+        .mappings()
+        .one()
+    )
+    first_updated_at = first_row["updated_at"]
+
+    await asyncio.sleep(0.05)
+
+    await repo.set_cardio_override(UK, "Running", False)
+    await session.commit()
+
+    overrides = await repo.cardio_overrides(UK)
+    assert len(overrides) == 1, "upsert must not duplicate the row"
+    assert overrides["Running"] is False, "is_cardio must be replaced by the second call"
+
+    second_row = (
+        (
+            await session.execute(
+                select(activity_type_settings).where(
+                    activity_type_settings.c.user_key == UK,
+                    activity_type_settings.c.activity_type == "Running",
+                )
+            )
+        )
+        .mappings()
+        .one()
+    )
+    assert second_row["updated_at"] >= first_updated_at, "updated_at must not regress after upsert"
+
+
 async def test_activity_type_settings_round_trip_and_upsert(session) -> None:
     """Insert a row into activity_type_settings, read it back, then upsert to flip is_cardio.
 

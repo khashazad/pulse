@@ -13,10 +13,16 @@ from typing import Any
 from uuid import UUID
 
 from sqlalchemy import Date, and_, cast, func, or_, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pulse_server.models.activity import WEIGHTS_ACTIVITY_TYPES
-from pulse_server.repositories.tables import apple_workouts, strength_sets, strength_workouts
+from pulse_server.repositories.tables import (
+    activity_type_settings,
+    apple_workouts,
+    strength_sets,
+    strength_workouts,
+)
 
 
 class ActivityReadRepository:
@@ -197,6 +203,88 @@ class ActivityReadRepository:
         )
         result = await self._session.execute(stmt)
         return [dict(r) for r in result.mappings()]
+
+    async def distinct_activity_types(self, user_key: str) -> list[dict]:
+        """Return distinct activity types for a user with their workout counts.
+
+        Queries ``apple_workouts`` grouped by ``activity_type``, ordered by
+        ``count`` descending then ``activity_type`` ascending so the most-frequent
+        types appear first.
+
+        Args:
+            user_key (str): Owning user's scoping key.
+
+        Returns:
+            list[dict]: Each dict contains ``activity_type`` (str) and ``count``
+                (int), ordered by count DESC, activity_type ASC.
+
+        Raises:
+            sqlalchemy.exc.SQLAlchemyError: On any database execution failure.
+        """
+        stmt = (
+            select(
+                apple_workouts.c.activity_type,
+                func.count().label("count"),
+            )
+            .where(apple_workouts.c.user_key == user_key)
+            .group_by(apple_workouts.c.activity_type)
+            .order_by(func.count().desc(), apple_workouts.c.activity_type.asc())
+        )
+        result = await self._session.execute(stmt)
+        return [
+            {"activity_type": row["activity_type"], "count": int(row["count"])}
+            for row in result.mappings()
+        ]
+
+    async def cardio_overrides(self, user_key: str) -> dict[str, bool]:
+        """Return the cardio flag for every activity type the user has configured.
+
+        Args:
+            user_key (str): Owning user's scoping key.
+
+        Returns:
+            dict[str, bool]: Mapping of ``activity_type`` to ``is_cardio`` for all
+                rows in ``activity_type_settings`` belonging to the user.
+
+        Raises:
+            sqlalchemy.exc.SQLAlchemyError: On any database execution failure.
+        """
+        stmt = select(
+            activity_type_settings.c.activity_type,
+            activity_type_settings.c.is_cardio,
+        ).where(activity_type_settings.c.user_key == user_key)
+        result = await self._session.execute(stmt)
+        return {row["activity_type"]: row["is_cardio"] for row in result.mappings()}
+
+    async def set_cardio_override(self, user_key: str, activity_type: str, is_cardio: bool) -> None:
+        """Upsert the cardio flag for one activity type.
+
+        Inserts a new row or, when ``(user_key, activity_type)`` already exists,
+        updates the existing row.  ``updated_at`` is explicitly included in the
+        ``set_`` clause so that subsequent flips advance the timestamp — the column
+        carries ``DEFAULT now()`` which fires only on INSERT and would otherwise
+        freeze on every subsequent update.
+
+        Args:
+            user_key (str): Owning user's scoping key.
+            activity_type (str): The Apple Health activity type name.
+            is_cardio (bool): Whether this activity type should be treated as cardio.
+
+        Returns:
+            None
+
+        Raises:
+            sqlalchemy.exc.SQLAlchemyError: On any database execution failure.
+        """
+        stmt = (
+            pg_insert(activity_type_settings)
+            .values(user_key=user_key, activity_type=activity_type, is_cardio=is_cardio)
+            .on_conflict_do_update(
+                index_elements=["user_key", "activity_type"],
+                set_={"is_cardio": is_cardio, "updated_at": func.now()},
+            )
+        )
+        await self._session.execute(stmt)
 
     async def strength_history(
         self,
