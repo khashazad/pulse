@@ -42,4 +42,43 @@ extension PulseClient {
         let url = try http.makeURL(path: "/activity/summary", query: query)
         return try await fetch(url: url)
     }
+
+    /// Fetch the list of all activity types with their current cardio classification
+    /// and workout count (`GET /activity/types`).
+    /// - Returns: An `ActivityTypesResponse` containing every distinct activity type
+    ///   found in imported workouts.
+    /// - Throws: `PulseError` on transport, auth, or decoding failure.
+    func activityTypes() async throws -> ActivityTypesResponse {
+        let url = try http.makeURL(path: "/activity/types", query: [])
+        return try await fetch(url: url)
+    }
+
+    /// Update the cardio classification for one activity type
+    /// (`PUT /activity/types/{activityType}`).
+    /// The path segment is percent-encoded so types that contain spaces or
+    /// special characters round-trip safely, even though current types are
+    /// bare camelCase strings like "Running".
+    /// - Parameters:
+    ///   - activityType: The raw `activity_type` string to update (e.g. `"Running"`).
+    ///   - isCardio: Whether this type should be classified as cardio.
+    /// - Returns: The updated `ActivityTypeSetting` as persisted by the server.
+    /// - Throws: `PulseError.notFound` when the type does not exist; other
+    ///   `PulseError` on transport, auth, or decoding failure.
+    func setActivityTypeCardio(_ activityType: String, isCardio: Bool) async throws -> ActivityTypeSetting {
+        let encoded = activityType.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? activityType
+        let url = try http.makeURL(path: "/activity/types/\(encoded)", query: [])
+        let body = try JSONEncoder.pulseDefault().encode(SetActivityTypeCardioRequest(isCardio: isCardio))
+        return try await sendJSON(url: url, method: "PUT", body: body)
+    }
+}
+
+// MARK: - Private request bodies
+
+/// Request body for `PUT /activity/types/{activity_type}`.
+private struct SetActivityTypeCardioRequest: Encodable {
+    /// Whether the type should be classified as cardio.
+    let isCardio: Bool
+    enum CodingKeys: String, CodingKey {
+        case isCardio = "is_cardio"
+    }
 }

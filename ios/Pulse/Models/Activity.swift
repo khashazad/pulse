@@ -254,6 +254,38 @@ struct TopLift: Codable, Identifiable, Hashable {
     }
 }
 
+/// One activity type's cardio classification, count, and display name.
+/// Used both in the `GET /activity/types` list response and as the return
+/// value of `PUT /activity/types/{activity_type}`.
+struct ActivityTypeSetting: Codable, Identifiable, Hashable {
+    /// The raw activity type string as stored in `apple_workouts.activity_type`.
+    let activityType: String
+    /// Human-readable label for the type (e.g. "Traditional Strength Training").
+    let displayName: String
+    /// Total number of imported workouts with this activity type.
+    let count: Int
+    /// Whether this type is classified as cardio for summary grouping.
+    let isCardio: Bool
+
+    /// Stable identity for `ForEach`/`Identifiable`; mirrors `activityType`.
+    /// - Returns: The raw `activityType` string.
+    var id: String { activityType }
+
+    enum CodingKeys: String, CodingKey {
+        case activityType = "activity_type"
+        case displayName = "display_name"
+        case count
+        case isCardio = "is_cardio"
+    }
+}
+
+/// Envelope returned by `GET /activity/types`.
+struct ActivityTypesResponse: Codable {
+    /// All activity types found in the imported workouts, with their
+    /// current `is_cardio` setting and workout count.
+    let types: [ActivityTypeSetting]
+}
+
 /// Week/month/year trend summary powering the Trends screen and feed strip.
 struct ActivitySummary: Codable, Hashable {
     let period: String

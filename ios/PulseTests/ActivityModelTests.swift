@@ -49,4 +49,29 @@ final class ActivityModelTests: XCTestCase {
         XCTAssertEqual(s.topLifts[0].bestReps, 6)
         XCTAssertTrue(s.topLifts[0].isPr)
     }
+
+    /// Verifies `ActivityTypesResponse` decodes from the `activity_types` fixture,
+    /// mapping `activity_type`, `display_name`, `count`, and `is_cardio` correctly,
+    /// and that `id` equals `activityType` for each entry.
+    func testDecodeActivityTypes() throws {
+        let response = try JSONDecoder.pulseDefault().decode(
+            ActivityTypesResponse.self,
+            from: loadFixture("activity_types")
+        )
+        XCTAssertEqual(response.types.count, 2)
+
+        let running = response.types[0]
+        XCTAssertEqual(running.activityType, "Running")
+        XCTAssertEqual(running.displayName, "Running")
+        XCTAssertEqual(running.count, 12)
+        XCTAssertTrue(running.isCardio)
+        XCTAssertEqual(running.id, running.activityType)
+
+        let strength = response.types[1]
+        XCTAssertEqual(strength.activityType, "TraditionalStrengthTraining")
+        XCTAssertEqual(strength.displayName, "Traditional Strength Training")
+        XCTAssertEqual(strength.count, 34)
+        XCTAssertFalse(strength.isCardio)
+        XCTAssertEqual(strength.id, strength.activityType)
+    }
 }

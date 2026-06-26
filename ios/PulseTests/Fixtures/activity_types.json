@@ -1,0 +1,16 @@
+{
+  "types": [
+    {
+      "activity_type": "Running",
+      "display_name": "Running",
+      "count": 12,
+      "is_cardio": true
+    },
+    {
+      "activity_type": "TraditionalStrengthTraining",
+      "display_name": "Traditional Strength Training",
+      "count": 34,
+      "is_cardio": false
+    }
+  ]
+}

@@ -134,4 +134,73 @@ final class ActivityClientTests: XCTestCase {
             XCTAssertEqual(error, .notFound)
         }
     }
+
+    /// Verifies `activityTypes()` sends a GET to `/activity/types` with the
+    /// bearer header and decodes the `ActivityTypesResponse` correctly.
+    func testActivityTypesSendsGetAndDecodes() async throws {
+        let json = try loadFixture("activity_types")
+        var captured: URLRequest?
+        let client = makeClient { req in
+            captured = req
+            return (HTTPURLResponse(url: req.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, json)
+        }
+        let response = try await client.activityTypes()
+        XCTAssertEqual(captured?.url?.path, "/activity/types")
+        XCTAssertEqual(captured?.httpMethod ?? "GET", "GET")
+        XCTAssertEqual(captured?.value(forHTTPHeaderField: "Authorization"), "Bearer session-k")
+        XCTAssertEqual(response.types.count, 2)
+        XCTAssertEqual(response.types[0].activityType, "Running")
+        XCTAssertTrue(response.types[0].isCardio)
+        XCTAssertEqual(response.types[1].activityType, "TraditionalStrengthTraining")
+        XCTAssertFalse(response.types[1].isCardio)
+    }
+
+    /// Verifies `setActivityTypeCardio(_:isCardio:)` sends a PUT to
+    /// `/activity/types/<type>`, encodes `{"is_cardio": false}` in the body,
+    /// and decodes the returned `ActivityTypeSetting`.
+    func testSetActivityTypeCardioSendsPutWithBody() async throws {
+        let settingJSON = Data("""
+        {
+          "activity_type": "TraditionalStrengthTraining",
+          "display_name": "Traditional Strength Training",
+          "count": 34,
+          "is_cardio": false
+        }
+        """.utf8)
+        var captured: URLRequest?
+        let stub = StubURLProtocol.makeSession { req in
+            captured = req
+            return (HTTPURLResponse(url: req.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, settingJSON)
+        }
+        activeStubs.append(stub)
+        let client = PulseClient(
+            baseURL: URL(string: "https://example.test")!,
+            sessionToken: "session-k",
+            session: stub.session
+        )
+        let result = try await client.setActivityTypeCardio("TraditionalStrengthTraining", isCardio: false)
+        XCTAssertEqual(captured?.httpMethod, "PUT")
+        XCTAssertEqual(captured?.url?.path, "/activity/types/TraditionalStrengthTraining")
+        XCTAssertEqual(captured?.value(forHTTPHeaderField: "Authorization"), "Bearer session-k")
+        let bodyData = try XCTUnwrap(stub.lastRequestBody)
+        let bodyJSON = try JSONSerialization.jsonObject(with: bodyData) as? [String: Any]
+        XCTAssertEqual(bodyJSON?["is_cardio"] as? Bool, false)
+        XCTAssertEqual(result.activityType, "TraditionalStrengthTraining")
+        XCTAssertFalse(result.isCardio)
+        XCTAssertEqual(result.count, 34)
+    }
+
+    /// Verifies `setActivityTypeCardio(_:isCardio:)` returns `PulseError.notFound`
+    /// when the server responds with 404 for an unknown activity type.
+    func testSetActivityTypeCardio404MapsToNotFound() async throws {
+        let client = makeClient { req in
+            (HTTPURLResponse(url: req.url!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data())
+        }
+        do {
+            _ = try await client.setActivityTypeCardio("Unknown", isCardio: true)
+            XCTFail("expected notFound")
+        } catch let error as PulseError {
+            XCTAssertEqual(error, .notFound)
+        }
+    }
 }
