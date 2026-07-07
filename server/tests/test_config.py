@@ -51,7 +51,9 @@ def _isolate_env(monkeypatch):
     monkeypatch.setenv("GOOGLE_CLIENT_SECRET", "secret")
     monkeypatch.setenv("OAUTH_REDIRECT_URI", "https://api.example.com/auth/google/callback")
     monkeypatch.setenv("APP_REDIRECT_SCHEME", "diettracker")
-    monkeypatch.setenv("ALLOWED_EMAILS", "khashzd@gmail.com,Other@Example.com")
+    # Single entry (mixed case, padded) — the single-user guard rejects >1 distinct
+    # email, and one entry still exercises the trim + lowercase parsing.
+    monkeypatch.setenv("ALLOWED_EMAILS", "  KhashZD@Gmail.com ")
     monkeypatch.setenv("LEGACY_USER_KEY", "khash")
     yield
 
@@ -81,12 +83,12 @@ def test_settings_loads_oauth_envs():
 
 
 def test_allowed_emails_set_lowercased():
-    """`allowed_emails_set` lowercases every entry parsed from the env var."""
+    """`allowed_emails_set` trims and lowercases the entry parsed from the env var."""
     from pulse_server import config as cfg
 
     cfg.get_settings.cache_clear()
     s = cfg.get_settings()
-    assert s.allowed_emails_set == {"khashzd@gmail.com", "other@example.com"}
+    assert s.allowed_emails_set == {"khashzd@gmail.com"}
 
 
 def test_redirect_uri_must_be_https_outside_local(monkeypatch):
@@ -386,3 +388,30 @@ def test_env_example_covers_every_settings_field() -> None:
     assert not missing, f".env.example is missing Settings fields: {sorted(missing)}"
     obsolete = declared - expected
     assert not obsolete, f".env.example declares unknown vars: {sorted(obsolete)}"
+
+
+def test_multiple_allowed_emails_rejected(monkeypatch):
+    """More than one distinct `ALLOWED_EMAILS` entry fails closed at load time.
+
+    `email_to_user_key` maps every authenticated email to `LEGACY_USER_KEY`, so
+    a second allowlisted email silently gains full access to all existing data.
+    Until real multi-user mapping exists, that misconfiguration must be a boot
+    error — in every environment, local included, because the hazard is
+    identical everywhere.
+    """
+    monkeypatch.setenv("ALLOWED_EMAILS", "khashzd@gmail.com,other@example.com")
+    from pulse_server import config as cfg
+
+    cfg.get_settings.cache_clear()
+    with pytest.raises(ValueError, match="single user"):
+        cfg.get_settings()
+
+
+def test_duplicate_allowed_email_entries_accepted(monkeypatch):
+    """Case/whitespace duplicates of one email collapse to a single entry and pass."""
+    monkeypatch.setenv("ALLOWED_EMAILS", "khashzd@gmail.com, KhashZD@Gmail.com ")
+    from pulse_server import config as cfg
+
+    cfg.get_settings.cache_clear()
+    s = cfg.get_settings()
+    assert s.allowed_emails_set == {"khashzd@gmail.com"}

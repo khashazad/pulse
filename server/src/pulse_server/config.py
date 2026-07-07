@@ -213,6 +213,34 @@ class Settings(BaseSettings):
         return self
 
     @model_validator(mode="after")
+    def _require_single_allowed_email(self) -> Settings:
+        """Refuse to boot when ``ALLOWED_EMAILS`` contains more than one distinct address.
+
+        ``email_to_user_key`` (auth/sessions.py) maps every authenticated email
+        to ``LEGACY_USER_KEY``, so a second allowlisted email — added
+        deliberately or by typo — silently gains full read/write access to all
+        existing data. Until real multi-user mapping lands this must be a boot
+        error; delete this validator in the same change that introduces a real
+        email→user_key mapping. Deliberately NOT gated on ``is_local_env``:
+        the hazard is identical in every environment.
+
+        **Outputs:**
+        - Settings: This instance, unchanged, when validation passes.
+
+        **Exceptions:**
+        - ValueError: Raised when ``ALLOWED_EMAILS`` parses to more than one
+          distinct (trimmed, lowercased) address.
+        """
+        if len(self.allowed_emails_set) > 1:
+            raise ValueError(
+                "ALLOWED_EMAILS contains more than one address, but the app is single user: "
+                "email_to_user_key maps every email to LEGACY_USER_KEY, so a second email "
+                "would silently share all existing data. Remove the extra entries, or "
+                "implement per-email user_key mapping (and delete this validator) first."
+            )
+        return self
+
+    @model_validator(mode="after")
     def _require_mcp_auth_outside_local(self) -> Settings:
         """Refuse to boot non-local deployments with an unauthenticated MCP layer.
 

@@ -27,7 +27,7 @@ FastAPI + Postgres backend. JSON HTTP API for the iOS client, plus an MCP endpoi
 Google OAuth → opaque Bearer session tokens.
 
 - `/auth/google/start` + `/auth/google/callback` run the handshake, issue a 32-byte URL-safe token, and store `sha256(token)` in the `sessions` table.
-- `SessionAuthMiddleware` validates `Authorization: Bearer <token>` on every non-`/auth/*`/`/health` request and slides the TTL once a session passes half its lifetime. The unauthenticated `/auth/google/*` routes are rate-limited per client IP. Allowlist: `ALLOWED_EMAILS` (case-insensitive).
+- `SessionAuthMiddleware` validates `Authorization: Bearer <token>` on every non-`/auth/*`/`/health` request and slides the TTL once a session passes half its lifetime. The unauthenticated `/auth/google/*` routes are rate-limited per client IP. Allowlist: `ALLOWED_EMAILS` (case-insensitive; exactly one address — boot refuses more until real multi-user mapping exists).
 - The Bearer session token is the only client auth path; the legacy `?user_key=` query parameter is not part of the auth surface and is ignored.
 - MCP has two auth paths: GitHub OAuth (`GITHUB_CLIENT_ID/SECRET` + `PUBLIC_BASE_URL`) for interactive clients, and a static service token (`MCP_SERVICE_TOKEN`, min 32 chars) for headless agents. Both can run together. `/mcp` is exempt from session auth; non-local startup refuses to boot unless GitHub OAuth, the service token, or `MCP_ALLOW_UNAUTH=true` is configured.
 
@@ -66,7 +66,7 @@ Dockerized; Railway-targeted (`server/railway.json`, healthcheck `/health`). The
 
 ## iOS
 
-SwiftUI iOS 17+ client. Auth is Google sign-in → opaque Bearer session token (stored in Keychain); the base URL is configured in Settings. Dark only, Catppuccin Macchiato palette.
+SwiftUI iOS 17+ client. Auth is Google sign-in → opaque Bearer session token (stored in Keychain); the base URL is baked in at build time from `PULSE_BASE_URL` (Settings only displays it). Dark only, Catppuccin Macchiato palette.
 
 ### Tabs
 
