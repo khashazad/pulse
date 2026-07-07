@@ -353,6 +353,10 @@ async def build_summary(
     repo = ActivityReadRepository(session)
     cur = await repo.workouts_in_range(user_key, start, end, tz=tz)
     prev = await repo.workouts_in_range(user_key, p_start, p_end, tz=tz)
+    # Deliberately unbounded: compute_top_lifts needs every set before the
+    # period to decide is_pr against the ALL-TIME best — a date window here
+    # would silently redefine PRs as "best of the window". If this fetch ever
+    # gets slow, move the prior-best rollup into SQL; don't bound the range.
     history = await repo.strength_history(user_key, end, tz=tz)
     cur_t, prev_t = _totals(cur), _totals(prev)
     deltas = ActivityDeltas(
@@ -476,16 +480,12 @@ def _display_name(activity_type: str) -> str:
     ``"Traditional Strength Training"``. Single-word types (e.g. ``"Running"``)
     are returned unchanged.
 
-    Args:
-        activity_type (str): The bare Apple Health activity type string
-            (e.g. ``"TraditionalStrengthTraining"``).
+    **Inputs:**
+    - activity_type (str): The bare Apple Health activity type string
+      (e.g. ``"TraditionalStrengthTraining"``).
 
-    Returns:
-        str: The space-separated display label (e.g.
-            ``"Traditional Strength Training"``).
-
-    Raises:
-        None
+    **Outputs:**
+    - str: The space-separated display label (e.g. ``"Traditional Strength Training"``).
     """
     return re.sub(r"(?<=[a-z])(?=[A-Z])", " ", activity_type)
 
@@ -501,17 +501,17 @@ async def list_activity_types(
     ``is_cardio`` flag via :func:`effective_is_cardio`, and returns the list
     sorted by count descending (the repository already returns it in that order).
 
-    Args:
-        session (AsyncSession): Active database session.
-        user_key (str): Owning user's scoping key.
+    **Inputs:**
+    - session (AsyncSession): Active database session.
+    - user_key (str): Owning user's scoping key.
 
-    Returns:
-        ActivityTypesResponse: List of :class:`ActivityTypeSetting` items,
-            each carrying the type string, a best-effort display name,
-            the workout count, and the resolved cardio flag.
+    **Outputs:**
+    - ActivityTypesResponse: List of :class:`ActivityTypeSetting` items, each
+      carrying the type string, a best-effort display name, the workout count,
+      and the resolved cardio flag.
 
-    Raises:
-        sqlalchemy.exc.SQLAlchemyError: On any database execution failure.
+    **Raises:**
+    - sqlalchemy.exc.SQLAlchemyError: On any database execution failure.
     """
     repo = ActivityReadRepository(session)
     types = await repo.distinct_activity_types(user_key)
@@ -540,20 +540,20 @@ async def set_activity_type_cardio(
     workout with that type) before writing the override. Raises HTTP 404 when
     the type is unknown so the router can propagate it without extra handling.
 
-    Args:
-        session (AsyncSession): Active database session.
-        user_key (str): Owning user's scoping key.
-        activity_type (str): The Apple Health activity type to update.
-        is_cardio (bool): The new cardio flag value.
+    **Inputs:**
+    - session (AsyncSession): Active database session.
+    - user_key (str): Owning user's scoping key.
+    - activity_type (str): The Apple Health activity type to update.
+    - is_cardio (bool): The new cardio flag value.
 
-    Returns:
-        ActivityTypeSetting: The updated setting reflecting the new ``is_cardio``
-            value, the type's current workout count, and its display name.
+    **Outputs:**
+    - ActivityTypeSetting: The updated setting reflecting the new ``is_cardio``
+      value, the type's current workout count, and its display name.
 
-    Raises:
-        fastapi.HTTPException: HTTP 404 when the activity type has no recorded
-            workouts for this user.
-        sqlalchemy.exc.SQLAlchemyError: On any database execution failure.
+    **Raises:**
+    - fastapi.HTTPException: HTTP 404 when the activity type has no recorded
+      workouts for this user.
+    - sqlalchemy.exc.SQLAlchemyError: On any database execution failure.
     """
     repo = ActivityReadRepository(session)
     types = await repo.distinct_activity_types(user_key)
