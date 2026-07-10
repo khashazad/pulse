@@ -34,6 +34,7 @@ def _assemble_daily_summary(
     summary_date: DateValue,
     target: MacroTargets | None,
     entries: list[FoodEntryResponse],
+    excluded: bool = False,
 ) -> DailySummaryResponse:
     """Build a ``DailySummaryResponse`` from a resolved target and entry list.
 
@@ -45,6 +46,9 @@ def _assemble_daily_summary(
     - summary_date (DateValue): The day the summary describes.
     - target (MacroTargets | None): Resolved target profile, or ``None``.
     - entries (list[FoodEntryResponse]): The day's food entries.
+    - excluded (bool): Whether the day is flagged to be ignored by stats
+      (defaults to ``False``); passed through untouched to the response so
+      clients can dim/skip it. Does not affect the day's own consumed totals.
 
     **Outputs:**
     - DailySummaryResponse: Target / consumed / remaining triplet plus entries.
@@ -61,6 +65,7 @@ def _assemble_daily_summary(
         consumed=consumed,
         remaining=remaining_macros(target, consumed) if target is not None else None,
         entries=entries,
+        excluded=excluded,
     )
 
 
@@ -106,7 +111,10 @@ async def build_daily_summary(
     entry_rows = await entries_repo.list_entries_by_daily_log_id(summary_daily_log_id)
     entries = [FoodEntryResponse(**row) for row in entry_rows]
     target = macro_targets_from_row(target_row) if target_row is not None else None
-    return _assemble_daily_summary(summary_date, target, entries)
+    excluded = summary_date in await entries_repo.excluded_dates(
+        user_key, summary_date, summary_date
+    )
+    return _assemble_daily_summary(summary_date, target, entries, excluded=excluded)
 
 
 async def build_range_summaries(
@@ -144,6 +152,7 @@ async def build_range_summaries(
 
     target_row = await targets_repo.get_target_profile(user_key)
     target = macro_targets_from_row(target_row) if target_row is not None else None
+    excluded = await entries_repo.excluded_dates(user_key, from_date, to_date)
 
     summaries: list[DailySummaryResponse] = []
     current = from_date
@@ -152,7 +161,9 @@ async def build_range_summaries(
             daily_log_id(user_key, current)
         )
         entries = [FoodEntryResponse(**row) for row in entry_rows]
-        summaries.append(_assemble_daily_summary(current, target, entries))
+        summaries.append(
+            _assemble_daily_summary(current, target, entries, excluded=current in excluded)
+        )
         current += timedelta(days=1)
     return summaries
 
@@ -189,5 +200,10 @@ async def daily_calorie_totals(
         user_key=user_key, from_date=from_date, to_date=to_date
     )
     return [
-        CaloriesDailyRow(log_date=row["log_date"], calories=int(row["calories"])) for row in rows
+        CaloriesDailyRow(
+            log_date=row["log_date"],
+            calories=int(row["calories"]),
+            excluded=bool(row["excluded"]),
+        )
+        for row in rows
     ]

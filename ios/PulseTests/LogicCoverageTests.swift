@@ -32,7 +32,8 @@ final class PeriodIntakeBucketTests: XCTestCase {
         return DailyLog(
             date: date, totalCalories: decoded.totalCalories,
             totalProteinG: decoded.totalProteinG, totalCarbsG: decoded.totalCarbsG,
-            totalFatG: decoded.totalFatG, entryCount: decoded.entryCount
+            totalFatG: decoded.totalFatG, entryCount: decoded.entryCount,
+            excluded: decoded.excluded
         )
     }
 

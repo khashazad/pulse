@@ -531,6 +531,11 @@
             "title": "Calories",
             "type": "integer"
           },
+          "excluded": {
+            "default": false,
+            "title": "Excluded",
+            "type": "boolean"
+          },
           "log_date": {
             "format": "date",
             "title": "Log Date",
@@ -1087,6 +1092,11 @@
             "title": "Entry Count",
             "type": "integer"
           },
+          "excluded": {
+            "default": false,
+            "title": "Excluded",
+            "type": "boolean"
+          },
           "total_calories": {
             "title": "Total Calories",
             "type": "integer"
@@ -1133,6 +1143,11 @@
             "title": "Entries",
             "type": "array"
           },
+          "excluded": {
+            "default": false,
+            "title": "Excluded",
+            "type": "boolean"
+          },
           "remaining": {
             "anyOf": [
               {
@@ -1162,6 +1177,20 @@
           "entries"
         ],
         "title": "DailySummaryResponse",
+        "type": "object"
+      },
+      "DayExclusionRequest": {
+        "description": "Request body for ``PUT /logs/{date}/excluded`` \u2014 the new flag value.",
+        "properties": {
+          "excluded": {
+            "title": "Excluded",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "excluded"
+        ],
+        "title": "DayExclusionRequest",
         "type": "object"
       },
       "DayGroup": {
@@ -5759,6 +5788,57 @@
           }
         },
         "summary": "List Logs"
+      }
+    },
+    "/logs/{log_date}/excluded": {
+      "put": {
+        "description": "Toggle the manual \"ignore this day from stats\" flag for one calendar date.\n\nUpserts the day's ``daily_logs`` row (so a never-logged day can still be\nexcluded), then returns the day's refreshed summary carrying the new\n``excluded`` value. Setting the flag never alters the day's own entries or\nconsumed totals \u2014 only whether aggregates skip it.\n\n**Inputs:**\n- request (Request): Active request providing ``user_key``.\n- log_date (date): Calendar date to toggle (path parameter).\n- body (DayExclusionRequest): New flag value (``{\"excluded\": bool}``).\n- session (AsyncSession): DB session dependency.\n\n**Outputs:**\n- DailySummaryResponse: The day's summary after the update, with\n  ``target``/``remaining`` populated and ``excluded`` reflecting the new\n  value. Mirrors the ``GET /summary`` contract (always-populated target).\n\n**Exceptions:**\n- HTTPException(404): Raised when no target profile exists for the user\n  (same contract as ``GET /summary``).\n- sqlalchemy.exc.SQLAlchemyError: Raised when the write or read fails.",
+        "operationId": "set_day_excluded_logs__log_date__excluded_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "log_date",
+            "required": true,
+            "schema": {
+              "format": "date",
+              "title": "Log Date",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DayExclusionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DailySummaryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Day Excluded"
       }
     },
     "/meals": {

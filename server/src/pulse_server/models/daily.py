@@ -33,12 +33,19 @@ class DailyLogSummary(BaseModel):
     total_carbs_g: float
     total_fat_g: float
     entry_count: int
+    excluded: bool = False
 
 
 class LogsListResponse(BaseModel):
     """Response body for ``GET /logs`` — wraps a series of daily summaries."""
 
     logs: list[DailyLogSummary]
+
+
+class DayExclusionRequest(BaseModel):
+    """Request body for ``PUT /logs/{date}/excluded`` — the new flag value."""
+
+    excluded: bool
 
 
 class DailySummaryResponse(BaseModel):
@@ -55,6 +62,7 @@ class DailySummaryResponse(BaseModel):
     consumed: MacroTotals
     remaining: MacroTotals | None
     entries: list[FoodEntryResponse]
+    excluded: bool = False
 
 
 class CaloriesDailyRow(BaseModel):
@@ -62,3 +70,4 @@ class CaloriesDailyRow(BaseModel):
 
     log_date: DateValue
     calories: int
+    excluded: bool = False

@@ -393,7 +393,9 @@ async def build_summary(
     # list_weight_range / daily_calorie_totals.
     if eb_buckets:
         intake_rows = await daily_calorie_totals(session, user_key, start, end)
-        intake_by_day = {row.log_date: row.calories for row in intake_rows}
+        # Days the user flagged "ignore from stats" drop out of the energy-balance
+        # fit so a forgotten/partial log day can't distort the calorie↔weight trend.
+        intake_by_day = {row.log_date: row.calories for row in intake_rows if not row.excluded}
         weight_rows = await list_weight_range(session, user_key, start, end)
         weight_readings = [(r.log_date, float(r.weight_lb)) for r in weight_rows]
         overrides = await repo.cardio_overrides(user_key)

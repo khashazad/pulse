@@ -40,6 +40,7 @@ from pulse_server.models.daily import (
     CaloriesDailyRow,
     DailyLogSummary,
     DailySummaryResponse,
+    DayExclusionRequest,
     LogsListResponse,
 )
 from pulse_server.models.entries import (
@@ -101,6 +102,7 @@ __all__ = [
     "CustomFoodUpdate",
     "DailyLogSummary",
     "DailySummaryResponse",
+    "DayExclusionRequest",
     "EntriesConfirmRequest",
     "EntriesConfirmResponse",
     "EntriesCreateRequest",

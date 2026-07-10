@@ -235,7 +235,7 @@ def test_summary_month_energy_balance_has_weekly_buckets(rest_client) -> None:
         }
     ]
     calorie_rows = [
-        types.SimpleNamespace(log_date=date(2026, 6, 2), calories=2000),
+        types.SimpleNamespace(log_date=date(2026, 6, 2), calories=2000, excluded=False),
     ]
     weight_rows = [
         types.SimpleNamespace(log_date=date(2026, 6, 1), weight_lb=175.0),

@@ -182,7 +182,7 @@ final class PeriodIntakeModel {
             let dayStart = calendar.startOfDay(for: date)
             if dayStart > todayStart { return nil } // never render future days
             if let log = byDay[dayStart] { return log }
-            return DailyLog(date: date, totalCalories: 0, totalProteinG: 0, totalCarbsG: 0, totalFatG: 0, entryCount: 0)
+            return DailyLog(date: date, totalCalories: 0, totalProteinG: 0, totalCarbsG: 0, totalFatG: 0, entryCount: 0, excluded: false)
         }
     }
 
