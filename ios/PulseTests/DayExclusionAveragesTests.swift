@@ -24,7 +24,7 @@ final class DayExclusionAveragesTests: XCTestCase {
         let logs = [
             log(dayOffset: 0, kcal: 2000),
             log(dayOffset: 1, kcal: 2000),
-            log(dayOffset: 2, kcal: 200, excluded: true),
+            log(dayOffset: 2, kcal: 200, excluded: true)
         ]
         XCTAssertEqual(logs.avgCalories, 2000, "excluded day must not affect the mean")
         XCTAssertEqual(logs.statDays.count, 2)
@@ -33,7 +33,7 @@ final class DayExclusionAveragesTests: XCTestCase {
     func test_avgCalories_skipsEmptyDays() {
         let logs = [
             log(dayOffset: 0, kcal: 1800),
-            log(dayOffset: 1, kcal: 0, entries: 0),
+            log(dayOffset: 1, kcal: 0, entries: 0)
         ]
         XCTAssertEqual(logs.avgCalories, 1800, "empty day (0 entries) is not counted")
     }
@@ -41,7 +41,7 @@ final class DayExclusionAveragesTests: XCTestCase {
     func test_averages_zeroWhenAllDaysExcludedOrEmpty() {
         let logs = [
             log(dayOffset: 0, kcal: 2000, excluded: true),
-            log(dayOffset: 1, kcal: 0, entries: 0),
+            log(dayOffset: 1, kcal: 0, entries: 0)
         ]
         XCTAssertEqual(logs.avgCalories, 0)
         XCTAssertEqual(logs.avgProtein, 0)
