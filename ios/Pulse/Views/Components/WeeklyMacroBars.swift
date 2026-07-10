@@ -135,7 +135,9 @@ struct WeeklyMacroBars: View {
     private func barColumn(day: DailyLog, plotHeight: CGFloat) -> some View {
         let barHeight = max(2, CGFloat(day.totalCalories) / safeCeiling * plotHeight)
         let isSelected = selectedDate == day.id
-        let dimmed = selectedDate != nil && !isSelected
+        // Excluded days always read dimmed (they don't count toward the week
+        // average), as do non-selected bars while another is selected.
+        let dimmed = day.excluded || (selectedDate != nil && !isSelected)
         return VStack(spacing: 6) {
             Spacer(minLength: 0)
             StackedMacroBar(fractions: day.macroFractions)
@@ -144,6 +146,7 @@ struct WeeklyMacroBars: View {
                 .barEmphasis(emphasized: isSelected, dimmed: dimmed)
             Text(Self.cal.veryShortWeekdaySymbol(for: day.date))
                 .font(.system(size: 11, weight: .semibold))
+                .strikethrough(day.excluded, color: Theme.FG.tertiary)
                 .foregroundStyle(isSelected ? Theme.CTP.mauve : Theme.FG.secondary)
         }
         .frame(maxWidth: .infinity)
@@ -163,7 +166,10 @@ struct WeeklyMacroBars: View {
         // Resolve the selected day from the current `group.days` each render so the
         // readout follows fresh data and falls back to the week average if it vanished.
         let day = selectedDate.flatMap { date in group.days.first { $0.id == date } }
-        let title = day.map { Self.cal.shortWeekdaySymbol(for: $0.date) + " · \($0.totalCalories) cal" } ?? "Week avg"
+        let title = day.map {
+            Self.cal.shortWeekdaySymbol(for: $0.date) + " · \($0.totalCalories) cal"
+                + ($0.excluded ? " · excluded" : "")
+        } ?? "Week avg"
         let grams = selectedGrams(day: day)
         return HStack(spacing: 10) {
             Text(title)

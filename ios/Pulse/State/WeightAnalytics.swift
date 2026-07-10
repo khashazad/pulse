@@ -51,8 +51,13 @@ enum WeightAnalytics {
         let cal = Calendar(identifier: .gregorian)
         let endDay = cal.startOfDay(for: today)
 
+        // Days the user flagged "ignore from stats" are dropped so a forgotten or
+        // partial log day can't distort the maintenance/intake-average math (they
+        // also read as gaps, breaking the consecutive-day window like an unlogged day).
         let kcalByDay: [Date: Double] = Dictionary(
-            uniqueKeysWithValues: kcal.map { (cal.startOfDay(for: $0.date), Double($0.calories)) }
+            uniqueKeysWithValues: kcal
+                .filter { !$0.excluded }
+                .map { (cal.startOfDay(for: $0.date), Double($0.calories)) }
         )
 
         // Display trend + ETA depend only on weight data; calorie gaps must not

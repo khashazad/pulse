@@ -19,6 +19,8 @@ final class DayMacroModel {
     private(set) var confirmState: ConfirmState = .idle
     /// Outcome of the most recent "make pending" (unconfirm) action.
     private(set) var pendingState: PendingState = .idle
+    /// Outcome of the most recent "exclude this day from stats" toggle.
+    private(set) var excludeState: ExcludeState = .idle
     private weak var auth: AuthSession?
 
     /// Discrete states of a copy-entries action, kept separate from `state` so the
@@ -68,6 +70,15 @@ final class DayMacroModel {
         case idle
         case working
         case finished(count: Int)
+        case failed(PulseError)
+    }
+
+    /// Discrete states of the "exclude this day from stats" toggle. One atomic
+    /// `PUT /logs/{date}/excluded`; the loaded summary's `excluded` flips
+    /// optimistically and reverts on failure.
+    enum ExcludeState: Equatable {
+        case idle
+        case saving
         case failed(PulseError)
     }
 
@@ -325,6 +336,44 @@ final class DayMacroModel {
         pendingState = .idle
     }
 
+    /// Toggles whether this day is excluded from stats (`PUT
+    /// /logs/{date}/excluded`). Flips the loaded summary's `excluded` flag
+    /// optimistically so the toggle responds instantly, then persists; on
+    /// failure it reverts the flag and records the error in `excludeState`.
+    /// Toggling never changes the day's own entries or totals — only whether
+    /// period averages/trends skip it. Routes a 401 through `AuthSession`.
+    /// No-op when the day is not loaded (the toggle is only shown once loaded).
+    /// - Parameter excluded: the desired flag value.
+    /// - Returns: Nothing; mutates `state` and `excludeState`.
+    func setExcluded(_ excluded: Bool) async {
+        guard case .loaded(let current) = state else { return }
+        guard let client = auth?.makeClient() else {
+            excludeState = .failed(.notSignedIn)
+            return
+        }
+        excludeState = .saving
+        // Optimistic flip: swap the flag on the in-memory summary right away.
+        state = .loaded(Self.summary(current, excluded: excluded))
+        do {
+            let updated = try await client.setDayExcluded(date: date, excluded: excluded)
+            state = .loaded(updated)
+            excludeState = .idle
+        } catch let error as PulseError {
+            if error == .unauthorized { auth?.handleUnauthorized() }
+            state = .loaded(current)  // revert the optimistic flip
+            excludeState = .failed(error)
+        } catch {
+            state = .loaded(current)
+            excludeState = .failed(.server(status: -1))
+        }
+    }
+
+    /// Resets the exclude toggle back to idle so a stale failure doesn't linger.
+    /// - Returns: Nothing.
+    func resetExcludeState() {
+        excludeState = .idle
+    }
+
     /// Builds a `FoodEntryCreate` that reproduces an existing entry on a new day.
     ///
     /// Preserves the display name, quantity text, normalized quantity, and macros
@@ -399,7 +448,23 @@ final class DayMacroModel {
         )
         return DailySummary(
             date: summary.date, target: summary.target,
-            consumed: consumed, remaining: remaining, entries: kept
+            consumed: consumed, remaining: remaining, entries: kept,
+            excluded: summary.excluded
+        )
+    }
+
+    /// Returns a copy of `summary` with only its `excluded` flag changed. Totals
+    /// and entries are untouched — exclusion is a stats-visibility flag, not an
+    /// edit to the day's data. Used for the optimistic toggle in `setExcluded`.
+    /// - Parameters:
+    ///   - summary: The current day summary.
+    ///   - excluded: The new exclusion flag.
+    /// - Returns: A new `DailySummary` identical except for `excluded`.
+    static func summary(_ summary: DailySummary, excluded: Bool) -> DailySummary {
+        DailySummary(
+            date: summary.date, target: summary.target,
+            consumed: summary.consumed, remaining: summary.remaining,
+            entries: summary.entries, excluded: excluded
         )
     }
 

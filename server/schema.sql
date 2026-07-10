@@ -45,11 +45,14 @@ create table if not exists daily_logs (
   id uuid primary key,
   user_key text not null,
   log_date date not null,
+  excluded boolean not null default false,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique (user_key, log_date)
 );
 create index if not exists idx_daily_logs_user_key on daily_logs(user_key);
+-- Manual "ignore this day from stats" flag; guarded for already-deployed DBs.
+alter table daily_logs add column if not exists excluded boolean not null default false;
 
 create table if not exists custom_foods (
   id uuid primary key default gen_random_uuid(),

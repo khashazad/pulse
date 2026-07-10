@@ -11,6 +11,11 @@ private struct UpdateCustomFoodRequest: Encodable {
     let name: String
 }
 
+/// Request body for `PUT /logs/{date}/excluded`. Carries the new flag value.
+private struct DayExclusionRequest: Encodable {
+    let excluded: Bool
+}
+
 /// Request body for `POST /foods` (group existing custom foods into a Food).
 private struct CreateFoodRequest: Encodable {
     let name: String
@@ -141,6 +146,23 @@ extension PulseClient {
         req.httpMethod = "DELETE"
         http.applyAuth(&req)
         try await sendNoBody(request: req)
+    }
+
+    /// Sets or clears the "ignore this day from stats" flag for one date
+    /// (`PUT /logs/{date}/excluded`). Excluded days still appear in the app but
+    /// are skipped by every period average/trend and dimmed in charts. Toggling
+    /// never alters the day's own entries or totals.
+    /// Inputs:
+    ///   - date: the calendar day to toggle.
+    ///   - excluded: the new flag value.
+    /// Outputs: the day's refreshed `DailySummary`, carrying the new `excluded`.
+    /// Exceptions: `PulseError` on transport/auth/decoding failure; `.notFound`
+    /// (404) when no target profile exists (same contract as `summary(date:)`).
+    func setDayExcluded(date: Date, excluded: Bool) async throws -> DailySummary {
+        let url = try http.makeURL(
+            path: "/logs/\(DateOnly.string(from: date))/excluded", query: [])
+        let body = try JSONEncoder.pulseDefault().encode(DayExclusionRequest(excluded: excluded))
+        return try await sendJSON(url: url, method: "PUT", body: body)
     }
 
     // MARK: - food search

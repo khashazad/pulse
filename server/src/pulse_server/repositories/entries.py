@@ -167,6 +167,39 @@ class EntriesRepository:
         )
         await self._session.execute(stmt)
 
+    async def set_day_excluded(
+        self,
+        daily_log_id: str,
+        user_key: str,
+        log_date: DateValue,
+        excluded: bool,
+    ) -> None:
+        """Set (or clear) the "ignore this day from stats" flag for a user/date.
+
+        Upserts the ``daily_logs`` row so a day that was never logged can still
+        be excluded: on insert it creates the row with the given ``excluded``
+        value; on conflict it updates ``excluded`` (and bumps ``updated_at``)
+        on the existing row.
+
+        **Inputs:**
+        - daily_log_id (str): Deterministic UUID for the ``(user_key, log_date)`` row.
+        - user_key (str): Owning user identifier.
+        - log_date (DateValue): Date represented by the daily log.
+        - excluded (bool): New value for the exclusion flag.
+
+        **Exceptions:**
+        - sqlalchemy.exc.SQLAlchemyError: Raised when SQL execution fails.
+        """
+        stmt = (
+            pg_insert(daily_logs)
+            .values(id=daily_log_id, user_key=user_key, log_date=log_date, excluded=excluded)
+            .on_conflict_do_update(
+                index_elements=[daily_logs.c.user_key, daily_logs.c.log_date],
+                set_={"excluded": excluded, "updated_at": sa_func.now()},
+            )
+        )
+        await self._session.execute(stmt)
+
     async def create_food_entry(self, payload: FoodEntryPayload) -> dict[str, Any]:
         """Insert a food-entry row and return the inserted record.
 
@@ -230,6 +263,39 @@ class EntriesRepository:
         result = await self._session.execute(stmt)
         return [dict(row) for row in result.mappings().all()]
 
+    async def excluded_dates(
+        self,
+        user_key: str,
+        from_date: DateValue,
+        to_date: DateValue,
+    ) -> set[DateValue]:
+        """Return the set of dates flagged ``excluded`` within an inclusive range.
+
+        Lets callers stamp the per-day ``excluded`` flag without a per-day query:
+        one lookup returns every excluded date in the window (typically empty or
+        a handful), and days absent from the set are treated as not excluded.
+
+        **Inputs:**
+        - user_key (str): Owning user's scoping key.
+        - from_date (DateValue): Inclusive lower bound on ``log_date``.
+        - to_date (DateValue): Inclusive upper bound on ``log_date``.
+
+        **Outputs:**
+        - set[DateValue]: The ``log_date`` values whose row has ``excluded = true``.
+
+        **Exceptions:**
+        - sqlalchemy.exc.SQLAlchemyError: Raised when SQL execution fails.
+        """
+        stmt = (
+            select(daily_logs.c.log_date)
+            .where(daily_logs.c.user_key == user_key)
+            .where(daily_logs.c.log_date >= from_date)
+            .where(daily_logs.c.log_date <= to_date)
+            .where(daily_logs.c.excluded.is_(True))
+        )
+        result = await self._session.execute(stmt)
+        return {row[0] for row in result.all()}
+
     async def calorie_totals_by_day(
         self,
         user_key: str,
@@ -256,6 +322,7 @@ class EntriesRepository:
         stmt = (
             select(
                 daily_logs.c.log_date.label("log_date"),
+                daily_logs.c.excluded.label("excluded"),
                 sa_func.coalesce(sa_func.sum(food_entries.c.calories), 0).label("calories"),
             )
             .select_from(
@@ -265,7 +332,7 @@ class EntriesRepository:
             .where(daily_logs.c.log_date >= from_date)
             .where(daily_logs.c.log_date <= to_date)
             .where(food_entries.c.confirmed.is_(True))
-            .group_by(daily_logs.c.log_date)
+            .group_by(daily_logs.c.log_date, daily_logs.c.excluded)
             .order_by(daily_logs.c.log_date.asc())
         )
         result = await self._session.execute(stmt)

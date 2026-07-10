@@ -85,6 +85,7 @@ daily_logs = Table(
     Column("id", UUID(as_uuid=True), primary_key=True),
     Column("user_key", Text, nullable=False),
     Column("log_date", Date, nullable=False),
+    Column("excluded", Boolean, nullable=False, server_default=text("false")),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     UniqueConstraint("user_key", "log_date", name="daily_logs_user_key_log_date_key"),

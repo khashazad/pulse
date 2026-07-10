@@ -144,6 +144,19 @@ struct DayMacroView: View {
                 Text(error.userMessage)
             }
         }
+        .alert(
+            "Couldn't update this day",
+            isPresented: Binding(
+                get: { if case .failed = model?.excludeState { return true } else { return false } },
+                set: { if !$0 { model?.resetExcludeState() } }
+            )
+        ) {
+            Button("OK", role: .cancel) { model?.resetExcludeState() }
+        } message: {
+            if case .failed(let error) = model?.excludeState {
+                Text(error.userMessage)
+            }
+        }
         .transientConfirmation($savedMealName)
         .confirmationDialog(
             "Delete this meal's \(mealDeletion.count) entries?",
@@ -337,6 +350,12 @@ struct DayMacroView: View {
                         .padding(.horizontal, 16)
                 }
 
+                if !isSelecting {
+                    excludeToggle(summary)
+                        .padding(.horizontal, 16)
+                        .padding(.top, 4)
+                }
+
                 Spacer(minLength: Theme.Layout.dockClearance)
             }
             .padding(.top, 4)
@@ -441,6 +460,38 @@ struct DayMacroView: View {
             MacroRing(consumed: consumed, target: target, projected: projected)
                 .padding(.vertical, 22)
         }
+    }
+
+    /// "Exclude this day from stats" toggle card shown at the bottom of a loaded
+    /// day. Flipping it calls the model's optimistic `setExcluded`; while a save
+    /// is in flight the toggle is disabled. An excluded day still renders here in
+    /// full — the flag only affects how period averages/trends and charts treat
+    /// it — with a one-line hint explaining that.
+    /// Inputs:
+    ///   - summary: the loaded `DailySummary`, whose `excluded` drives the toggle.
+    /// Outputs: composed toggle card view.
+    private func excludeToggle(_ summary: DailySummary) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Toggle(isOn: Binding(
+                get: { summary.excluded },
+                set: { newValue in Task { await model?.setExcluded(newValue) } }
+            )) {
+                Text("Exclude this day from stats")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(Theme.FG.primary)
+            }
+            .tint(Theme.CTP.mauve)
+            .disabled(model?.excludeState == .saving)
+
+            Text(summary.excluded
+                ? "This day is skipped in averages, trends, and charts."
+                : "Turn on for days you forgot to fully log.")
+                .font(.system(size: 12))
+                .foregroundStyle(Theme.FG.tertiary)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .ctpCard()
     }
 
     /// Small "Entries" caption row above the entries card with count and kcal total.

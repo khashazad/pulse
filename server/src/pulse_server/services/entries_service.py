@@ -28,6 +28,38 @@ from pulse_server.repositories.entries import EntriesRepository, FoodEntryPayloa
 from pulse_server.services.custom_foods_service import assert_custom_foods_owned
 
 
+async def set_day_excluded(
+    session: AsyncSession,
+    user_key: str,
+    log_date: DateValue,
+    excluded: bool,
+) -> None:
+    """Set or clear the "ignore this day from stats" flag for a single date.
+
+    Opens its own transaction and upserts the ``daily_logs`` row so a day that
+    was never logged can still be excluded. Purely flips the flag — it never
+    touches the day's food entries or totals.
+
+    **Inputs:**
+    - session (AsyncSession): Active SQLAlchemy session.
+    - user_key (str): User identifier owning the day.
+    - log_date (DateValue): Calendar date to toggle.
+    - excluded (bool): New value for the exclusion flag.
+
+    **Outputs:**
+    - None: The row is upserted as a side effect.
+
+    **Exceptions:**
+    - sqlalchemy.exc.SQLAlchemyError: Raised when the write fails; the
+      transaction is rolled back.
+    """
+    async with transaction(session):
+        entries_repo = EntriesRepository(session)
+        await entries_repo.set_day_excluded(
+            daily_log_id(user_key, log_date), user_key, log_date, excluded
+        )
+
+
 async def create_entries_with_side_effects(
     session: AsyncSession,
     user_key: str,

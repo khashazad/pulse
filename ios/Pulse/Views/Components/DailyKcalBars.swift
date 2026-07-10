@@ -84,7 +84,9 @@ struct DailyKcalBars: View {
         let isSelected = selectedDate == log.id
         // The last day stays emphasized only while no explicit selection is active.
         let emphasized = isSelected || (selectedDate == nil && isLast)
-        let dimmed = selectedDate != nil && !isSelected
+        // Excluded days always read dimmed (they don't count toward the averages),
+        // as do non-selected bars while another is selected.
+        let dimmed = log.excluded || (selectedDate != nil && !isSelected)
         return VStack(spacing: 6) {
             Spacer(minLength: 0)
             StackedMacroBar(fractions: log.macroFractions)
@@ -93,6 +95,7 @@ struct DailyKcalBars: View {
                 .barEmphasis(emphasized: emphasized, dimmed: dimmed)
             Text(Self.cal.veryShortWeekdaySymbol(for: log.date))
                 .font(.system(size: 11, weight: .semibold))
+                .strikethrough(log.excluded, color: Theme.FG.tertiary)
                 .foregroundStyle(emphasized ? Theme.CTP.mauve : Theme.FG.secondary)
         }
         .frame(maxWidth: .infinity)
@@ -112,9 +115,10 @@ struct DailyKcalBars: View {
         let day = selectedDate.flatMap { date in logs.first { $0.id == date } }
         return HStack(spacing: 10) {
             if let day {
-                Text(Self.cal.shortWeekdaySymbol(for: day.date) + " · \(day.totalCalories) cal")
+                Text(Self.cal.shortWeekdaySymbol(for: day.date) + " · \(day.totalCalories) cal"
+                    + (day.excluded ? " · excluded" : ""))
                     .font(.system(size: 11, weight: .medium, design: .monospaced))
-                    .foregroundStyle(Theme.FG.secondary)
+                    .foregroundStyle(day.excluded ? Theme.FG.tertiary : Theme.FG.secondary)
                 Spacer(minLength: 8)
                 if day.totalProteinG + day.totalCarbsG + day.totalFatG > 0 {
                     MacroGramChips(proteinG: day.totalProteinG, carbsG: day.totalCarbsG, fatG: day.totalFatG)
@@ -147,7 +151,8 @@ struct DailyKcalBars: View {
             totalProteinG: Double(kcal) * 0.30 / 4,
             totalCarbsG: Double(kcal) * 0.45 / 4,
             totalFatG: Double(kcal) * 0.25 / 9,
-            entryCount: 4
+            entryCount: 4,
+            excluded: i == 6  // last day shown excluded in the preview
         )
     }
     return DailyKcalBars(logs: logs, targetCalories: 2200)

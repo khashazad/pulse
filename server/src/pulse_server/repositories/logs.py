@@ -62,6 +62,7 @@ class LogsRepository:
         stmt = (
             select(
                 daily_logs.c.log_date.label("log_date"),
+                daily_logs.c.excluded.label("excluded"),
                 cast(func.coalesce(func.sum(food_entries.c.calories), 0), Integer).label(
                     "total_calories"
                 ),
@@ -74,7 +75,7 @@ class LogsRepository:
             .where(daily_logs.c.user_key == user_key)
             .where(daily_logs.c.log_date >= from_date)
             .where(daily_logs.c.log_date <= to_date)
-            .group_by(daily_logs.c.log_date)
+            .group_by(daily_logs.c.log_date, daily_logs.c.excluded)
             .order_by(daily_logs.c.log_date.desc())
         )
         result = await self._session.execute(stmt)
