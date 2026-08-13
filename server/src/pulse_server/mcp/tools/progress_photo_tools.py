@@ -48,7 +48,6 @@ from pulse_server.services.progress_photo_tag_service import list_tags
 CaptureDateSource = Literal["metadata", "provided", "default"]
 TagMatchSource = Literal["pose_hint", "filename", "metadata"]
 
-_BASE64_DATA_URL_RE = re.compile(r"^data:[^;,]+(?:;[^,]+)*;base64,(?P<payload>.*)$", re.I | re.S)
 _TOKEN_RE = re.compile(r"[a-z0-9]+")
 _EXIF_CAPTURE_DATE_TAGS = (36867, 36868, 306)
 _EXIF_TEXT_TAGS = (270, 40091, 40092, 40094, 40095, 37510)
@@ -173,8 +172,17 @@ def decode_image_base64(value: str) -> bytes:
       empty bytes.
     """
     stripped = value.strip()
-    match = _BASE64_DATA_URL_RE.match(stripped)
-    payload = match.group("payload") if match else stripped
+    payload = stripped
+    if stripped.lower().startswith("data:"):
+        header, separator, data = stripped.partition(",")
+        normalized_header = header.lower()
+        if (
+            not separator
+            or not normalized_header.startswith("data:image/")
+            or not normalized_header.endswith(";base64")
+        ):
+            raise ToolError("image_base64 data URLs must be an image data URL using base64")
+        payload = data
     compact = re.sub(r"\s+", "", payload)
     try:
         raw = base64.b64decode(compact, validate=True)
