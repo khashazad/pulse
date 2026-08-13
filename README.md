@@ -46,6 +46,8 @@ Request flow: **router → service → repository.** Routers own HTTP, services 
 
 **MCP progress-photo uploads.** `upload_progress_photos` accepts up to 30 photos. Each item supplies `image_base64` (raw base64 or a `data:image/...;base64,` URL) plus optional `filename`, `capture_date` fallback, `pose_hint`, and `idempotency_key`. The server uses image metadata for capture dates when available, matches `pose_hint`/filename/text metadata against existing progress-photo tags, and sends accepted photos through the same processing and persistence service used by `POST /measures/photos`.
 
+**ChatGPT skill.** Upload [`dist/upload-pulse-progress-photos.zip`](dist/upload-pulse-progress-photos.zip) to ChatGPT to add the guided photo workflow. Its versioned source lives in [`skills/upload-pulse-progress-photos/`](skills/upload-pulse-progress-photos/).
+
 **DB lifecycle.** `bootstrap_schema()` runs `schema.sql` idempotently on every startup — that file is the single source of truth for the schema. Changes land as idempotent guarded statements and are folded into the final-shape DDL once deployed everywhere. All data is scoped by `user_key` (today: `LEGACY_USER_KEY`). Daily logs use deterministic UUID5 from `(user_key, date)` for idempotent upserts.
 
 ### Commands

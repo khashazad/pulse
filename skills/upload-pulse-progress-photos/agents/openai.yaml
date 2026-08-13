@@ -1,0 +1,15 @@
+interface:
+  display_name: "Upload Pulse Progress Photos"
+  short_description: "Upload dated progress photos through Pulse MCP"
+  default_prompt: "Use $upload-pulse-progress-photos to upload my attached progress photos to Pulse."
+
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "pulse"
+      description: "Pulse progress tracking MCP server"
+      transport: "streamable_http"
+      url: "https://pulse-server-production-4521.up.railway.app/mcp"
+
+policy:
+  allow_implicit_invocation: true
