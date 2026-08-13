@@ -3,18 +3,19 @@
 Provides :func:`build_mcp`, the factory that wires up the ``FastMCP`` instance
 with optional GitHub-OAuth / service-token authentication and the complete tool
 suite. The tools themselves are defined in the focused ``mcp/tools/*.py``
-modules (food, meals, custom foods, containers, memory, targets/summary); this
-file constructs the shared :class:`ToolContext` and calls each module's
-``register`` so the registration order and behavior stay identical to the prior
-monolith. The MCP request/response models live in :mod:`mcp.models`; the shared
-helpers live in :mod:`mcp.context`.
+modules (food, meals, custom foods, containers, memory, targets/summary,
+weight, progress photos); this file constructs the shared
+:class:`ToolContext` and calls each module's ``register`` so the registration
+order and behavior stay identical to the prior monolith. The MCP
+request/response models live in :mod:`mcp.models`; the shared helpers live in
+:mod:`mcp.context`.
 
 Sits at the top of the MCP layer: the tool modules pull in repositories under
 ``repositories/`` and orchestration services under ``services/`` so the MCP
 surface mirrors the REST surface and shares the same single-tenant
 ``LEGACY_USER_KEY`` data. The ``WORKFLOW_INSTRUCTIONS`` constant is the prompt
-the FastMCP server ships to clients describing the canonical food-logging
-workflow.
+the FastMCP server ships to clients describing the canonical food-logging and
+progress-photo workflows.
 """
 
 from __future__ import annotations
@@ -32,6 +33,7 @@ from pulse_server.mcp.tools import (
     food_tools,
     meal_tools,
     memory_tools,
+    progress_photo_tools,
     targets_summary_tools,
     weight_tools,
 )
@@ -98,6 +100,28 @@ Diet tracking workflow. Follow this order on every food-related interaction:
    to_date)`; `get_weight(date)` is the single-day form.
 
 `forget_food(name)` and `list_remembered_foods()` let the user audit memory.
+
+Progress-photo workflow:
+
+1) To upload body-progress photos from ChatGPT/Claude, call `upload_progress_photos`
+   with one item per image. Pass `image_base64` as raw base64 or a
+   `data:image/...;base64,` URL. Include `filename` when available.
+
+2) Dates: the server reads image capture metadata first (EXIF DateTimeOriginal and
+   common fallbacks). If an image lacks a metadata date, pass that item's
+   `capture_date` as YYYY-MM-DD, or pass `default_date` for the whole batch. Do not
+   guess today's date for old library photos.
+
+3) Tags: the server only files photos under existing progress-photo tags. It matches
+   tag names against `pose_hint`, filename, and embedded text metadata, in that order.
+   If you can see the pose in the uploaded image or the user's text, pass a concise
+   `pose_hint` such as "flexed front" or "back". When unsure, call
+   `list_progress_photo_tags` first and use one of those names.
+
+4) Bulk behavior: the tool accepts up to 30 photos, returns accepted and rejected
+   arrays, and does not let one bad photo block the rest of the batch. A rejected item
+   needs either a date fallback, a tag hint matching an existing tag, or valid image
+   bytes before retrying.
 """.strip()
 
 
@@ -170,8 +194,8 @@ def _build_auth_provider(settings):
             client_secret=settings.github_client_secret,
             base_url=settings.public_base_url.rstrip("/"),
             # Pin the JWT signing key and persist OAuth state (client
-            # registrations + upstream tokens) in Postgres so the claude.ai
-            # connector survives redeploys without re-auth / re-consent.
+            # registrations + upstream tokens) in Postgres so ChatGPT/Claude
+            # connectors survive redeploys without re-auth / re-consent.
             # Both are no-ops when the env vars are unset (local dev).
             jwt_signing_key=settings.mcp_jwt_signing_key or None,
             client_storage=build_client_storage(settings),
@@ -257,5 +281,6 @@ def build_mcp(usda_getter) -> FastMCP:
     memory_tools.register(mcp, ctx)
     meal_tools.register(mcp, ctx)
     weight_tools.register(mcp, ctx)
+    progress_photo_tools.register(mcp, ctx)
 
     return mcp

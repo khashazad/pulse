@@ -2,14 +2,14 @@
 
 Self-hosted nutrition / weight / progress tracker. Single user today. One monorepo, two subprojects coupled only by a JSON-over-HTTP wire format:
 
-- [`server/`](server/) — FastAPI + Postgres backend, also exposed as an MCP server for Claude.
+- [`server/`](server/) — FastAPI + Postgres backend, also exposed as an MCP server for ChatGPT/Claude.
 - [`ios/`](ios/) — SwiftUI iOS 17+ client.
 
 There is no shared tooling at the root — `cd` into the relevant subdirectory before running anything.
 
 ## Server
 
-FastAPI + Postgres backend. JSON HTTP API for the iOS client, plus an MCP endpoint at `/mcp` so Claude can use the same domain directly.
+FastAPI + Postgres backend. JSON HTTP API for the iOS client, plus an MCP endpoint at `/mcp` so ChatGPT/Claude can use the same domain directly.
 
 ### What it does
 
@@ -20,7 +20,7 @@ FastAPI + Postgres backend. JSON HTTP API for the iOS client, plus an MCP endpoi
 - **Containers.** Tare-aware meal-prep containers with optional photo. The Prep tab on iOS uses these to compute net grams from gross weight.
 - **Weight + progress photos.** Weight entries with trends, progress photos with tags; photos are processed into archive/display/thumb JPEGs and stored in an S3-compatible object store (Backblaze B2 in production, local filesystem in dev) — Postgres keeps metadata only. Container photos remain inline BYTEA.
 - **Targets.** Per-user daily macro targets.
-- **MCP endpoint.** The same domain exposed as MCP tools at `/mcp`.
+- **MCP endpoint.** The same domain exposed as MCP tools at `/mcp`, including bulk progress-photo upload from base64 image data.
 
 ### Auth
 
@@ -42,6 +42,8 @@ Request flow: **router → service → repository.** Routers own HTTP, services 
 - `models/` — Pydantic DTOs (`snake_case`), mirrored on the iOS side.
 - `auth/` — Google OAuth handshake, session tokens, middleware.
 - `mcp/` — MCP server, GitHub OAuth + service-token auth, tools split per feature.
+
+**MCP progress-photo uploads.** `upload_progress_photos` accepts up to 30 photos. Each item supplies `image_base64` (raw base64 or a `data:image/...;base64,` URL) plus optional `filename`, `capture_date` fallback, `pose_hint`, and `idempotency_key`. The server uses image metadata for capture dates when available, matches `pose_hint`/filename/text metadata against existing progress-photo tags, and sends accepted photos through the same processing and persistence service used by `POST /measures/photos`.
 
 **DB lifecycle.** `bootstrap_schema()` runs `schema.sql` idempotently on every startup — that file is the single source of truth for the schema. Changes land as idempotent guarded statements and are folded into the final-shape DDL once deployed everywhere. All data is scoped by `user_key` (today: `LEGACY_USER_KEY`). Daily logs use deterministic UUID5 from `(user_key, date)` for idempotent upserts.
 
