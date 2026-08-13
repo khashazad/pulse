@@ -11,6 +11,7 @@ the iOS app see the same macro shapes; the logging responses expose
 from __future__ import annotations
 
 from datetime import date as DateValue
+from uuid import UUID
 
 from pydantic import BaseModel
 
@@ -20,6 +21,7 @@ from pulse_server.models import (
     MacroTotals,
     WeightEntryResponse,
 )
+from pulse_server.models.progress_photo import ProgressPhotoMetadata, ProgressPhotoTagResponse
 
 
 class FoodCandidate(BaseModel):
@@ -159,3 +161,63 @@ class WeightRange(BaseModel):
     min_lb: float | None
     max_lb: float | None
     net_change_lb: float | None
+
+
+class ProgressPhotoUploadItem(BaseModel):
+    """One image supplied to the MCP bulk progress-photo upload tool.
+
+    ``image_base64`` accepts either raw base64 or a ``data:image/...;base64,``
+    data URL. ``capture_date`` and ``default_date`` are fallbacks only: image
+    metadata wins whenever it contains a parseable capture date. ``pose_hint``
+    is the caller's best text label for the pose when the filename or embedded
+    metadata is not descriptive enough to match an existing tag.
+    """
+
+    image_base64: str
+    filename: str | None = None
+    capture_date: str | None = None
+    pose_hint: str | None = None
+    idempotency_key: str | None = None
+
+
+class ProgressPhotoTagMatch(BaseModel):
+    """The tag selected for one accepted MCP progress-photo upload."""
+
+    id: UUID
+    name: str
+    normalized_name: str
+    source: str
+
+
+class ProgressPhotoUploadAccepted(BaseModel):
+    """Result fragment for one accepted MCP progress-photo upload."""
+
+    index: int
+    filename: str | None
+    date: DateValue
+    date_source: str
+    tag: ProgressPhotoTagMatch
+    photo: ProgressPhotoMetadata
+
+
+class ProgressPhotoUploadRejected(BaseModel):
+    """Result fragment for one rejected MCP progress-photo upload."""
+
+    index: int
+    filename: str | None
+    reason: str
+
+
+class ProgressPhotoBulkUploadResponse(BaseModel):
+    """Bulk progress-photo upload summary returned by ``upload_progress_photos``."""
+
+    accepted_count: int
+    rejected_count: int
+    accepted: list[ProgressPhotoUploadAccepted]
+    rejected: list[ProgressPhotoUploadRejected]
+
+
+class ProgressPhotoTagsResponse(BaseModel):
+    """Progress-photo tag catalog returned by ``list_progress_photo_tags``."""
+
+    tags: list[ProgressPhotoTagResponse]
