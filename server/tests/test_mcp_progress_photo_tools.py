@@ -66,6 +66,14 @@ def _b64(raw: bytes) -> str:
     return base64.b64encode(raw).decode("ascii")
 
 
+def test_decode_image_base64_rejects_non_image_data_url() -> None:
+    """Only image media types are accepted when a data URL is supplied."""
+    payload = _b64(_png_bytes())
+
+    with pytest.raises(ToolError, match="image data URL"):
+        progress_photo_tools.decode_image_base64(f"data:text/plain;base64,{payload}")
+
+
 def _tag_row(name: str, order: int = 0, tag_id: uuid.UUID | None = None) -> dict:
     """Build a progress-photo tag row fixture.
 
