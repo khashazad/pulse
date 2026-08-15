@@ -50,3 +50,17 @@ def test_server_image_defaults_web_callback_to_vercel_origin() -> None:
     dockerfile = (WEB_ROOT.parent / "Dockerfile").read_text()
 
     assert "WEB_APP_URL=https://pulse-progress.vercel.app" in dockerfile
+
+
+def test_production_web_build_defaults_oauth_start_to_backend_origin() -> None:
+    """Production Vite builds always start OAuth on the Railway callback origin.
+
+    Returns:
+        None: Assertion validates the committed public production origin.
+
+    Raises:
+        AssertionError: Raised when the production OAuth origin is absent or drifts.
+    """
+    production_env = (WEB_ROOT / ".env.production").read_text()
+
+    assert production_env.splitlines() == [f"VITE_AUTH_ORIGIN={BACKEND_ORIGIN}"]
