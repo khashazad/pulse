@@ -25,6 +25,7 @@ def _isolate_env(monkeypatch):
         "GOOGLE_CLIENT_SECRET",
         "OAUTH_REDIRECT_URI",
         "APP_REDIRECT_SCHEME",
+        "WEB_APP_URL",
         "ALLOWED_EMAILS",
         "SESSION_TTL_DAYS",
         "SESSION_TOKEN_BYTES",
@@ -51,6 +52,7 @@ def _isolate_env(monkeypatch):
     monkeypatch.setenv("GOOGLE_CLIENT_SECRET", "secret")
     monkeypatch.setenv("OAUTH_REDIRECT_URI", "https://api.example.com/auth/google/callback")
     monkeypatch.setenv("APP_REDIRECT_SCHEME", "diettracker")
+    monkeypatch.setenv("WEB_APP_URL", "https://api.example.com")
     # Single entry (mixed case, padded) — the single-user guard rejects >1 distinct
     # email, and one entry still exercises the trim + lowercase parsing.
     monkeypatch.setenv("ALLOWED_EMAILS", "  KhashZD@Gmail.com ")
@@ -77,6 +79,7 @@ def test_settings_loads_oauth_envs():
     assert s.google_client_secret == "secret"
     assert s.oauth_redirect_uri == "https://api.example.com/auth/google/callback"
     assert s.app_redirect_scheme == "diettracker"
+    assert s.web_app_url == "https://api.example.com"
     assert s.legacy_user_key == "khash"
     assert s.session_ttl_days == 90
     assert s.session_token_bytes == 32
@@ -111,6 +114,75 @@ def test_redirect_uri_http_allowed_for_local(monkeypatch):
     cfg.get_settings.cache_clear()
     s = cfg.get_settings()
     assert s.oauth_redirect_uri.startswith("http://localhost")
+
+
+def test_web_app_url_required_outside_local(monkeypatch):
+    """A production deployment refuses to boot without a configured web origin."""
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("WEB_APP_URL", "")
+    monkeypatch.setenv("MCP_SERVICE_TOKEN", "x" * 32)
+    monkeypatch.setenv("S3_ENDPOINT", "https://s3.example.com")
+    monkeypatch.setenv("S3_BUCKET", "pulse-photos")
+    monkeypatch.setenv("S3_ACCESS_KEY_ID", "ak")
+    monkeypatch.setenv("S3_SECRET_ACCESS_KEY", "sk")
+    from pulse_server import config as cfg
+
+    cfg.get_settings.cache_clear()
+    with pytest.raises(ValueError, match="WEB_APP_URL is required"):
+        cfg.get_settings()
+
+
+@pytest.mark.parametrize(
+    "url",
+    (
+        "http://pulse.example.com",
+        "https://pulse.example.com/app",
+        "https://pulse.example.com?next=/app",
+        "https://user:p@pulse.example.com",
+    ),
+)
+def test_web_app_url_rejects_unsafe_production_values(monkeypatch, url):
+    """The production web callback must be an HTTPS origin without path or credentials."""
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("WEB_APP_URL", url)
+    monkeypatch.setenv("MCP_SERVICE_TOKEN", "x" * 32)
+    monkeypatch.setenv("S3_ENDPOINT", "https://s3.example.com")
+    monkeypatch.setenv("S3_BUCKET", "pulse-photos")
+    monkeypatch.setenv("S3_ACCESS_KEY_ID", "ak")
+    monkeypatch.setenv("S3_SECRET_ACCESS_KEY", "sk")
+    from pulse_server import config as cfg
+
+    cfg.get_settings.cache_clear()
+    with pytest.raises(ValueError, match="WEB_APP_URL"):
+        cfg.get_settings()
+
+
+def test_web_app_url_allows_local_vite_origin(monkeypatch):
+    """Local development accepts an HTTP localhost origin for the Vite server."""
+    monkeypatch.setenv("APP_ENV", "local")
+    monkeypatch.setenv("WEB_APP_URL", "http://localhost:5173")
+    from pulse_server import config as cfg
+
+    cfg.get_settings.cache_clear()
+    assert cfg.get_settings().web_app_url == "http://localhost:5173"
+
+
+def test_web_app_url_may_differ_from_production_oauth_origin(monkeypatch):
+    """A split web deployment may return from an OAuth callback on the API origin."""
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("WEB_APP_URL", "https://web.example.com")
+    monkeypatch.setenv("OAUTH_REDIRECT_URI", "https://api.example.com/auth/google/callback")
+    monkeypatch.setenv("MCP_SERVICE_TOKEN", "x" * 32)
+    monkeypatch.setenv("S3_ENDPOINT", "https://s3.example.com")
+    monkeypatch.setenv("S3_BUCKET", "pulse-photos")
+    monkeypatch.setenv("S3_ACCESS_KEY_ID", "ak")
+    monkeypatch.setenv("S3_SECRET_ACCESS_KEY", "sk")
+    from pulse_server import config as cfg
+
+    cfg.get_settings.cache_clear()
+    settings = cfg.get_settings()
+    assert settings.web_app_url == "https://web.example.com"
+    assert settings.oauth_redirect_uri == "https://api.example.com/auth/google/callback"
 
 
 def test_mcp_unauth_rejected_outside_local(monkeypatch):

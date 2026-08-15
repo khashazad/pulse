@@ -2,7 +2,7 @@
 
 Self-hosted nutrition / weight / progress tracker. Single user today. One monorepo, two subprojects coupled only by a JSON-over-HTTP wire format:
 
-- [`server/`](server/) — FastAPI + Postgres backend, also exposed as an MCP server for ChatGPT/Claude.
+- [`server/`](server/) — FastAPI + Postgres backend, a co-deployed React Progress Photos web app, and an MCP server for ChatGPT/Claude.
 - [`ios/`](ios/) — SwiftUI iOS 17+ client.
 
 There is no shared tooling at the root — `cd` into the relevant subdirectory before running anything.
@@ -21,12 +21,13 @@ FastAPI + Postgres backend. JSON HTTP API for the iOS client, plus an MCP endpoi
 - **Weight + progress photos.** Weight entries with trends, progress photos with tags; photos are processed into archive/display/thumb JPEGs and stored in an S3-compatible object store (Backblaze B2 in production, local filesystem in dev) — Postgres keeps metadata only. Container photos remain inline BYTEA.
 - **Targets.** Per-user daily macro targets.
 - **MCP endpoint.** The same domain exposed as MCP tools at `/mcp`, including bulk progress-photo upload from base64 image data.
+- **Progress Photos web app.** Responsive, read-only gallery and side-by-side comparison views served from `/`, with the same Google OAuth and Bearer-token API as iOS.
 
 ### Auth
 
 Google OAuth → opaque Bearer session tokens.
 
-- `/auth/google/start` + `/auth/google/callback` run the handshake, issue a 32-byte URL-safe token, and store `sha256(token)` in the `sessions` table.
+- `/auth/google/start` + `/auth/google/callback` run the handshake, issue a 32-byte URL-safe token, and store `sha256(token)` in the `sessions` table. The OAuth start route accepts `client=ios|web`; web callbacks return to `WEB_APP_URL/login/callback` for the one-time exchange.
 - `SessionAuthMiddleware` validates `Authorization: Bearer <token>` on every non-`/auth/*`/`/health` request and slides the TTL once a session passes half its lifetime. The unauthenticated `/auth/google/*` routes are rate-limited per client IP. Allowlist: `ALLOWED_EMAILS` (case-insensitive; exactly one address — boot refuses more until real multi-user mapping exists).
 - The Bearer session token is the only client auth path; the legacy `?user_key=` query parameter is not part of the auth surface and is ignored.
 - MCP has two auth paths: GitHub OAuth (`GITHUB_CLIENT_ID/SECRET` + `PUBLIC_BASE_URL`) for interactive clients, and a static service token (`MCP_SERVICE_TOKEN`, min 32 chars) for headless agents. Both can run together. `/mcp` is exempt from session auth; non-local startup refuses to boot unless GitHub OAuth, the service token, or `MCP_ALLOW_UNAUTH=true` is configured.
@@ -56,15 +57,21 @@ uv sync --extra dev                                          # install
 uv run uvicorn pulse_server.app:app --port 8787 --reload     # run
 uv run pytest tests/ -v                                      # unit tests
 TEST_DATABASE_URL=postgresql://localhost/test uv run pytest -m integration -v
+
+cd web
+corepack prepare pnpm@10.10.0 --activate
+pnpm install --frozen-lockfile
+pnpm dev                                                     # React dev server; proxies API to :8787
+pnpm test --run && pnpm typecheck && pnpm build
 ```
 
 ### Config
 
-Required env: `DATABASE_URL`, `USDA_API_KEY`. Optional: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `OAUTH_REDIRECT_URI`, `APP_REDIRECT_SCHEME`, `ALLOWED_EMAILS`, `SESSION_TTL_DAYS`, `LEGACY_USER_KEY`, `APP_ENV`, `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `ALLOWED_GITHUB_USERS`, `PUBLIC_BASE_URL`, `MCP_SERVICE_TOKEN`, `MCP_ALLOW_UNAUTH`.
+Required env: `DATABASE_URL`, `USDA_API_KEY`. Optional: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `OAUTH_REDIRECT_URI`, `APP_REDIRECT_SCHEME`, `WEB_APP_URL` (the fixed browser return origin, which may differ from the API origin for the Vercel deployment), `ALLOWED_EMAILS`, `SESSION_TTL_DAYS`, `LEGACY_USER_KEY`, `APP_ENV`, `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `ALLOWED_GITHUB_USERS`, `PUBLIC_BASE_URL`, `MCP_SERVICE_TOKEN`, `MCP_ALLOW_UNAUTH`.
 
 ### Deploy
 
-Dockerized; Railway-targeted (`server/railway.json`, healthcheck `/health`). The Dockerfile runs `uv sync --frozen --no-dev` against `uv.lock`.
+Dockerized; Railway-targeted (`server/railway.json`, healthcheck `/health`). The multi-stage Dockerfile verifies and builds the React app, copies its static bundle into the FastAPI package, and runs `uv sync --frozen --no-dev` against `uv.lock`.
 
 ## iOS
 

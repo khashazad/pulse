@@ -14,6 +14,7 @@ configurations.
 from __future__ import annotations
 
 from functools import lru_cache
+from urllib.parse import urlsplit
 
 from pydantic import model_validator
 from pydantic_settings import BaseSettings
@@ -45,11 +46,12 @@ class Settings(BaseSettings):
     database_url: str
     usda_api_key: str
 
-    # Google OAuth (iOS-facing).
+    # Google OAuth (iOS + web clients).
     google_client_id: str = ""
     google_client_secret: str = ""
     oauth_redirect_uri: str = ""
     app_redirect_scheme: str = "diettracker"
+    web_app_url: str = ""
     allowed_emails: str = ""  # comma-separated
     session_ttl_days: int = 90
     session_token_bytes: int = 32
@@ -210,6 +212,49 @@ class Settings(BaseSettings):
             return self
         if self.oauth_redirect_uri and not self.oauth_redirect_uri.startswith("https://"):
             raise ValueError("OAUTH_REDIRECT_URI must use https in non-local environments")
+        return self
+
+    @model_validator(mode="after")
+    def _validate_web_app_url(self) -> Settings:
+        """Require a safe, configuration-owned web origin for non-local deployments.
+
+        The OAuth callback appends a fixed ``/login/callback`` path to this
+        value. Restricting it to an origin prevents paths, query strings,
+        credentials, and caller-controlled redirects from entering that flow.
+
+        **Outputs:**
+        - Settings: This instance, with a trailing slash removed from ``web_app_url``.
+
+        **Exceptions:**
+        - ValueError: When production omits the URL, the value is not an origin,
+          HTTPS is absent outside local mode, or local HTTP targets a non-loopback host.
+        """
+        value = self.web_app_url.strip().rstrip("/")
+        self.web_app_url = value
+        if not value:
+            if self.is_local_env:
+                return self
+            raise ValueError("WEB_APP_URL is required outside local environments")
+
+        parsed = urlsplit(value)
+        if (
+            parsed.scheme not in {"http", "https"}
+            or not parsed.hostname
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.path
+            or parsed.query
+            or parsed.fragment
+        ):
+            raise ValueError("WEB_APP_URL must be an absolute origin without path or credentials")
+        if not self.is_local_env and parsed.scheme != "https":
+            raise ValueError("WEB_APP_URL must use https outside local environments")
+        if (
+            self.is_local_env
+            and parsed.scheme == "http"
+            and parsed.hostname not in {"localhost", "127.0.0.1", "::1"}
+        ):
+            raise ValueError("WEB_APP_URL may use http only for a local loopback origin")
         return self
 
     @model_validator(mode="after")

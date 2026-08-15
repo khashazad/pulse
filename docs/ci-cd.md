@@ -15,7 +15,7 @@ so a red pipeline blocks the deploy.
 
 ```
 PR / push to main
-├── Server CI ──► ruff ─ mypy ─ unit (3.11+3.12) ─ full suite+coverage ─ docker ──► server-gate
+├── Server CI ──► ruff ─ mypy ─ web test/typecheck/build ─ unit ─ coverage ─ docker ──► server-gate
 ├── iOS CI ─────► swiftlint ─ xcodegen+build+test (simulator) ─────────────────► ios-gate
 ├── CodeQL (python)          ─ every PR, push to main, weekly
 ├── Security                 ─ pip-audit, gitleaks, trivy fs, zizmor
@@ -28,7 +28,7 @@ PR / push to main
 
 | Workflow | File | Triggers | What it does |
 |---|---|---|---|
-| Server CI | `server-ci.yml` | PR / main push touching `server/**` | ruff (lint + format), mypy, unit tests on a 3.11/3.12 matrix, full suite + **80% coverage gate** against `postgres:16`, Docker build + Trivy image scan + production-mode boot smoke, aggregated by `server-gate` |
+| Server CI | `server-ci.yml` | PR / main push touching `server/**` | ruff (lint + format), mypy, React tests + typecheck + production build on Node 24, Python unit tests on a 3.11/3.12 matrix, full suite + **80% coverage gate** against `postgres:16`, Docker build + Trivy image scan + production-mode boot smoke, aggregated by `server-gate` |
 | Server CI (skip) | `server-ci-skip.yml` | PRs touching *no* server files | Reports a passing `server-gate` so the required check never deadlocks |
 | iOS CI | `ios-ci.yml` | PR / main push touching `ios/**` | SwiftLint `--strict`, then `xcodegen generate` + `xcodebuild test` on a macos-15 runner with a dynamically picked iPhone simulator, aggregated by `ios-gate` |
 | iOS CI (skip) | `ios-ci-skip.yml` | PRs touching *no* ios files | Reports a passing `ios-gate` |
@@ -56,9 +56,15 @@ markers.
 inner path-filtered jobs. The gates fail on *any* non-success result
 (including `skipped`), so a job silently not running can't pass the gate.
 
-**Python version strategy.** The Docker runtime is `python:3.11-slim`, so the
-full suite (unit + integration + coverage) is pinned to 3.11 for production
-parity; the unit matrix adds 3.12 as the forward check.
+**Python version strategy.** The package supports Python 3.11+, so the full
+suite (unit + integration + coverage) runs on the 3.11 lower bound and the unit
+matrix adds 3.12. The Docker build and boot smoke validate the pinned Python
+3.14 runtime image separately.
+
+**Co-deployed web app.** The Docker build has a pinned Node stage that runs the
+React tests and production build, then copies only `dist/` into the Python
+runtime image. FastAPI serves `/` and `/login/callback`; authenticated data
+continues to use the existing same-origin JSON API.
 
 **Production-mode boot smoke.** The Docker job boots the built image with
 `APP_ENV=production` and a dummy MCP service token against a real Postgres,
@@ -81,9 +87,10 @@ are timing-sensitive and occasionally flake; a rerun has always cleared them.
 
 **Supply-chain hygiene.** Every third-party action is pinned to a commit SHA
 (with a `# vX.Y.Z` comment); workflows run with least-privilege `permissions`
-and `persist-credentials: false`; Dependabot keeps three ecosystems current
-weekly (grouped): GitHub Actions pins, server Python deps via `uv.lock`, and
-the Dockerfile's digest-pinned base images. `zizmor` lints the workflows on
+and `persist-credentials: false`; Dependabot keeps four ecosystems current
+weekly (grouped): GitHub Actions pins, server Python deps via `uv.lock`, web
+dependencies via `pnpm-lock.yaml`, and the Dockerfile's digest-pinned base
+images. `zizmor` lints the workflows on
 every run. Concurrency cancels superseded PR runs but keys `main` pushes by
 SHA so a quick follow-up merge can't cancel the previous commit's checks.
 
@@ -121,6 +128,11 @@ uv run mypy src
 DATABASE_URL=postgresql://localhost/test USDA_API_KEY=test APP_ENV=test \
   uv run pytest -q -m "not integration"
 # Full suite + coverage needs a local Postgres and TEST_DATABASE_URL.
+
+# Web (from server/web/; Node 24)
+corepack prepare pnpm@10.10.0 --activate
+pnpm install --frozen-lockfile
+pnpm test --run && pnpm typecheck && pnpm build
 
 # iOS (from ios/)
 swiftlint lint --strict

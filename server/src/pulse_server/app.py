@@ -61,6 +61,11 @@ from pulse_server.routers import (
 )
 from pulse_server.usda import USDAClient
 from pulse_server.usda_provider import get_usda_client, set_usda_client
+from pulse_server.web import (
+    WEB_EXEMPT_PATHS,
+    WEB_EXEMPT_PREFIXES,
+    create_web_router,
+)
 
 
 @asynccontextmanager
@@ -124,8 +129,8 @@ _mcp_exempt_prefixes: tuple[str, ...] = ("/mcp",)
 
 app.add_middleware(
     SessionAuthMiddleware,
-    exempt_paths=_mcp_exempt_paths,
-    exempt_prefixes=_mcp_exempt_prefixes,
+    exempt_paths=_mcp_exempt_paths | WEB_EXEMPT_PATHS,
+    exempt_prefixes=_mcp_exempt_prefixes + WEB_EXEMPT_PREFIXES,
 )
 
 # Registered after (= runs outside) the auth middleware so 401s are logged too.
@@ -157,6 +162,7 @@ app.include_router(weight_router.router)
 app.include_router(measures_photo_tags_router.router)
 app.include_router(measures_photos_router.router)
 app.include_router(activity_router.router)
+app.include_router(create_web_router())
 
 # OAuth metadata routes (.well-known/oauth-authorization-server, /authorize, /token, etc.)
 # must live at the root so claude.ai's connector can discover them. The MCP server itself

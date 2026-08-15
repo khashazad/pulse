@@ -20,8 +20,18 @@ updates:
         patterns:
           - "*"
 
-  # Keep the Dockerfile's digest-pinned base images (python:3.11-slim and the
-  # uv binary image) current — the github-actions/uv ecosystems do not touch
+  # Co-deployed React client dependencies via pnpm-lock.yaml.
+  - package-ecosystem: npm
+    directory: "/server/web"
+    schedule:
+      interval: weekly
+    groups:
+      web:
+        patterns:
+          - "*"
+
+  # Keep the Dockerfile's digest-pinned base images (Node, Python, and the uv
+  # binary image) current — the github-actions/uv/npm ecosystems do not touch
   # Dockerfile FROM/COPY digests.
   - package-ecosystem: docker
     directory: "/server"

@@ -65,13 +65,47 @@ jobs:
       - name: mypy
         run: uv run mypy src
 
+  web:
+    name: web tests + typecheck + build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server/web
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "24"
+
+      - name: Setup pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.10.0 --activate
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Test
+        run: pnpm test --run
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Production build
+        run: pnpm build
+
   unit:
     name: unit tests (py${{ matrix.python }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        # 3.11 mirrors the Docker runtime (python:3.11-slim); 3.12 is the forward check.
+        # 3.11 is the supported lower bound; 3.12 provides an additional compatibility check.
         python: ["3.11", "3.12"]
     steps:
       - name: Checkout
@@ -119,9 +153,8 @@ jobs:
         with:
           persist-credentials: false
 
-      # Pinned to 3.11 so the full suite (integration included) runs on the same
-      # interpreter as the production image (python:3.11-slim). 3.12 coverage of
-      # the unit tests comes from the unit matrix.
+      # Pinned to the supported 3.11 lower bound; the Docker build and boot smoke
+      # independently validate the production Python 3.14 image.
       - name: Setup server toolchain
         uses: ./.github/actions/setup-server
         with:
@@ -196,6 +229,7 @@ jobs:
             -e DATABASE_URL=postgresql://postgres:postgres@localhost:5432/pulse_smoke \
             -e USDA_API_KEY=smoke \
             -e APP_ENV=production \
+            -e WEB_APP_URL=https://pulse-ci.example \
             -e MCP_SERVICE_TOKEN=ci-smoke-dummy-token-0123456789abcdefghijklmnop \
             -e S3_ENDPOINT=https://smoke.r2.cloudflarestorage.com \
             -e S3_BUCKET=pulse-smoke \
@@ -216,7 +250,7 @@ jobs:
   server-gate:
     name: server-gate
     runs-on: ubuntu-latest
-    needs: [lint, typecheck, unit, integration, docker-build]
+    needs: [lint, typecheck, web, unit, integration, docker-build]
     if: always()
     steps:
       # Deliberately strict: anything other than 'success' (failure, cancelled,
