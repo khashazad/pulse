@@ -32,6 +32,11 @@ ENV UV_LINK_MODE=copy \
     PYTHONUNBUFFERED=1 \
     PATH="/app/.venv/bin:$PATH"
 
+# Stable return origin for the separately hosted Vercel Progress client. Railway's
+# OAUTH_REDIRECT_URI remains the Google callback so the existing iOS OAuth client
+# and state cookies continue to use the API origin.
+ENV WEB_APP_URL=https://pulse-progress.vercel.app
+
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 

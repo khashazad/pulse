@@ -167,8 +167,8 @@ def test_web_app_url_allows_local_vite_origin(monkeypatch):
     assert cfg.get_settings().web_app_url == "http://localhost:5173"
 
 
-def test_web_app_url_must_match_production_oauth_origin(monkeypatch):
-    """Production rejects a web origin that cannot serve the relative Pulse API paths."""
+def test_web_app_url_may_differ_from_production_oauth_origin(monkeypatch):
+    """A split web deployment may return from an OAuth callback on the API origin."""
     monkeypatch.setenv("APP_ENV", "production")
     monkeypatch.setenv("WEB_APP_URL", "https://web.example.com")
     monkeypatch.setenv("OAUTH_REDIRECT_URI", "https://api.example.com/auth/google/callback")
@@ -180,8 +180,9 @@ def test_web_app_url_must_match_production_oauth_origin(monkeypatch):
     from pulse_server import config as cfg
 
     cfg.get_settings.cache_clear()
-    with pytest.raises(ValueError, match="same origin"):
-        cfg.get_settings()
+    settings = cfg.get_settings()
+    assert settings.web_app_url == "https://web.example.com"
+    assert settings.oauth_redirect_uri == "https://api.example.com/auth/google/callback"
 
 
 def test_mcp_unauth_rejected_outside_local(monkeypatch):

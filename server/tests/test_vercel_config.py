@@ -36,3 +36,17 @@ def test_vercel_routes_web_api_and_oauth_to_production_backend() -> None:
         },
         {"source": "/login/callback", "destination": "/index.html"},
     ]
+
+
+def test_server_image_defaults_web_callback_to_vercel_origin() -> None:
+    """The Railway image returns successful browser OAuth to the stable Vercel URL.
+
+    Returns:
+        None: Assertion validates the public deployment origin.
+
+    Raises:
+        AssertionError: Raised when the image no longer defines the web callback origin.
+    """
+    dockerfile = (WEB_ROOT.parent / "Dockerfile").read_text()
+
+    assert "WEB_APP_URL=https://pulse-progress.vercel.app" in dockerfile

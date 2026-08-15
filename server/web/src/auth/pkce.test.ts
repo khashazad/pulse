@@ -29,4 +29,16 @@ describe("browser PKCE", () => {
     expect(parsed.searchParams.get("code_challenge")).toBeTruthy();
     expect(sessionStorage.getItem(PKCE_VERIFIER_KEY)).toBeTruthy();
   });
+
+  test("can start OAuth on the external API origin", async () => {
+    const url = await createLoginUrl(
+      sessionStorage,
+      "https://pulse-api.example.com",
+    );
+    const parsed = new URL(url);
+
+    expect(parsed.origin).toBe("https://pulse-api.example.com");
+    expect(parsed.pathname).toBe("/auth/google/start");
+    expect(parsed.searchParams.get("client")).toBe("web");
+  });
 });

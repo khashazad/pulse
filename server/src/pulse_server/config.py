@@ -249,14 +249,6 @@ class Settings(BaseSettings):
             raise ValueError("WEB_APP_URL must be an absolute origin without path or credentials")
         if not self.is_local_env and parsed.scheme != "https":
             raise ValueError("WEB_APP_URL must use https outside local environments")
-        if not self.is_local_env and self.oauth_redirect_uri:
-            oauth_origin = urlsplit(self.oauth_redirect_uri)
-            if (parsed.scheme, parsed.hostname, parsed.port) != (
-                oauth_origin.scheme,
-                oauth_origin.hostname,
-                oauth_origin.port,
-            ):
-                raise ValueError("WEB_APP_URL must use the same origin as OAUTH_REDIRECT_URI")
         if (
             self.is_local_env
             and parsed.scheme == "http"

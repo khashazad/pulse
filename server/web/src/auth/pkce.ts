@@ -29,6 +29,7 @@ export async function createPkcePair(): Promise<PkcePair> {
 /** Store a fresh verifier and return the server-owned Google login URL. */
 export async function createLoginUrl(
   storage: Storage = sessionStorage,
+  authOrigin: string = import.meta.env.VITE_AUTH_ORIGIN ?? "",
 ): Promise<string> {
   const pair = await createPkcePair();
   storage.setItem(PKCE_VERIFIER_KEY, pair.verifier);
@@ -37,5 +38,5 @@ export async function createLoginUrl(
     code_challenge: pair.challenge,
     code_challenge_method: "S256",
   });
-  return `/auth/google/start?${query.toString()}`;
+  return `${authOrigin.replace(/\/+$/, "")}/auth/google/start?${query.toString()}`;
 }
