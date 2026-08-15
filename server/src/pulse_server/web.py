@@ -29,6 +29,15 @@ def create_web_router(build_dir: Path = WEB_DIST_DIR) -> APIRouter:
     router = APIRouter(include_in_schema=False)
     index_file = build_dir / "index.html"
     assets_dir = (build_dir / "assets").resolve()
+    asset_files = (
+        {
+            path.relative_to(assets_dir).as_posix(): path
+            for path in assets_dir.rglob("*")
+            if path.is_file()
+        }
+        if assets_dir.is_dir()
+        else {}
+    )
 
     def index_response() -> FileResponse:
         """Return the SPA document or a clear API-only development response.
@@ -72,10 +81,10 @@ def create_web_router(build_dir: Path = WEB_DIST_DIR) -> APIRouter:
         - FileResponse: Requested asset with a one-year immutable cache policy.
 
         **Exceptions:**
-        - HTTPException(404): When the path escapes the asset root or the file is absent.
+        - HTTPException(404): When the requested build asset is absent.
         """
-        candidate = (assets_dir / asset_path).resolve()
-        if not candidate.is_relative_to(assets_dir) or not candidate.is_file():
+        candidate = asset_files.get(asset_path)
+        if candidate is None:
             raise HTTPException(status_code=404, detail="Web asset not found")
         return FileResponse(
             candidate,

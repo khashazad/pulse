@@ -238,15 +238,26 @@ async def google_start(
         httponly=True,
         samesite="lax",
     )
-    response.set_cookie(
-        key=CLIENT_COOKIE_NAME,
-        value=client,
-        max_age=STATE_COOKIE_MAX_AGE,
-        path=STATE_COOKIE_PATH,
-        secure=secure,
-        httponly=True,
-        samesite="lax",
-    )
+    if client == "web":
+        response.set_cookie(
+            key=CLIENT_COOKIE_NAME,
+            value="web",
+            max_age=STATE_COOKIE_MAX_AGE,
+            path=STATE_COOKIE_PATH,
+            secure=secure,
+            httponly=True,
+            samesite="lax",
+        )
+    else:
+        response.set_cookie(
+            key=CLIENT_COOKIE_NAME,
+            value="ios",
+            max_age=STATE_COOKIE_MAX_AGE,
+            path=STATE_COOKIE_PATH,
+            secure=secure,
+            httponly=True,
+            samesite="lax",
+        )
     return response
 
 
