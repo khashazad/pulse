@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1000" role="img" aria-label="Abstract side progress preview">
+  <defs><linearGradient id="bg" x1="1" y1="0" x2="0" y2="1"><stop stop-color="#29283c"/><stop offset="1" stop-color="#14151f"/></linearGradient><radialGradient id="glow"><stop stop-color="#c6a0f6" stop-opacity=".3"/><stop offset="1" stop-color="#c6a0f6" stop-opacity="0"/></radialGradient></defs>
+  <rect width="800" height="1000" fill="url(#bg)"/><circle cx="650" cy="200" r="300" fill="url(#glow)"/>
+  <circle cx="438" cy="225" r="78" fill="#b2acd0"/><path d="M355 380Q460 335 507 420L536 790Q455 872 366 818L307 470Q302 408 355 380Z" fill="#847ba2"/><path d="M368 414L259 706M492 427L585 700" stroke="#847ba2" stroke-width="72" stroke-linecap="round"/>
+  <text x="42" y="936" fill="#cad3f5" font-family="system-ui" font-size="30" font-weight="600">JAN · SIDE</text><text x="42" y="972" fill="#8087a2" font-family="system-ui" font-size="20">LOCAL PREVIEW</text>
+</svg>

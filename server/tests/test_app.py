@@ -8,6 +8,7 @@ with the DB pool and USDA client patched out so no real I/O occurs.
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 
@@ -42,3 +43,64 @@ def test_unauthenticated_request_rejected(client: TestClient) -> None:
     """Protected route without a Bearer token returns 401."""
     response = client.get("/entries", params={"date": "2026-04-05"})
     assert response.status_code == 401
+
+
+def test_web_root_is_public_when_build_is_absent(client: TestClient) -> None:
+    """The public SPA entry route reaches static delivery instead of session auth."""
+    response = client.get("/")
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Web client is not built"
+
+
+@pytest.fixture
+def built_web_client(tmp_path) -> TestClient:
+    """Create an isolated web router backed by a minimal temporary Vite build.
+
+    **Inputs:**
+    - tmp_path (Path): Pytest-managed directory used as the build root.
+
+    **Outputs:**
+    - TestClient: Client serving the temporary index and fingerprinted asset.
+    """
+    (tmp_path / "assets").mkdir()
+    (tmp_path / "index.html").write_text("<main>Pulse web</main>")
+    (tmp_path / "assets" / "app-abc123.js").write_text("window.PULSE = true")
+    app = FastAPI()
+
+    from pulse_server.web import create_web_router
+
+    app.include_router(create_web_router(tmp_path))
+    return TestClient(app)
+
+
+def test_web_router_serves_index(built_web_client: TestClient) -> None:
+    """The root route serves the compiled SPA entry document."""
+    response = built_web_client.get("/")
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/html")
+    assert "Pulse web" in response.text
+
+
+def test_web_router_serves_login_callback_history_fallback(
+    built_web_client: TestClient,
+) -> None:
+    """Direct navigation to the OAuth callback route returns the SPA entry document."""
+    response = built_web_client.get("/login/callback")
+    assert response.status_code == 200
+    assert "Pulse web" in response.text
+
+
+def test_web_router_serves_fingerprinted_asset(built_web_client: TestClient) -> None:
+    """Vite assets are served with their inferred content type and immutable caching."""
+    response = built_web_client.get("/assets/app-abc123.js")
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/javascript")
+    assert response.headers["cache-control"] == "public, max-age=31536000, immutable"
+    assert response.text == "window.PULSE = true"
+
+
+def test_web_router_returns_404_for_missing_asset(built_web_client: TestClient) -> None:
+    """A missing client asset returns 404 rather than the SPA document."""
+    response = built_web_client.get("/assets/missing.js")
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Web asset not found"

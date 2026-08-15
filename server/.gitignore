@@ -8,5 +8,11 @@ __pycache__/
 .vault-agent/
 .claude/
 
+# Co-deployed React client build artifacts
+web/node_modules/
+web/dist/
+web/coverage/
+web/*.tsbuildinfo
+
 # Security scan artifacts (may contain credential snapshots) — never commit
 .deepsec/

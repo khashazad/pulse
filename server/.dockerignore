@@ -7,5 +7,9 @@ __pycache__/
 .env
 .DS_Store
 tests/
+web/node_modules/
+web/dist/
+web/coverage/
+web/*.tsbuildinfo
 .agent/
 .vault-agent/

@@ -1,0 +1,22 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "vite",
+  "rewrites": [
+    {
+      "source": "/auth/:path*",
+      "destination": "https://pulse-server-production-4521.up.railway.app/auth/:path*"
+    },
+    {
+      "source": "/measures/:path*",
+      "destination": "https://pulse-server-production-4521.up.railway.app/measures/:path*"
+    },
+    {
+      "source": "/weight",
+      "destination": "https://pulse-server-production-4521.up.railway.app/weight"
+    },
+    {
+      "source": "/login/callback",
+      "destination": "/index.html"
+    }
+  ]
+}

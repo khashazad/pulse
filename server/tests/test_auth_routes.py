@@ -22,6 +22,7 @@ os.environ.setdefault("GOOGLE_CLIENT_ID", "cid.apps.googleusercontent.com")
 os.environ.setdefault("GOOGLE_CLIENT_SECRET", "secret")
 os.environ.setdefault("OAUTH_REDIRECT_URI", "https://api.example.com/auth/google/callback")
 os.environ.setdefault("APP_REDIRECT_SCHEME", "diettracker")
+os.environ.setdefault("WEB_APP_URL", "https://api.example.com")
 os.environ.setdefault("ALLOWED_EMAILS", "khashzd@gmail.com")
 os.environ.setdefault("LEGACY_USER_KEY", "khash")
 os.environ.setdefault("APP_ENV", "local")
@@ -89,6 +90,36 @@ def test_start_redirects_to_google_with_state_cookie(client):
     assert "oauth_pkce=" in set_cookie
     assert "HttpOnly" in set_cookie
     assert "Path=/auth/google" in set_cookie
+
+
+def test_web_start_sets_client_target_cookie(client):
+    """A web OAuth start records the fixed web callback target in an HTTP-only cookie."""
+    response = client.get(
+        "/auth/google/start",
+        params={
+            "client": "web",
+            "code_challenge": "abc123challenge",
+            "code_challenge_method": "S256",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 302
+    set_cookie = response.headers.get("set-cookie", "")
+    assert "oauth_client=web" in set_cookie
+    assert "HttpOnly" in set_cookie
+    assert "Path=/auth/google" in set_cookie
+
+
+def test_start_rejects_unknown_client_target(client):
+    """An unknown OAuth client target is rejected rather than becoming an open redirect."""
+    response = client.get(
+        "/auth/google/start",
+        params={"client": "https://evil.example", "code_challenge": "abc123challenge"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 422
 
 
 def test_start_without_pkce_challenge_redirects_invalid_request(client):
@@ -272,6 +303,53 @@ def test_callback_happy_path_stores_exchange_code_and_redirects_with_code(client
     assert "token=" not in loc
     assert "email=" not in loc
     _patch_db_repo.create.assert_awaited_once()
+
+
+def test_web_callback_redirects_to_configured_app_with_exchange_code(client, _patch_db_repo):
+    """A web-targeted callback returns only its exchange code to the configured SPA callback."""
+    client.cookies.set("oauth_state", "s", path="/auth/google")
+    client.cookies.set("oauth_pkce", "challenge", path="/auth/google")
+    client.cookies.set("oauth_client", "web", path="/auth/google")
+    with (
+        patch(
+            "pulse_server.routers.auth.exchange_code_for_id_token",
+            new_callable=AsyncMock,
+            return_value="jwt",
+        ),
+        patch(
+            "pulse_server.routers.auth.verify_id_token",
+            return_value=("khashzd@gmail.com", "sub"),
+        ),
+    ):
+        response = client.get(
+            "/auth/google/callback",
+            params={"code": "x", "state": "s"},
+            follow_redirects=False,
+        )
+
+    assert response.status_code == 302
+    location = response.headers["location"]
+    assert location.startswith("https://api.example.com/login/callback?")
+    assert "code=" in location
+    assert "token=" not in location
+    assert "email=" not in location
+    assert 'oauth_client=""' in response.headers.get("set-cookie", "")
+
+
+def test_web_callback_error_returns_to_configured_app(client):
+    """OAuth errors honor the stored web target without accepting a caller redirect URL."""
+    client.cookies.set("oauth_client", "web", path="/auth/google")
+
+    response = client.get(
+        "/auth/google/callback",
+        params={"error": "access_denied", "redirect_uri": "https://evil.example"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 302
+    assert response.headers["location"] == (
+        "https://api.example.com/login/callback?error=access_denied"
+    )
 
 
 def test_callback_without_pkce_cookie_redirects_invalid_request(client):

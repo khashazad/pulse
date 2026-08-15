@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1000" role="img" aria-label="Abstract back progress preview">
+  <defs><linearGradient id="bg" x1="0" y1="1" x2="1" y2="0"><stop stop-color="#17231f"/><stop offset="1" stop-color="#283d3a"/></linearGradient><radialGradient id="glow"><stop stop-color="#a6da95" stop-opacity=".38"/><stop offset="1" stop-color="#a6da95" stop-opacity="0"/></radialGradient></defs>
+  <rect width="800" height="1000" fill="url(#bg)"/><circle cx="640" cy="330" r="340" fill="url(#glow)"/>
+  <circle cx="400" cy="220" r="74" fill="#c1d7cb"/><path d="M235 385Q400 300 565 385L540 785Q472 860 400 860Q328 860 260 785Z" fill="#7fa18e"/><path d="M252 402L150 700M548 402L650 700" stroke="#7fa18e" stroke-width="68" stroke-linecap="round"/><path d="M400 374V720" stroke="#668776" stroke-width="10" stroke-linecap="round"/>
+  <text x="42" y="936" fill="#cad3f5" font-family="system-ui" font-size="30" font-weight="600">AUG · BACK</text><text x="42" y="972" fill="#8087a2" font-family="system-ui" font-size="20">LOCAL PREVIEW</text>
+</svg>

@@ -1,3 +1,20 @@
+# Build the React client first, then copy only its static output into the Python
+# runtime image. The Node toolchain never ships in production.
+# node:24.12.0-alpine3.23
+FROM node:24.12.0-alpine3.23@sha256:c921b97d4b74f51744057454b306b418cf693865e73b8100559189605f6955b8 AS web-build
+
+WORKDIR /web
+
+RUN corepack enable \
+    && corepack prepare pnpm@10.10.0 --activate
+
+COPY web/package.json web/pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile
+
+COPY web/ ./
+RUN pnpm test --run \
+    && pnpm build
+
 # Pinned to immutable digests so the build/runtime contents can't drift when an
 # upstream tag is moved. The tag alongside the digest is advisory — the digest
 # wins — but it tells Dependabot which tag to track when proposing bumps
@@ -19,6 +36,7 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 
 COPY src/ ./src/
+COPY --from=web-build /web/dist/ ./src/pulse_server/web_dist/
 COPY schema.sql ./
 
 RUN uv sync --frozen --no-dev

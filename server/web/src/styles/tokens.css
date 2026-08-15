@@ -1,0 +1,32 @@
+:root {
+  color-scheme: dark;
+  --crust: #181926;
+  --mantle: #1e2030;
+  --base: #24273a;
+  --surface-0: #363a4f;
+  --surface-1: #494d64;
+  --surface-2: #5b6078;
+  --overlay-0: #6e738d;
+  --subtext-0: #a5adcb;
+  --subtext-1: #b8c0e0;
+  --text: #cad3f5;
+  --mauve: #c6a0f6;
+  --lavender: #b7bdf8;
+  --blue: #8aadf4;
+  --sapphire: #7dc4e4;
+  --teal: #8bd5ca;
+  --green: #a6da95;
+  --yellow: #eed49f;
+  --peach: #f5a97f;
+  --red: #ed8796;
+  --pink: #f5bde6;
+  --shadow: rgba(9, 10, 18, 0.45);
+  --hairline: rgba(202, 211, 245, 0.1);
+  --card: rgba(54, 58, 79, 0.52);
+  --card-solid: #2b2e43;
+  --radius-sm: 10px;
+  --radius-md: 16px;
+  --radius-lg: 24px;
+  --page-width: 1180px;
+  font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
