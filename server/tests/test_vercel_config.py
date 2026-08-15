@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-
 WEB_ROOT = Path(__file__).parents[1] / "web"
 BACKEND_ORIGIN = "https://pulse-server-production-4521.up.railway.app"
 
