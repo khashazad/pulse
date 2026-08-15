@@ -19,7 +19,7 @@ RUN pnpm test --run \
 # upstream tag is moved. The tag alongside the digest is advisory — the digest
 # wins — but it tells Dependabot which tag to track when proposing bumps
 # (without it, Dependabot once bumped us to the full non-slim image: PR #39).
-# python:3.11-slim -> 3.11.15-slim-trixie
+# python:3.14-slim
 FROM python:3.14-slim@sha256:d7a925f9eb9639a93e455b9f12c167569358818c0f62b51b88edbc8fcf34c421
 
 # ghcr.io/astral-sh/uv:0.12.3
