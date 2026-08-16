@@ -103,9 +103,10 @@ Diet tracking workflow. Follow this order on every food-related interaction:
 
 Progress-photo workflow:
 
-1) To upload body-progress photos from ChatGPT/Claude, call `upload_progress_photos`
-   with one item per image. Pass `image_base64` as raw base64 or a
-   `data:image/...;base64,` URL. Include `filename` when available.
+1) In ChatGPT, upload attached images with `upload_progress_photo_files`. Its `photos`
+   field is an OpenAI file parameter: use the attachment references injected by the
+   host and never invent `download_url` or `file_id`. MCP clients that directly expose
+   image bytes may instead call `upload_progress_photos` with base64 data.
 
 2) Dates: the server reads image capture metadata first (EXIF DateTimeOriginal and
    common fallbacks). If an image lacks a metadata date, pass that item's
@@ -118,10 +119,10 @@ Progress-photo workflow:
    `pose_hint` such as "flexed front" or "back". When unsure, call
    `list_progress_photo_tags` first and use one of those names.
 
-4) Bulk behavior: the tool accepts up to 30 photos, returns accepted and rejected
-   arrays, and does not let one bad photo block the rest of the batch. A rejected item
-   needs either a date fallback, a tag hint matching an existing tag, or valid image
-   bytes before retrying.
+4) Bulk behavior: both tools accept up to 30 photos, return accepted and rejected
+   arrays, and do not let one bad photo block the rest of the batch. A rejected item
+   needs either a date fallback, a tag hint matching an existing tag, or a fresh valid
+   attachment before retrying. Never resend accepted photos.
 """.strip()
 
 

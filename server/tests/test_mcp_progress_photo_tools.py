@@ -12,6 +12,7 @@ from datetime import datetime as DateTimeValue
 from unittest.mock import AsyncMock, MagicMock, call, patch
 from zoneinfo import ZoneInfo
 
+import httpx
 import pytest
 from fastmcp import Client, FastMCP
 from fastmcp.exceptions import ToolError
@@ -370,3 +371,226 @@ async def test_upload_progress_photos_keeps_rejections_per_photo() -> None:
     assert payload["accepted"][0]["date"] == "2026-05-18"
     assert payload["rejected"][0]["index"] == 0
     assert "capture date" in payload["rejected"][0]["reason"]
+
+
+@pytest.mark.asyncio
+async def test_chatgpt_file_tool_declares_openai_file_params_schema() -> None:
+    """The ChatGPT upload tool exposes the exact OpenAI file-parameter contract."""
+    mcp = FastMCP("test-progress-photo-files")
+    ctx = ToolContext(user_key="khash", tz=ZoneInfo("America/Toronto"), usda_getter=MagicMock())
+    progress_photo_tools.register(mcp, ctx)
+
+    tools = {tool.name: tool for tool in await mcp.list_tools()}
+    tool = tools["upload_progress_photo_files"]
+    item_schema = tool.parameters["properties"]["photos"]["items"]
+
+    assert tool.meta == {"openai/fileParams": ["photos"]}
+    assert item_schema["required"] == ["download_url", "file_id"]
+    assert item_schema["additionalProperties"] is False
+    assert item_schema["properties"]["download_url"]["type"] == "string"
+    assert item_schema["properties"]["file_id"]["type"] == "string"
+    assert item_schema["properties"]["mime_type"]["type"] == "string"
+    assert item_schema["properties"]["file_name"]["type"] == "string"
+
+
+@pytest.mark.asyncio
+async def test_download_chatgpt_file_rejects_non_https_url() -> None:
+    """ChatGPT attachment downloads cannot target plaintext or local URLs."""
+    file = progress_photo_tools.ChatGPTProgressPhotoFile(
+        download_url="http://127.0.0.1/private.jpg",
+        file_id="file_test",
+        mime_type="image/jpeg",
+        file_name="front.jpg",
+    )
+
+    with pytest.raises(ToolError, match="public HTTPS"):
+        await progress_photo_tools.download_chatgpt_file(file)
+
+
+@pytest.mark.asyncio
+async def test_download_chatgpt_file_revalidates_redirect_target() -> None:
+    """A signed-file redirect cannot escape URL validation."""
+    file = progress_photo_tools.ChatGPTProgressPhotoFile(
+        download_url="https://files.example/front.jpg",
+        file_id="file_test",
+        mime_type="image/jpeg",
+        file_name="front.jpg",
+    )
+    requested_urls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        """Redirect the first and only permitted request to a private target.
+
+        **Inputs:**
+        - request (httpx.Request): Mock transport request.
+
+        **Outputs:**
+        - httpx.Response: Redirect response targeting localhost.
+        """
+        requested_urls.append(str(request.url))
+        return httpx.Response(302, headers={"Location": "https://127.0.0.1/private.jpg"})
+
+    async def validate(url: str) -> None:
+        """Permit the public fixture URL and reject the redirected private URL.
+
+        **Inputs:**
+        - url (str): URL about to be requested.
+
+        **Outputs:**
+        - None: The URL is accepted.
+
+        **Exceptions:**
+        - ToolError: Raised for the private redirect target.
+        """
+        if "127.0.0.1" in url:
+            raise ToolError("ChatGPT attachment download_url must be a public HTTPS URL")
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        with patch(
+            "pulse_server.mcp.tools.progress_photo_tools._validate_public_https_url",
+            side_effect=validate,
+        ):
+            with pytest.raises(ToolError, match="public HTTPS"):
+                await progress_photo_tools._download_chatgpt_file_with_client(file, client)
+
+    assert requested_urls == ["https://files.example/front.jpg"]
+
+
+@pytest.mark.asyncio
+async def test_download_chatgpt_file_enforces_streaming_byte_cap() -> None:
+    """A file exceeding the REST upload limit is rejected while streaming."""
+    file = progress_photo_tools.ChatGPTProgressPhotoFile(
+        download_url="https://files.example/front.jpg",
+        file_id="file_test",
+        mime_type="image/jpeg",
+        file_name="front.jpg",
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        """Return an image payload one byte over the upload limit.
+
+        **Inputs:**
+        - request (httpx.Request): Mock transport request.
+
+        **Outputs:**
+        - httpx.Response: Oversized image response.
+        """
+        del request
+        return httpx.Response(
+            200,
+            headers={"Content-Type": "image/jpeg"},
+            content=b"x" * (progress_photo_tools.MAX_UPLOAD_BYTES + 1),
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        with patch(
+            "pulse_server.mcp.tools.progress_photo_tools._validate_public_https_url",
+            new_callable=AsyncMock,
+        ):
+            with pytest.raises(ToolError, match="exceeds"):
+                await progress_photo_tools._download_chatgpt_file_with_client(file, client)
+
+
+@pytest.mark.asyncio
+async def test_upload_progress_photo_files_downloads_and_delegates_to_insert_one() -> None:
+    """ChatGPT file inputs preserve multi-date/tag behavior and use canonical ingestion."""
+    front = _tag_row("front", 0, uuid.UUID("00000000-0000-0000-0000-0000000000f1"))
+    flexed = _tag_row("flexed front", 1, uuid.UUID("00000000-0000-0000-0000-0000000000f2"))
+    raw_by_file = {
+        "file_front": _jpeg_bytes(exif_date="2026:05:17 08:15:30"),
+        "file_flexed": _png_bytes(),
+    }
+    calls: list[dict] = []
+
+    @asynccontextmanager
+    async def _session_ctx():
+        """Yield a fake DB session for the file-parameter tool test."""
+        yield MagicMock()
+
+    @asynccontextmanager
+    async def _tx(_session):
+        """Provide a no-op transaction for the file-parameter tool test."""
+        yield
+
+    async def _download(file):
+        """Return fixture bytes selected by the ChatGPT file identifier."""
+        return raw_by_file[file.file_id]
+
+    async def _insert_one(**kwargs):
+        """Capture canonical service calls and return persisted-row fixtures."""
+        calls.append(kwargs)
+        return _photo_row(
+            photo_id=uuid.uuid4(),
+            tag_id=kwargs["tag_id"],
+            log_date=kwargs["log_date"],
+        )
+
+    tag_repo = MagicMock()
+    tag_repo.list_for_user = AsyncMock(return_value=[front, flexed])
+    mcp = FastMCP("test-progress-photo-files")
+    ctx = ToolContext(user_key="khash", tz=ZoneInfo("America/Toronto"), usda_getter=MagicMock())
+    progress_photo_tools.register(mcp, ctx)
+
+    with (
+        patch(
+            "pulse_server.mcp.tools.progress_photo_tools.get_session",
+            return_value=_session_ctx(),
+        ),
+        patch("pulse_server.mcp.tools.progress_photo_tools.transaction", side_effect=_tx),
+        patch(
+            "pulse_server.mcp.tools.progress_photo_tools.ProgressPhotoTagRepository",
+            return_value=tag_repo,
+        ),
+        patch(
+            "pulse_server.mcp.tools.progress_photo_tools.ProgressPhotoRepository",
+            return_value=MagicMock(),
+        ),
+        patch(
+            "pulse_server.mcp.tools.progress_photo_tools.get_photo_store",
+            return_value=MagicMock(),
+        ),
+        patch(
+            "pulse_server.mcp.tools.progress_photo_tools.download_chatgpt_file",
+            side_effect=_download,
+        ),
+        patch(
+            "pulse_server.mcp.tools.progress_photo_tools.insert_one",
+            side_effect=_insert_one,
+        ) as insert_mock,
+    ):
+        async with Client(mcp) as client:
+            result = await client.call_tool(
+                "upload_progress_photo_files",
+                {
+                    "photos": [
+                        {
+                            "download_url": "https://files.example/front.jpg",
+                            "file_id": "file_front",
+                            "mime_type": "image/jpeg",
+                            "file_name": "front.jpg",
+                        },
+                        {
+                            "download_url": "https://files.example/flexed.png",
+                            "file_id": "file_flexed",
+                            "mime_type": "image/png",
+                            "file_name": "check-in.png",
+                            "capture_date": "2026-05-18",
+                            "pose_hint": "Flexed Front",
+                        },
+                    ]
+                },
+            )
+
+    payload = result.structured_content
+    assert payload["accepted_count"] == 2
+    assert payload["rejected_count"] == 0
+    assert [photo["date"] for photo in payload["accepted"]] == [
+        "2026-05-17",
+        "2026-05-18",
+    ]
+    assert [photo["tag"]["name"] for photo in payload["accepted"]] == [
+        "front",
+        "flexed front",
+    ]
+    assert [call_args["raw"] for call_args in calls] == list(raw_by_file.values())
+    insert_mock.assert_has_awaits([call(**calls[0]), call(**calls[1])])

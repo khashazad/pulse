@@ -60,6 +60,7 @@ async def test_build_mcp_registers_expected_tools() -> None:
         "get_weights",
         "get_weight",
         "list_progress_photo_tags",
+        "upload_progress_photo_files",
         "upload_progress_photos",
     }
     assert expected.issubset(names)
@@ -91,6 +92,7 @@ def test_workflow_instructions_mention_progress_photo_uploads() -> None:
     """Workflow instructions explain the progress-photo MCP upload path."""
     from pulse_server.mcp.server import WORKFLOW_INSTRUCTIONS
 
+    assert "upload_progress_photo_files" in WORKFLOW_INSTRUCTIONS
     assert "upload_progress_photos" in WORKFLOW_INSTRUCTIONS
     assert "list_progress_photo_tags" in WORKFLOW_INSTRUCTIONS
 

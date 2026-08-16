@@ -13,7 +13,8 @@ from __future__ import annotations
 from datetime import date as DateValue
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
+from pydantic.json_schema import SkipJsonSchema
 
 from pulse_server.models import (
     FoodEntryResponse,
@@ -178,6 +179,27 @@ class ProgressPhotoUploadItem(BaseModel):
     capture_date: str | None = None
     pose_hint: str | None = None
     idempotency_key: str | None = None
+
+
+class ChatGPTProgressPhotoFile(BaseModel):
+    """One ChatGPT attachment supplied through an OpenAI MCP file parameter.
+
+    ``download_url`` and ``file_id`` are always injected by ChatGPT. Optional
+    file metadata may be absent at runtime but remains declared as a plain
+    string in JSON Schema, as required by OpenAI's file-parameter contract.
+    The remaining fields let the model provide the same pose/date hints as the
+    base64 upload tool.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    download_url: str
+    file_id: str
+    mime_type: str | SkipJsonSchema[None] = None
+    file_name: str | SkipJsonSchema[None] = None
+    capture_date: str | SkipJsonSchema[None] = None
+    pose_hint: str | SkipJsonSchema[None] = None
+    idempotency_key: str | SkipJsonSchema[None] = None
 
 
 class ProgressPhotoTagMatch(BaseModel):

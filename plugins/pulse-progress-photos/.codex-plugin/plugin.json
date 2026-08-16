@@ -1,0 +1,18 @@
+{
+  "name": "pulse-progress-photos",
+  "version": "0.1.0",
+  "description": "Upload and organize progress photos in Pulse from ChatGPT attachments.",
+  "author": {
+    "name": "Khash"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Pulse Progress Photos",
+    "shortDescription": "File workout progress photos by capture date and pose.",
+    "longDescription": "Uploads ChatGPT image attachments to Pulse, extracts capture dates, matches existing progress-photo pose tags, and reports partial batch results.",
+    "developerName": "Khash",
+    "category": "Health & Fitness",
+    "capabilities": ["Write"],
+    "defaultPrompt": "Upload these attached workout progress photos to Pulse."
+  }
+}

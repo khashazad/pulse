@@ -12,16 +12,22 @@ API path.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import binascii
 import io
+import ipaddress
 import re
+import socket
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from datetime import date as DateValue
 from pathlib import PurePath
-from typing import Annotated, Any, Literal
-from uuid import UUID
+from typing import Annotated, Any, Literal, Protocol, TypeVar
+from urllib.parse import urljoin, urlsplit
+from uuid import NAMESPACE_URL, UUID, uuid5
 
+import httpx
 from fastapi import HTTPException
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
@@ -31,6 +37,7 @@ from pydantic import Field
 from pulse_server.db import get_session, transaction
 from pulse_server.mcp.context import ToolContext, parse_iso_date
 from pulse_server.mcp.models import (
+    ChatGPTProgressPhotoFile,
     ProgressPhotoBulkUploadResponse,
     ProgressPhotoTagMatch,
     ProgressPhotoTagsResponse,
@@ -42,7 +49,7 @@ from pulse_server.models.progress_photo import ProgressPhotoMetadata, ProgressPh
 from pulse_server.photo_store import get_photo_store
 from pulse_server.repositories.progress_photo import ProgressPhotoRepository
 from pulse_server.repositories.progress_photo_tag import ProgressPhotoTagRepository
-from pulse_server.services.progress_photo_service import insert_one
+from pulse_server.services.progress_photo_service import MAX_UPLOAD_BYTES, insert_one
 from pulse_server.services.progress_photo_tag_service import list_tags
 
 CaptureDateSource = Literal["metadata", "provided", "default"]
@@ -72,6 +79,23 @@ _INFO_TEXT_KEYS = (
     "pose",
     "tag",
 )
+_DOWNLOAD_CHUNK_BYTES = 64 * 1024
+_MAX_DOWNLOAD_REDIRECTS = 3
+_DOWNLOAD_TIMEOUT = httpx.Timeout(20.0, connect=5.0)
+
+
+class _ProgressPhotoSource(Protocol):
+    """Structural fields shared by base64 and ChatGPT file upload items."""
+
+    capture_date: str | None
+    pose_hint: str | None
+    idempotency_key: str | None
+
+
+SourceT = TypeVar("SourceT", bound=_ProgressPhotoSource)
+RawLoader = Callable[[SourceT], Awaitable[bytes]]
+FilenameGetter = Callable[[SourceT], str | None]
+IdempotencyGetter = Callable[[SourceT], str | None]
 
 
 @dataclass(frozen=True)
@@ -191,6 +215,129 @@ def decode_image_base64(value: str) -> bytes:
     if not raw:
         raise ToolError("image_base64 decoded to empty bytes")
     return raw
+
+
+async def _validate_public_https_url(value: str) -> None:
+    """Reject attachment URLs that could target private server-side resources.
+
+    **Inputs:**
+    - value (str): Candidate ChatGPT temporary download URL.
+
+    **Outputs:**
+    - None: The URL is an HTTPS URL whose current DNS answers are public.
+
+    **Exceptions:**
+    - ToolError: Raised for malformed URLs, non-HTTPS URLs, embedded
+      credentials, nonstandard ports, DNS failures, or non-public addresses.
+    """
+    parsed = urlsplit(value)
+    try:
+        port = parsed.port
+    except ValueError as exc:
+        raise ToolError("ChatGPT attachment download_url must be a public HTTPS URL") from exc
+    if (
+        parsed.scheme.lower() != "https"
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or port not in (None, 443)
+    ):
+        raise ToolError("ChatGPT attachment download_url must be a public HTTPS URL")
+    try:
+        addresses = await asyncio.to_thread(
+            socket.getaddrinfo,
+            parsed.hostname,
+            443,
+            type=socket.SOCK_STREAM,
+        )
+    except OSError as exc:
+        raise ToolError("ChatGPT attachment download host could not be resolved") from exc
+    if not addresses or any(
+        not ipaddress.ip_address(address[4][0]).is_global for address in addresses
+    ):
+        raise ToolError("ChatGPT attachment download_url must be a public HTTPS URL")
+
+
+async def _download_chatgpt_file_with_client(
+    file: ChatGPTProgressPhotoFile,
+    client: httpx.AsyncClient,
+) -> bytes:
+    """Download one ChatGPT file parameter through a bounded HTTP client.
+
+    Every redirect target is revalidated before it is requested. The response
+    is streamed under the same byte limit used by the canonical REST upload.
+
+    **Inputs:**
+    - file (ChatGPTProgressPhotoFile): File reference injected by ChatGPT.
+    - client (httpx.AsyncClient): Client configured without automatic redirects.
+
+    **Outputs:**
+    - bytes: Downloaded image payload within ``MAX_UPLOAD_BYTES``.
+
+    **Exceptions:**
+    - ToolError: Raised when the URL is unsafe, the download fails, redirects
+      are invalid/excessive, the media type is not an image, or the byte cap is
+      exceeded.
+    """
+    current_url = file.download_url
+    try:
+        for redirect_index in range(_MAX_DOWNLOAD_REDIRECTS + 1):
+            await _validate_public_https_url(current_url)
+            async with client.stream(
+                "GET",
+                current_url,
+                headers={"Accept": "image/*"},
+            ) as response:
+                if response.is_redirect:
+                    location = response.headers.get("location")
+                    if not location or redirect_index == _MAX_DOWNLOAD_REDIRECTS:
+                        raise ToolError("ChatGPT attachment download redirected too many times")
+                    current_url = urljoin(current_url, location)
+                    continue
+                response.raise_for_status()
+                response_mime = response.headers.get("content-type", "").split(";", 1)[0]
+                declared_mime = file.mime_type or ""
+                if not response_mime.startswith("image/") and not declared_mime.startswith(
+                    "image/"
+                ):
+                    raise ToolError("ChatGPT attachment is not an image")
+                content_length = response.headers.get("content-length")
+                if content_length is not None:
+                    try:
+                        declared_bytes = int(content_length)
+                    except ValueError:
+                        declared_bytes = 0
+                    if declared_bytes > MAX_UPLOAD_BYTES:
+                        raise ToolError(f"ChatGPT attachment exceeds {MAX_UPLOAD_BYTES}-byte cap")
+                payload = bytearray()
+                async for chunk in response.aiter_bytes(_DOWNLOAD_CHUNK_BYTES):
+                    if len(payload) + len(chunk) > MAX_UPLOAD_BYTES:
+                        raise ToolError(f"ChatGPT attachment exceeds {MAX_UPLOAD_BYTES}-byte cap")
+                    payload.extend(chunk)
+                if not payload:
+                    raise ToolError("ChatGPT attachment downloaded as an empty file")
+                return bytes(payload)
+    except ToolError:
+        raise
+    except httpx.HTTPError as exc:
+        raise ToolError("Could not download ChatGPT attachment") from exc
+    raise ToolError("Could not download ChatGPT attachment")
+
+
+async def download_chatgpt_file(file: ChatGPTProgressPhotoFile) -> bytes:
+    """Download one ChatGPT attachment using the production HTTP policy.
+
+    **Inputs:**
+    - file (ChatGPTProgressPhotoFile): File reference injected by ChatGPT.
+
+    **Outputs:**
+    - bytes: Downloaded image bytes.
+
+    **Exceptions:**
+    - ToolError: Propagated from URL validation or bounded downloading.
+    """
+    async with httpx.AsyncClient(timeout=_DOWNLOAD_TIMEOUT, follow_redirects=False) as client:
+        return await _download_chatgpt_file_with_client(file, client)
 
 
 def _metadata_value_to_text(value: Any) -> str | None:
@@ -525,6 +672,106 @@ def _http_error_reason(exc: HTTPException) -> str:
     return str(detail) if detail is not None else f"HTTP {exc.status_code}"
 
 
+async def _upload_progress_photo_sources(
+    *,
+    sources: Sequence[SourceT],
+    default_date: str | None,
+    user_key: str,
+    load_raw: RawLoader[SourceT],
+    get_filename: FilenameGetter[SourceT],
+    get_idempotency_key: IdempotencyGetter[SourceT],
+) -> ProgressPhotoBulkUploadResponse:
+    """Resolve and persist heterogeneous progress-photo upload sources.
+
+    The byte loader is the only transport-specific operation. Date extraction,
+    tag selection, validation, persistence, and per-item rejection behavior are
+    shared by both the legacy base64 and ChatGPT file-parameter tools.
+
+    **Inputs:**
+    - sources (Sequence[SourceT]): Base64 or ChatGPT file upload items.
+    - default_date (str | None): Batch capture-date fallback.
+    - user_key (str): Owning user's tenant key.
+    - load_raw (RawLoader[SourceT]): Async callback returning image bytes.
+    - get_filename (FilenameGetter[SourceT]): Callback returning a display filename.
+    - get_idempotency_key (IdempotencyGetter[SourceT]): Callback returning a UUID string.
+
+    **Outputs:**
+    - ProgressPhotoBulkUploadResponse: Accepted and rejected item summaries.
+    """
+    store = get_photo_store()
+    accepted: list[ProgressPhotoUploadAccepted] = []
+    rejected: list[ProgressPhotoUploadRejected] = []
+    async with get_session() as session:
+        photo_repo = ProgressPhotoRepository(session)
+        tag_repo = ProgressPhotoTagRepository(session)
+        async with transaction(session):
+            tags = await list_tags(repo=tag_repo, user_key=user_key)
+
+        for index, source in enumerate(sources):
+            filename = get_filename(source)
+            try:
+                raw = await load_raw(source)
+                capture_date = resolve_capture_date(
+                    raw=raw,
+                    provided_date=source.capture_date,
+                    default_date=default_date,
+                    filename=filename,
+                )
+                tag_resolution = select_progress_photo_tag(
+                    tags,
+                    pose_hint=source.pose_hint,
+                    filename=filename,
+                    metadata_text=extract_image_metadata_text(raw),
+                )
+                async with transaction(session):
+                    row = await insert_one(
+                        repo=photo_repo,
+                        tag_repo=tag_repo,
+                        store=store,
+                        user_key=user_key,
+                        log_date=capture_date.value,
+                        tag_id=tag_resolution.tag["id"],
+                        raw=raw,
+                        idempotency_key=_parse_idempotency_key(get_idempotency_key(source)),
+                    )
+            except ToolError as exc:
+                rejected.append(
+                    ProgressPhotoUploadRejected(
+                        index=index,
+                        filename=filename,
+                        reason=str(exc),
+                    )
+                )
+                continue
+            except HTTPException as exc:
+                rejected.append(
+                    ProgressPhotoUploadRejected(
+                        index=index,
+                        filename=filename,
+                        reason=_http_error_reason(exc),
+                    )
+                )
+                continue
+
+            accepted.append(
+                ProgressPhotoUploadAccepted(
+                    index=index,
+                    filename=filename,
+                    date=row["log_date"],
+                    date_source=capture_date.source,
+                    tag=_tag_match_response(tag_resolution),
+                    photo=_row_to_photo_metadata(row),
+                )
+            )
+
+    return ProgressPhotoBulkUploadResponse(
+        accepted_count=len(accepted),
+        rejected_count=len(rejected),
+        accepted=accepted,
+        rejected=rejected,
+    )
+
+
 def register(mcp: FastMCP, ctx: ToolContext) -> None:
     """Register progress-photo MCP tools on the FastMCP server.
 
@@ -561,74 +808,77 @@ def register(mcp: FastMCP, ctx: ToolContext) -> None:
         ``POST /measures/photos``. Rejected photos are reported per item so a
         bad image does not block the rest of the batch.
         """
-        store = get_photo_store()
-        accepted: list[ProgressPhotoUploadAccepted] = []
-        rejected: list[ProgressPhotoUploadRejected] = []
-        async with get_session() as session:
-            photo_repo = ProgressPhotoRepository(session)
-            tag_repo = ProgressPhotoTagRepository(session)
-            async with transaction(session):
-                tags = await list_tags(repo=tag_repo, user_key=user_key)
 
-            for index, photo in enumerate(photos):
-                try:
-                    raw = decode_image_base64(photo.image_base64)
-                    capture_date = resolve_capture_date(
-                        raw=raw,
-                        provided_date=photo.capture_date,
-                        default_date=default_date,
-                        filename=photo.filename,
-                    )
-                    tag_resolution = select_progress_photo_tag(
-                        tags,
-                        pose_hint=photo.pose_hint,
-                        filename=photo.filename,
-                        metadata_text=extract_image_metadata_text(raw),
-                    )
-                    async with transaction(session):
-                        row = await insert_one(
-                            repo=photo_repo,
-                            tag_repo=tag_repo,
-                            store=store,
-                            user_key=user_key,
-                            log_date=capture_date.value,
-                            tag_id=tag_resolution.tag["id"],
-                            raw=raw,
-                            idempotency_key=_parse_idempotency_key(photo.idempotency_key),
-                        )
-                except ToolError as exc:
-                    rejected.append(
-                        ProgressPhotoUploadRejected(
-                            index=index,
-                            filename=photo.filename,
-                            reason=str(exc),
-                        )
-                    )
-                    continue
-                except HTTPException as exc:
-                    rejected.append(
-                        ProgressPhotoUploadRejected(
-                            index=index,
-                            filename=photo.filename,
-                            reason=_http_error_reason(exc),
-                        )
-                    )
-                    continue
+        async def load_raw(photo: ProgressPhotoUploadItem) -> bytes:
+            """Decode one base64 tool item into image bytes.
 
-                accepted.append(
-                    ProgressPhotoUploadAccepted(
-                        index=index,
-                        filename=photo.filename,
-                        date=row["log_date"],
-                        date_source=capture_date.source,
-                        tag=_tag_match_response(tag_resolution),
-                        photo=_row_to_photo_metadata(row),
-                    )
-                )
+            **Inputs:**
+            - photo (ProgressPhotoUploadItem): Base64 upload item.
 
-        return ProgressPhotoBulkUploadResponse(
-            accepted_count=len(accepted),
-            rejected_count=len(rejected),
-            accepted=accepted,
-            rejected=rejected,
+            **Outputs:**
+            - bytes: Decoded image bytes.
+
+            **Exceptions:**
+            - ToolError: Raised when the base64 value is invalid.
+            """
+            return decode_image_base64(photo.image_base64)
+
+        return await _upload_progress_photo_sources(
+            sources=photos,
+            default_date=default_date,
+            user_key=user_key,
+            load_raw=load_raw,
+            get_filename=lambda photo: photo.filename,
+            get_idempotency_key=lambda photo: photo.idempotency_key,
+        )
+
+    @mcp.tool(
+        meta={"openai/fileParams": ["photos"]},
+        annotations={
+            "readOnlyHint": False,
+            "destructiveHint": False,
+            "openWorldHint": False,
+        },
+    )
+    async def upload_progress_photo_files(
+        photos: Annotated[
+            list[ChatGPTProgressPhotoFile],
+            Field(min_length=1, max_length=30),
+        ],
+        default_date: str | None = None,
+    ) -> ProgressPhotoBulkUploadResponse:
+        """Upload progress photos attached directly to a ChatGPT conversation.
+
+        ChatGPT injects each attachment's temporary ``download_url`` and
+        ``file_id`` through its MCP file-parameter mechanism. The server
+        downloads each image under the REST byte cap, reads capture metadata,
+        resolves an existing pose tag, and delegates persistence to the same
+        canonical service as REST and base64 MCP uploads. A bad attachment is
+        rejected without blocking later files in the batch.
+        """
+
+        async def load_raw(photo: ChatGPTProgressPhotoFile) -> bytes:
+            """Download one ChatGPT file-parameter item.
+
+            **Inputs:**
+            - photo (ChatGPTProgressPhotoFile): ChatGPT attachment reference.
+
+            **Outputs:**
+            - bytes: Downloaded image bytes.
+
+            **Exceptions:**
+            - ToolError: Raised for unsafe URLs or failed/oversized downloads.
+            """
+            return await download_chatgpt_file(photo)
+
+        return await _upload_progress_photo_sources(
+            sources=photos,
+            default_date=default_date,
+            user_key=user_key,
+            load_raw=load_raw,
+            get_filename=lambda photo: photo.file_name,
+            get_idempotency_key=lambda photo: (
+                photo.idempotency_key
+                or str(uuid5(NAMESPACE_URL, f"pulse-chatgpt-file:{photo.file_id}"))
+            ),
         )
