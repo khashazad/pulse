@@ -64,6 +64,7 @@ const weights: WeightEntry[] = [
 
 describe("CompareView", () => {
   beforeEach(() => {
+    localStorage.clear();
     vi.stubGlobal(
       "fetch",
       vi.fn().mockImplementation(
@@ -84,31 +85,35 @@ describe("CompareView", () => {
     vi.unstubAllGlobals();
   });
 
-  test("defaults to the two newest photo dates and aligns tags", () => {
+  test("defaults to the two newest photo dates and shows the weight delta", () => {
     render(
       <CompareView photos={photos} tags={tags} weights={weights} token="token" />,
     );
 
-    expect(screen.getByLabelText("Earlier date")).toHaveValue("2026-07-01");
-    expect(screen.getByLabelText("Later date")).toHaveValue("2026-08-01");
-    expect(screen.getByRole("heading", { name: "Front" })).toBeVisible();
+    expect(screen.getByLabelText("Choose earlier date")).toHaveTextContent("Jul 1, 2026");
+    expect(screen.getByLabelText("Choose later date")).toHaveTextContent("Aug 1, 2026");
+    expect(screen.getByText("-7.6 lb")).toBeVisible();
+    expect(screen.getByText("31 days apart")).toBeVisible();
     expect(screen.getByRole("heading", { name: "Side" })).toBeVisible();
-    expect(screen.getByLabelText("No Front photo on Jul 1, 2026")).toBeVisible();
-    expect(screen.getAllByText("190.0 lb").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("182.4 lb").length).toBeGreaterThan(0);
   });
 
-  test("rebuilds pairs when a selected date changes", () => {
+  test("applies a quick preset to the earlier side", () => {
     render(
       <CompareView photos={photos} tags={tags} weights={weights} token="token" />,
     );
 
-    fireEvent.change(screen.getByLabelText("Earlier date"), {
-      target: { value: "2026-06-01" },
-    });
-
+    fireEvent.click(screen.getByRole("button", { name: "First" }));
+    expect(screen.getByLabelText("Choose earlier date")).toHaveTextContent("Jun 1, 2026");
     expect(screen.getByRole("button", { name: "Open Front progress photo from Jun 1, 2026" })).toBeVisible();
-    expect(screen.getByLabelText("No Side photo on Jun 1, 2026")).toBeVisible();
+  });
+
+  test("opens the calendar date picker for the earlier side", () => {
+    render(
+      <CompareView photos={photos} tags={tags} weights={weights} token="token" />,
+    );
+
+    fireEvent.click(screen.getByLabelText("Choose earlier date"));
+    expect(screen.getByRole("dialog", { name: "Choose earlier date" })).toBeVisible();
   });
 
   test("opens either side in the shared viewer", () => {
