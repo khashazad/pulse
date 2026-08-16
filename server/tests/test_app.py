@@ -45,6 +45,29 @@ def test_unauthenticated_request_rejected(client: TestClient) -> None:
     assert response.status_code == 401
 
 
+def test_mcp_initialize_does_not_redirect(client: TestClient) -> None:
+    """The canonical MCP URL handles initialization without a slash redirect."""
+    response = client.post(
+        "/mcp",
+        headers={"Accept": "application/json, text/event-stream"},
+        json={
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-06-18",
+                "capabilities": {},
+                "clientInfo": {"name": "test-client", "version": "1.0"},
+            },
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 200
+    assert response.headers.get("location") is None
+    assert '"protocolVersion":"2025-06-18"' in response.text
+
+
 def test_web_root_is_public_when_build_is_absent(client: TestClient) -> None:
     """The public SPA entry route reaches static delivery instead of session auth."""
     response = client.get("/")

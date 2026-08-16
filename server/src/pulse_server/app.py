@@ -109,7 +109,7 @@ async def lifespan(app: FastAPI):
 
 
 mcp = build_mcp(get_usda_client)
-mcp_app = mcp.http_app(path="/")
+mcp_app = mcp.http_app(path="/mcp")
 
 app = FastAPI(
     title="Diet Server",
@@ -122,7 +122,7 @@ app = FastAPI(
 # don't apply there.
 _mcp_exempt_paths: frozenset[str] = frozenset(
     route.path
-    for route in (mcp.auth.get_routes(mcp_path="/mcp/") if mcp.auth is not None else [])
+    for route in (mcp.auth.get_routes(mcp_path="/mcp") if mcp.auth is not None else [])
     if hasattr(route, "path")
 )
 _mcp_exempt_prefixes: tuple[str, ...] = ("/mcp",)
@@ -168,7 +168,10 @@ app.include_router(create_web_router())
 # must live at the root so claude.ai's connector can discover them. The MCP server itself
 # stays mounted at /mcp.
 if mcp.auth is not None:
-    for route in mcp.auth.get_routes(mcp_path="/mcp/"):
+    for route in mcp.auth.get_routes(mcp_path="/mcp"):
         app.routes.append(route)
 
-app.mount("/mcp", mcp_app)
+# Mount last at the root so the subapp can serve exactly `/mcp`. Mounting a subapp
+# whose internal route is `/` at `/mcp` makes Starlette redirect POST `/mcp` to
+# `/mcp/`, which connector initialization clients are not required to follow.
+app.mount("/", mcp_app)
