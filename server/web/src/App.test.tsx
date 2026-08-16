@@ -90,8 +90,8 @@ describe("App", () => {
     history.replaceState({}, "", "/?preview=1");
     render(<App />);
 
-    expect(await screen.findByRole("heading", { name: "Your progression" })).toBeVisible();
-    expect(screen.getByText("6 photos")).toBeVisible();
+    expect(await screen.findByRole("button", { name: "Compare to…" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Toggle Front tag" })).toBeVisible();
     expect(screen.getByText("preview@pulse.local")).toBeVisible();
     expect(fetch).not.toHaveBeenCalled();
   });
@@ -101,15 +101,14 @@ describe("App", () => {
     render(<App />);
 
     expect(await screen.findByText("khash@example.com")).toBeVisible();
-    expect(await screen.findByRole("heading", { name: "Your progression" })).toBeVisible();
     expect(
       await screen.findByRole("button", {
         name: "Open Front progress photo from Aug 1, 2026",
       }),
-    ).toBeVisible();
+    ).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Compare" }));
-    expect(screen.getByRole("heading", { name: "Compare your progress" })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Compare view" }));
+    expect(screen.getByLabelText("Choose earlier date")).toBeVisible();
   });
 
   test("completes a Google callback before loading protected data", async () => {
@@ -130,7 +129,11 @@ describe("App", () => {
 
     render(<App />);
 
-    expect(await screen.findByRole("heading", { name: "Your progression" })).toBeVisible();
+    expect(
+      await screen.findByRole("button", {
+        name: "Open Front progress photo from Aug 1, 2026",
+      }),
+    ).toBeInTheDocument();
     expect(sessionStorage.getItem(SESSION_TOKEN_KEY)).toBe("fresh-token");
     expect(location.pathname).toBe("/");
   });

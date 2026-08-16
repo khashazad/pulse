@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { loadPhotoBlob } from "../api/pulse";
+import { previewPhotoUrl } from "../lib/previewPhotoUrl";
 
 /** State exposed while one protected image is fetched and materialized. */
 export interface AuthorizedImageState {
@@ -22,9 +23,16 @@ export function useAuthorizedImage(
   });
 
   useEffect(() => {
-    if (import.meta.env.DEV && photoId.startsWith("demo-")) {
-      setState({ url: `/demo/${photoId}.svg`, loading: false, error: false });
-      return;
+    if (import.meta.env.DEV) {
+      const previewUrl = previewPhotoUrl(photoId);
+      if (previewUrl) {
+        setState({ url: previewUrl, loading: false, error: false });
+        return;
+      }
+      if (photoId.startsWith("demo-")) {
+        setState({ url: `/demo/${photoId}.svg`, loading: false, error: false });
+        return;
+      }
     }
 
     const controller = new AbortController();
