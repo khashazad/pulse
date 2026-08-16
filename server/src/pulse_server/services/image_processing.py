@@ -18,6 +18,10 @@ from dataclasses import dataclass
 from typing import Final
 
 from PIL import Image, ImageOps, UnidentifiedImageError
+from pillow_heif import register_heif_opener
+
+# Register HEIC and HEIF decoding before any upload reaches Pillow.
+register_heif_opener(thumbnails=False)
 
 MAX_FULL_PX: Final[int] = 1600
 # Thumbnails are rendered up to full-screen width on iPhone Pro Max (~430pt

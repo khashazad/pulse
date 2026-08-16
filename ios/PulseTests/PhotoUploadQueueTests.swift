@@ -34,6 +34,8 @@ final class PhotoUploadQueueTests: XCTestCase {
             date: Date(),
             tagId: UUID(),
             localPath: "/tmp/x.jpg",
+            filename: "original.heic",
+            mimeType: "image/heic",
             attemptCount: 0,
             nextAttemptAt: Date()
         )
@@ -41,7 +43,36 @@ final class PhotoUploadQueueTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: file.path))
 
         let q2 = PhotoUploadQueue(fileURL: file)
-        XCTAssertEqual(q2.allDue(now: Date().addingTimeInterval(60)).count, 1)
+        let queued = q2.allDue(now: Date().addingTimeInterval(60))
+        XCTAssertEqual(queued.count, 1)
+        guard case .single(let restored) = queued[0] else {
+            return XCTFail("expected a single upload")
+        }
+        XCTAssertEqual(restored.filename, "original.heic")
+        XCTAssertEqual(restored.mimeType, "image/heic")
+    }
+
+    /// Retry records written by older app versions decode with JPEG defaults.
+    func testPendingUploadDecodesLegacyRecordWithoutFileMetadata() throws {
+        let id = UUID()
+        let tagId = UUID()
+        let json = """
+        {
+          "id":"\(id.uuidString)",
+          "date":"2026-08-16T12:00:00Z",
+          "tagId":"\(tagId.uuidString)",
+          "localPath":"/tmp/pending.jpg",
+          "attemptCount":0,
+          "nextAttemptAt":"2026-08-16T12:00:00Z"
+        }
+        """.data(using: .utf8)!
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+
+        let restored = try decoder.decode(PendingUpload.self, from: json)
+
+        XCTAssertNil(restored.filename)
+        XCTAssertNil(restored.mimeType)
     }
 
     func testMarkSuccessRemovesEntry() throws {

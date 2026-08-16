@@ -129,15 +129,19 @@ final class ProgressPhotoStore {
     /// - Parameters:
     ///   - date: Date for the progress photo.
     ///   - tagId: UUID for the photo tag assigned by the server.
-    ///   - imageData: Data containing the JPEG bytes to upload.
+    ///   - source: Original encoded image data and file metadata.
     /// - Returns: Void.
-    func upload(date: Date, tagId: UUID, imageData: Data) async {
+    func upload(date: Date, tagId: UUID, source: PhotoUploadSource) async {
         let id = UUID()
         do {
-            let url = try cache.storePending(data: imageData, id: id)
+            let url = try cache.storePending(data: source.data, id: id, filename: source.filename)
             let pending = PendingUpload(
                 id: id, date: normalize(date), tagId: tagId,
-                localPath: url.path, attemptCount: 0, nextAttemptAt: Date()
+                localPath: url.path,
+                filename: source.filename,
+                mimeType: source.mimeType,
+                attemptCount: 0,
+                nextAttemptAt: Date()
             )
             try queue.enqueueSingle(pending)
             recountPending()
@@ -300,7 +304,9 @@ final class ProgressPhotoStore {
                 meta = try await client.upload(
                     date: p.date,
                     tagId: p.tagId,
-                    jpeg: data,
+                    fileData: data,
+                    filename: p.filename ?? URL(fileURLWithPath: p.localPath).lastPathComponent,
+                    mimeType: p.mimeType ?? "image/jpeg",
                     idempotencyKey: p.id
                 )
             } catch {
@@ -316,7 +322,7 @@ final class ProgressPhotoStore {
             // Upload succeeded. Local bookkeeping is best-effort: a failure here
             // would previously cause a duplicate POST, but `PendingUpload.id` is
             // passed as the server idempotency key so re-uploads are deduped.
-            try? cache.renameToSHA(pendingURL: URL(fileURLWithPath: p.localPath), sha: meta.sha256)
+            try? cache.removePending(at: URL(fileURLWithPath: p.localPath))
             photos[normalize(p.date), default: []].append(meta)
             try? queue.markSuccess(id: p.id)
         }

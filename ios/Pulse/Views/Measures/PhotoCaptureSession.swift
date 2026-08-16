@@ -5,7 +5,7 @@
 /// "Tag" pill that opens a menu of the user's tags; selecting one assigns
 /// it to that photo. A separate inline affordance lets the user create a
 /// new tag without leaving the sheet. Upload submits every tagged photo
-/// via `ProgressPhotoStore.upload(date:tagId:imageData:)` — untagged photos
+/// via `ProgressPhotoStore.upload(date:tagId:source:)` — untagged photos
 /// are skipped (and the button is disabled until at least one is tagged).
 import PhotosUI
 import SwiftUI
@@ -26,8 +26,11 @@ struct PhotoCaptureSession: View {
     /// redraws when only `tagId` changed.
     private struct CapturedPhoto: Identifiable {
         let id = UUID()
-        let image: UIImage
+        let source: PhotoUploadSource
         var tagId: UUID?
+
+        /// Returns the decoded image used only for the local preview.
+        var image: UIImage { source.previewImage }
     }
 
     @State private var captured: [CapturedPhoto] = []
@@ -71,7 +74,8 @@ struct PhotoCaptureSession: View {
                         PhotosPicker(
                             selection: $pickerItems,
                             maxSelectionCount: 30,
-                            matching: .images
+                            matching: .images,
+                            preferredItemEncoding: .current
                         ) {
                             Image(systemName: "photo.on.rectangle")
                         }
@@ -81,8 +85,8 @@ struct PhotoCaptureSession: View {
             }
             .sheet(isPresented: $showCamera) {
                 CameraCaptureView(
-                    onCapture: { image in
-                        captured.append(CapturedPhoto(image: image))
+                    onCapture: { source in
+                        captured.append(CapturedPhoto(source: source))
                         autoAssignTags()
                         showCamera = false
                     },
@@ -322,8 +326,11 @@ struct PhotoCaptureSession: View {
     private func loadPickerSelection(_ items: [PhotosPickerItem]) async {
         for item in items {
             if let data = try? await item.loadTransferable(type: Data.self),
-               let img = UIImage(data: data) {
-                await MainActor.run { captured.append(CapturedPhoto(image: img)) }
+               let source = PhotoUploadSource(
+                   data: data,
+                   fallbackType: item.supportedContentTypes.first
+               ) {
+                await MainActor.run { captured.append(CapturedPhoto(source: source)) }
             }
         }
         await MainActor.run { autoAssignTags() }
@@ -354,8 +361,7 @@ struct PhotoCaptureSession: View {
         }
     }
 
-    /// Encodes each tagged photo as JPEG and hands them to the store one by
-    /// one. Untagged photos remain in the tray so the user can tag and resubmit.
+    /// Sends each tagged source file to the store without changing its encoding.
     private func submit() async {
         uploading = true
         defer { uploading = false }
@@ -364,9 +370,8 @@ struct PhotoCaptureSession: View {
             // Same guard as `tagAssignedCount`: never POST a tagId that isn't
             // currently known to the tag store.
             guard let tagId = photo.tagId,
-                  tagStore.tag(id: tagId) != nil,
-                  let jpeg = photo.image.jpegData(compressionQuality: 0.85) else { continue }
-            await store.upload(date: date, tagId: tagId, imageData: jpeg)
+                  tagStore.tag(id: tagId) != nil else { continue }
+            await store.upload(date: date, tagId: tagId, source: photo.source)
             uploaded.insert(photo.id)
         }
         captured.removeAll { uploaded.contains($0.id) }

@@ -63,14 +63,16 @@ actor ProgressPhotoClient {
         return data
     }
 
-    /// Uploads a JPEG tagged with `tagId` for `date` and returns the persisted metadata.
+    /// Uploads an encoded image file and returns the persisted metadata.
     /// `idempotencyKey` lets the server dedupe retries of the same logical upload:
     /// a second POST with the same key returns the previously-inserted row instead
     /// of creating a duplicate. Pass `nil` for one-shot uploads that won't be retried.
     func upload(
         date: Date,
         tagId: UUID,
-        jpeg: Data,
+        fileData: Data,
+        filename: String,
+        mimeType: String,
         idempotencyKey: UUID? = nil
     ) async throws -> ProgressPhotoMetadata {
         let url = try http.makeURL(path: "/measures/photos", query: [])
@@ -89,7 +91,7 @@ actor ProgressPhotoClient {
         req.httpBody = HTTPCore.multipartBody(
             boundary: boundary,
             fields: fields,
-            file: (fieldName: "file", filename: "photo.jpg", mime: "image/jpeg", data: jpeg)
+            file: (fieldName: "file", filename: filename, mime: mimeType, data: fileData)
         )
         let (data, response) = try await http.raw(request: req)
         try http.mapStatus(response.statusCode)

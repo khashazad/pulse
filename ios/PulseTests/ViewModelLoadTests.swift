@@ -412,9 +412,10 @@ final class ViewModelLoadTests: XCTestCase {
     @MainActor
     func test_progressPhotoStore_upload() async {
         let store = ProgressPhotoStore(auth: makeAuth())
+        let source = PhotoUploadSource(data: Self.samplePNG)!
         await store.upload(date: Date(),
                            tagId: UUID(uuidString: "b2b2b2b2-2222-2222-2222-222222222222")!,
-                           imageData: Data([0x01, 0x02, 0x03, 0x04]))
+                           source: source)
         // Let the fire-and-forget upload worker drain.
         try? await Task.sleep(for: .milliseconds(250))
     }

@@ -29,7 +29,7 @@ export function PhotoTile({
   token,
   onOpen,
 }: PhotoTileProps) {
-  const image = useAuthorizedImage(token, photo.id, "thumb");
+  const image = useAuthorizedImage(token, photo.id, "full");
   const date = tileDate(photo.date);
   const accessibleName = `Open ${tagName} progress photo from ${date}`;
 

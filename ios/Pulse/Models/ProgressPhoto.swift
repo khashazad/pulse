@@ -54,8 +54,31 @@ struct PendingUpload: Codable, Identifiable, Hashable {
     let date: Date
     let tagId: UUID
     let localPath: String
+    let filename: String?
+    let mimeType: String?
     var attemptCount: Int
     var nextAttemptAt: Date
+
+    /// Creates one retry record and keeps old queue files compatible.
+    init(
+        id: UUID,
+        date: Date,
+        tagId: UUID,
+        localPath: String,
+        filename: String? = nil,
+        mimeType: String? = nil,
+        attemptCount: Int,
+        nextAttemptAt: Date
+    ) {
+        self.id = id
+        self.date = date
+        self.tagId = tagId
+        self.localPath = localPath
+        self.filename = filename
+        self.mimeType = mimeType
+        self.attemptCount = attemptCount
+        self.nextAttemptAt = nextAttemptAt
+    }
 }
 
 /// Tagged union wrapper for the queue. Kept around so the on-disk JSON schema

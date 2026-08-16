@@ -6,7 +6,7 @@
 import Foundation
 import UIKit
 
-/// On-disk + in-memory cache for progress-photo JPEG bytes.
+/// On-disk + in-memory cache for server progress-photo JPEG bytes.
 /// Keys combine the photo's `sha256` with a `PhotoSize` (full/thumb) so that
 /// thumbnail bytes never satisfy a full-size request and vice versa.
 final class ProgressPhotoCache {
@@ -69,16 +69,24 @@ final class ProgressPhotoCache {
         }
     }
 
-    /// Writes JPEG bytes to a pending-upload file keyed by a transient id.
+    /// Writes source bytes to a pending-upload file keyed by a transient id.
     /// Inputs:
     ///   - data: JPEG bytes to persist.
     ///   - id: transient identifier for the upload, used in the file name.
     /// Outputs: file URL of the pending bytes (later renamed to sha after upload).
     /// Exceptions: rethrows errors from atomic disk write.
-    func storePending(data: Data, id: UUID) throws -> URL {
-        let url = root.appendingPathComponent("pending-\(id.uuidString).jpg")
+    func storePending(data: Data, id: UUID, filename: String = "photo.bin") throws -> URL {
+        let rawExtension = URL(fileURLWithPath: filename).pathExtension.lowercased()
+        let safeExtension = rawExtension.filter { $0.isLetter || $0.isNumber }
+        let suffix = safeExtension.isEmpty ? "bin" : safeExtension
+        let url = root.appendingPathComponent("pending-\(id.uuidString).\(suffix)")
         try data.write(to: url, options: .atomic)
         return url
+    }
+
+    /// Removes source bytes after the server stores its canonical variants.
+    func removePending(at url: URL) throws {
+        try FileManager.default.removeItem(at: url)
     }
 
     /// Promotes a pending upload file into the cache as the full-size variant

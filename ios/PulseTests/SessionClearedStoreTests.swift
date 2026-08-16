@@ -122,10 +122,15 @@ final class SessionClearedStoreTests: XCTestCase {
         targets.update(try JSONDecoder.pulseDefault().decode(MacroTargets.self, from: targetsJSON.data(using: .utf8)!))
         await photoStore.reconcile(from: Date(timeIntervalSince1970: 1_747_000_000), to: Date())
         await tagStore.reload()
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 2, height: 2)).image { context in
+            UIColor.gray.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 2, height: 2))
+        }
+        let source = PhotoUploadSource(cameraImage: image)!
         await photoStore.upload(
             date: Date(),
             tagId: UUID(uuidString: "b2b2b2b2-2222-2222-2222-222222222222")!,
-            imageData: Data([0x01, 0x02, 0x03, 0x04])
+            source: source
         )
 
         XCTAssertNotNil(targets.targets)

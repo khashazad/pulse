@@ -108,7 +108,14 @@ final class ProgressPhotoClientTests: XCTestCase {
             return (HTTPURLResponse(url: req.url!, statusCode: 201, httpVersion: nil, headerFields: nil)!, json)
         }
         let d = DateOnly.formatter.date(from: "2026-05-17")!
-        let meta = try await client.upload(date: d, tagId: tagId, jpeg: Data([0xFF, 0xD8, 0xFF]))
+        let source = Data([0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70, 0x68, 0x65, 0x69, 0x63])
+        let meta = try await client.upload(
+            date: d,
+            tagId: tagId,
+            fileData: source,
+            filename: "source.heic",
+            mimeType: "image/heic"
+        )
         XCTAssertEqual(meta.tagId, tagId)
         XCTAssertEqual(meta.id, photoId)
         XCTAssertTrue(capturedContentType?.contains("multipart/form-data") ?? false)
@@ -118,6 +125,9 @@ final class ProgressPhotoClientTests: XCTestCase {
         XCTAssertTrue(bodyStr.contains("2026-05-17"))
         XCTAssertTrue(bodyStr.contains("name=\"tag_id\""))
         XCTAssertTrue(bodyStr.contains(tagId.uuidString.lowercased()))
+        XCTAssertTrue(bodyStr.contains("filename=\"source.heic\""))
+        XCTAssertTrue(bodyStr.contains("Content-Type: image/heic"))
+        XCTAssertTrue((activeStubs.last?.lastRequestBody ?? Data()).range(of: source) != nil)
         XCTAssertFalse(
             bodyStr.contains("name=\"idempotency_key\""),
             "absent when caller doesn't pass one"
@@ -144,7 +154,12 @@ final class ProgressPhotoClientTests: XCTestCase {
         }
         let d = DateOnly.formatter.date(from: "2026-05-17")!
         _ = try await client.upload(
-            date: d, tagId: tagId, jpeg: Data([0xFF]), idempotencyKey: idem
+            date: d,
+            tagId: tagId,
+            fileData: Data([0xFF]),
+            filename: "photo.jpg",
+            mimeType: "image/jpeg",
+            idempotencyKey: idem
         )
         let bodyStr = String(data: activeStubs.last?.lastRequestBody ?? Data(), encoding: .isoLatin1) ?? ""
         XCTAssertTrue(bodyStr.contains("name=\"idempotency_key\""))

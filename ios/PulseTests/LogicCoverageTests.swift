@@ -335,20 +335,23 @@ final class CameraCaptureViewTests: XCTestCase {
     /// Verifies a finished pick carrying an original image forwards to `onCapture`.
     @MainActor
     func test_coordinator_forwardsCapturedImage() {
-        var captured: UIImage?
+        var captured: PhotoUploadSource?
         var cancelled = false
         let view = CameraCaptureView(onCapture: { captured = $0 }, onCancel: { cancelled = true })
         let coordinator = view.makeCoordinator()
-        let img = UIImage()
+        let img = UIGraphicsImageRenderer(size: CGSize(width: 8, height: 8)).image { context in
+            UIColor.blue.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 8, height: 8))
+        }
         coordinator.imagePickerController(UIImagePickerController(), didFinishPickingMediaWithInfo: [.originalImage: img])
-        XCTAssertNotNil(captured)
+        XCTAssertNotNil(captured?.previewImage)
         XCTAssertFalse(cancelled)
     }
 
     /// Verifies a finished pick with no usable image falls back to `onCancel`.
     @MainActor
     func test_coordinator_missingImageCancels() {
-        var captured: UIImage?
+        var captured: PhotoUploadSource?
         var cancelled = false
         let view = CameraCaptureView(onCapture: { captured = $0 }, onCancel: { cancelled = true })
         let coordinator = view.makeCoordinator()
@@ -365,5 +368,23 @@ final class CameraCaptureViewTests: XCTestCase {
         let coordinator = view.makeCoordinator()
         coordinator.imagePickerControllerDidCancel(UIImagePickerController())
         XCTAssertTrue(cancelled)
+    }
+}
+
+/// Verifies that upload sources keep their original encoded bytes.
+final class PhotoUploadSourceTests: XCTestCase {
+    /// A PNG upload source must not convert its data to JPEG.
+    func test_sourcePreservesOriginalPNGData() {
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 8, height: 8)).image { context in
+            UIColor.red.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 8, height: 8))
+        }
+        let png = image.pngData()!
+
+        let source = PhotoUploadSource(data: png)
+
+        XCTAssertEqual(source?.data, png)
+        XCTAssertEqual(source?.mimeType, "image/png")
+        XCTAssertEqual(source?.filename, "photo.png")
     }
 }

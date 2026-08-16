@@ -12,6 +12,7 @@ import io
 
 import pytest
 from PIL import Image
+from pillow_heif import from_pillow
 
 from pulse_server.services.image_processing import (
     MAX_FULL_PX,
@@ -70,6 +71,19 @@ def test_process_progress_photo_produces_three_variants() -> None:
         assert max(im.size) == 1600
     with Image.open(io.BytesIO(result.thumb)) as im:
         assert max(im.size) == 1024
+
+
+def test_process_progress_photo_accepts_heic_source() -> None:
+    """A native iPhone HEIC file enters the standard progress-photo pipeline."""
+    source = Image.new("RGB", (1800, 1200), (35, 80, 140))
+    buffer = io.BytesIO()
+    from_pillow(source).save(buffer, format="HEIF", quality=90)
+
+    result = process_progress_photo(buffer.getvalue(), max_bytes=20 * 1024 * 1024)
+
+    with Image.open(io.BytesIO(result.display)) as image:
+        assert image.format == "JPEG"
+        assert image.size == (1600, 1067)
 
 
 def test_process_progress_photo_small_source_not_upscaled() -> None:

@@ -7,13 +7,13 @@
 import SwiftUI
 import UIKit
 
-/// `UIViewControllerRepresentable` bridge that shows the camera and returns a `UIImage`.
+/// `UIViewControllerRepresentable` bridge that shows the camera and returns source data.
 ///
 /// Inputs:
-/// - onCapture: callback invoked with the captured image when the user finishes.
+/// - onCapture: callback invoked with the captured image file when the user finishes.
 /// - onCancel: callback invoked when the user dismisses without capturing.
 struct CameraCaptureView: UIViewControllerRepresentable {
-    var onCapture: (UIImage) -> Void
+    var onCapture: (PhotoUploadSource) -> Void
     var onCancel: () -> Void
 
     /// Creates the delegate coordinator wired back to this representable.
@@ -54,8 +54,7 @@ struct CameraCaptureView: UIViewControllerRepresentable {
         /// - parent: the `CameraCaptureView` whose callbacks should fire.
         init(_ parent: CameraCaptureView) { self.parent = parent }
 
-        /// `UIImagePickerControllerDelegate` hook: forwards the original image
-        /// to `onCapture`, or `onCancel` if the image is missing.
+        /// Forwards original file data when available and uses a quality JPEG fallback.
         ///
         /// Inputs:
         /// - picker: the active picker controller.
@@ -64,11 +63,18 @@ struct CameraCaptureView: UIViewControllerRepresentable {
             _ picker: UIImagePickerController,
             didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]
         ) {
-            if let image = info[.originalImage] as? UIImage {
-                parent.onCapture(image)
-            } else {
-                parent.onCancel()
+            if let url = info[.imageURL] as? URL,
+               let data = try? Data(contentsOf: url),
+               let source = PhotoUploadSource(data: data) {
+                parent.onCapture(source)
+                return
             }
+            guard let image = info[.originalImage] as? UIImage,
+                  let source = PhotoUploadSource(cameraImage: image) else {
+                parent.onCancel()
+                return
+            }
+            parent.onCapture(source)
         }
 
         /// `UIImagePickerControllerDelegate` hook: forwards cancellation to `onCancel`.

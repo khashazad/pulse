@@ -114,9 +114,9 @@ struct ContainerEditView: View {
             }
             .fullScreenCover(isPresented: $showCamera) {
                 CameraCaptureView(
-                    onCapture: { image in
-                        previewImage = image
-                        model?.setNewPhoto(uiImage: image)
+                    onCapture: { source in
+                        previewImage = source.previewImage
+                        model?.setNewPhoto(uiImage: source.previewImage)
                         showCamera = false
                     },
                     onCancel: { showCamera = false }

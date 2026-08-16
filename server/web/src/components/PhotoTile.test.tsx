@@ -34,7 +34,7 @@ describe("PhotoTile", () => {
     vi.unstubAllGlobals();
   });
 
-  test("renders an authorized thumbnail and opens from its accessible button", async () => {
+  test("renders an authorized full image and opens from its accessible button", async () => {
     const onOpen = vi.fn();
     render(
       <PhotoTile
@@ -50,6 +50,12 @@ describe("PhotoTile", () => {
       name: "Open Front progress photo from Aug 1, 2026",
     });
     await waitFor(() => expect(screen.getByRole("img", { name: /Front progress/ })).toBeVisible());
+    expect(fetch).toHaveBeenCalledWith(
+      "/measures/photos/photo-id?size=full",
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: "Bearer token" }),
+      }),
+    );
     expect(screen.getByText("182.4 lb")).toBeVisible();
 
     fireEvent.click(button);

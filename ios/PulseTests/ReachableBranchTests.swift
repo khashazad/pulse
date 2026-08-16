@@ -113,7 +113,12 @@ final class ReachableBranchTests: XCTestCase {
         let jpeg = UIGraphicsImageRenderer(size: CGSize(width: 2, height: 2)).pngData { ctx in
             UIColor.gray.setFill(); ctx.fill(CGRect(x: 0, y: 0, width: 2, height: 2))
         }
-        await store.upload(date: Date(), tagId: UUID(uuidString: "b2b2b2b2-2222-2222-2222-222222222222")!, imageData: jpeg)
+        let source = PhotoUploadSource(data: jpeg)!
+        await store.upload(
+            date: Date(),
+            tagId: UUID(uuidString: "b2b2b2b2-2222-2222-2222-222222222222")!,
+            source: source
+        )
         // Give the worker time to attempt, back off, wake, and retry to success.
         try? await Task.sleep(for: .milliseconds(800))
         XCTAssertGreaterThanOrEqual(attempts.total, 1, "the worker must attempt the upload at least once")
