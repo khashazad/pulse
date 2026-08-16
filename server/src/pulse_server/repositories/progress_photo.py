@@ -1,8 +1,8 @@
 """Progress-photo persistence layer.
 
 Provides :class:`ProgressPhotoRepository`, which owns every SQL statement
-against the ``progress_photos`` table: insert keyed by ``photo_id`` (one row
-per photo — multiple per ``(user_key, log_date, tag_id)`` are allowed),
+against the ``progress_photos`` table: low-level insert keyed by ``photo_id``,
+serialized replacement by ``(user_key, log_date, tag_id)``,
 metadata listing across a date range, a metadata fetch that returns the row's
 ``storage_key_prefix`` (the caller builds the object key and streams the bytes
 from the object store), and deletion by photo id (which surfaces the deleted
@@ -20,7 +20,7 @@ from datetime import datetime as DateTimeValue
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -78,8 +78,8 @@ class ProgressPhotoRepository:
     ) -> dict[str, Any]:
         """Insert a new progress-photo row, returning its summary projection.
 
-        Unlike the previous slot-based model there is no per-day uniqueness:
-        a user may persist many photos for the same ``(log_date, tag_id)``.
+        This low-level primitive can persist many photos for one date and tag.
+        Production upload paths use :meth:`replace_slot` instead.
         When ``idempotency_key`` is supplied, the row is deduped against the
         partial unique index ``uq_progress_photos_user_idem`` so retries by
         the offline upload queue return the previously-inserted row instead
@@ -134,6 +134,80 @@ class ProgressPhotoRepository:
         returning_stmt = stmt.returning(*_summary_columns())
         result = await self._session.execute(returning_stmt)
         return dict(result.mappings().one())
+
+    async def replace_slot(
+        self,
+        *,
+        user_key: str,
+        log_date: DateValue,
+        tag_id: UUID,
+        photo_mime: str,
+        bytes_: int,
+        sha256: str,
+        now: DateTimeValue,
+        photo_id: UUID,
+        storage_key_prefix: str,
+        idempotency_key: UUID | None = None,
+    ) -> tuple[dict[str, Any], list[str]]:
+        """Replace all photos in one date-and-tag slot with one new row.
+
+        PostgreSQL transaction advisory locks serialize writes to the same
+        slot. An idempotency lock also serializes retries that use one key for
+        different slot arguments. A replay returns the original row and no
+        obsolete prefixes.
+
+        **Outputs:**
+        - tuple[dict[str, Any], list[str]]: Persisted row and replaced object prefixes.
+        """
+        if idempotency_key is not None:
+            await self._lock(f"progress-photo-idempotency:{user_key}:{idempotency_key}")
+            replay = await self._get_by_idempotency_key(
+                user_key=user_key, idempotency_key=idempotency_key
+            )
+            if replay is not None:
+                return replay, []
+
+        await self._lock(f"progress-photo-slot:{user_key}:{log_date.isoformat()}:{tag_id}")
+        removed = await self._session.execute(
+            delete(progress_photos)
+            .where(progress_photos.c.user_key == user_key)
+            .where(progress_photos.c.log_date == log_date)
+            .where(progress_photos.c.tag_id == tag_id)
+            .returning(progress_photos.c.storage_key_prefix)
+        )
+        obsolete_prefixes = [row["storage_key_prefix"] for row in removed.mappings().all()]
+        row = await self.insert(
+            user_key=user_key,
+            log_date=log_date,
+            tag_id=tag_id,
+            photo_mime=photo_mime,
+            bytes_=bytes_,
+            sha256=sha256,
+            now=now,
+            photo_id=photo_id,
+            storage_key_prefix=storage_key_prefix,
+            idempotency_key=idempotency_key,
+        )
+        return row, obsolete_prefixes
+
+    async def _lock(self, key: str) -> None:
+        """Hold one stable PostgreSQL advisory lock until transaction end."""
+        await self._session.execute(
+            text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
+            {"key": key},
+        )
+
+    async def _get_by_idempotency_key(
+        self, *, user_key: str, idempotency_key: UUID
+    ) -> dict[str, Any] | None:
+        """Return an existing idempotent upload row for replay handling."""
+        result = await self._session.execute(
+            select(*_summary_columns())
+            .where(progress_photos.c.user_key == user_key)
+            .where(progress_photos.c.idempotency_key == idempotency_key)
+        )
+        row = result.mappings().first()
+        return dict(row) if row else None
 
     async def list_metadata(
         self, *, user_key: str, frm: DateValue, to: DateValue

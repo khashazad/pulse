@@ -168,7 +168,7 @@ async def create_photo(
 
     Streams the upload under :data:`MAX_UPLOAD_BYTES`, hands off to
     :func:`insert_one` for image validation/transcoding and persistence.
-    Multiple photos may share the same ``(log_date, tag_id)``. When the
+    A new upload replaces all photos with the same ``(log_date, tag_id)``. When the
     client supplies an ``idempotency_key`` (a stable UUID it reuses across
     retries of the same logical upload), a duplicate POST returns the
     previously-inserted row instead of creating another one.
@@ -201,7 +201,7 @@ async def create_photo(
     repo = ProgressPhotoRepository(session)
     tag_repo = ProgressPhotoTagRepository(session)
     async with transaction(session):
-        row = await insert_one(
+        result = await insert_one(
             repo=repo,
             tag_repo=tag_repo,
             store=store,
@@ -211,7 +211,9 @@ async def create_photo(
             raw=raw,
             idempotency_key=idempotency_key,
         )
-    return _row_to_metadata(row)
+    for prefix in result.obsolete_storage_prefixes:
+        await delete_photo_objects(store, prefix)
+    return _row_to_metadata(result.row)
 
 
 @router.delete("/photos/{photo_id}", status_code=204)

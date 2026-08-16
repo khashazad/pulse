@@ -49,7 +49,11 @@ from pulse_server.models.progress_photo import ProgressPhotoMetadata, ProgressPh
 from pulse_server.photo_store import get_photo_store
 from pulse_server.repositories.progress_photo import ProgressPhotoRepository
 from pulse_server.repositories.progress_photo_tag import ProgressPhotoTagRepository
-from pulse_server.services.progress_photo_service import MAX_UPLOAD_BYTES, insert_one
+from pulse_server.services.progress_photo_service import (
+    MAX_UPLOAD_BYTES,
+    delete_photo_objects,
+    insert_one,
+)
 from pulse_server.services.progress_photo_tag_service import list_tags
 
 CaptureDateSource = Literal["metadata", "provided", "default"]
@@ -724,7 +728,7 @@ async def _upload_progress_photo_sources(
                     metadata_text=extract_image_metadata_text(raw),
                 )
                 async with transaction(session):
-                    row = await insert_one(
+                    result = await insert_one(
                         repo=photo_repo,
                         tag_repo=tag_repo,
                         store=store,
@@ -734,6 +738,9 @@ async def _upload_progress_photo_sources(
                         raw=raw,
                         idempotency_key=_parse_idempotency_key(get_idempotency_key(source)),
                     )
+                for prefix in result.obsolete_storage_prefixes:
+                    await delete_photo_objects(store, prefix)
+                row = result.row
             except ToolError as exc:
                 rejected.append(
                     ProgressPhotoUploadRejected(

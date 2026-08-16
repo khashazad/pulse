@@ -20,6 +20,7 @@ from PIL import Image
 
 from pulse_server.mcp.context import ToolContext
 from pulse_server.mcp.tools import progress_photo_tools
+from pulse_server.services.progress_photo_service import ProgressPhotoWriteResult
 
 
 def _jpeg_bytes(*, exif_date: str | None = None) -> bytes:
@@ -214,13 +215,16 @@ async def test_upload_progress_photos_handles_multi_date_and_delegates_to_insert
         - **kwargs: Arguments passed to ``insert_one``.
 
         **Outputs:**
-        - dict: Row-shaped progress-photo mapping.
+        - ProgressPhotoWriteResult: Stored row and first upload's obsolete prefix.
         """
         calls.append(kwargs)
-        return _photo_row(
-            photo_id=uuid.uuid4(),
-            tag_id=kwargs["tag_id"],
-            log_date=kwargs["log_date"],
+        return ProgressPhotoWriteResult(
+            row=_photo_row(
+                photo_id=uuid.uuid4(),
+                tag_id=kwargs["tag_id"],
+                log_date=kwargs["log_date"],
+            ),
+            obsolete_storage_prefixes=("progress/khash/old",) if len(calls) == 1 else (),
         )
 
     tag_repo = MagicMock()
@@ -228,6 +232,7 @@ async def test_upload_progress_photos_handles_multi_date_and_delegates_to_insert
     mcp = FastMCP("test-progress-photos")
     ctx = ToolContext(user_key="khash", tz=ZoneInfo("America/Toronto"), usda_getter=MagicMock())
     progress_photo_tools.register(mcp, ctx)
+    store = MagicMock()
 
     with (
         patch(
@@ -242,12 +247,14 @@ async def test_upload_progress_photos_handles_multi_date_and_delegates_to_insert
             "pulse_server.mcp.tools.progress_photo_tools.ProgressPhotoRepository",
             return_value=MagicMock(),
         ),
-        patch(
-            "pulse_server.mcp.tools.progress_photo_tools.get_photo_store", return_value=MagicMock()
-        ),
+        patch("pulse_server.mcp.tools.progress_photo_tools.get_photo_store", return_value=store),
         patch(
             "pulse_server.mcp.tools.progress_photo_tools.insert_one", side_effect=_insert_one
         ) as insert_mock,
+        patch(
+            "pulse_server.mcp.tools.progress_photo_tools.delete_photo_objects",
+            new_callable=AsyncMock,
+        ) as delete_mock,
     ):
         async with Client(mcp) as client:
             result = await client.call_tool(
@@ -280,6 +287,7 @@ async def test_upload_progress_photos_handles_multi_date_and_delegates_to_insert
         _png_bytes(),
     ]
     insert_mock.assert_has_awaits([call(**calls[0]), call(**calls[1])])
+    delete_mock.assert_awaited_once_with(store, "progress/khash/old")
 
 
 @pytest.mark.asyncio
@@ -315,12 +323,15 @@ async def test_upload_progress_photos_keeps_rejections_per_photo() -> None:
         - **kwargs: Arguments passed to ``insert_one``.
 
         **Outputs:**
-        - dict: Row-shaped progress-photo mapping.
+        - ProgressPhotoWriteResult: Stored row with no obsolete objects.
         """
-        return _photo_row(
-            photo_id=uuid.uuid4(),
-            tag_id=kwargs["tag_id"],
-            log_date=kwargs["log_date"],
+        return ProgressPhotoWriteResult(
+            row=_photo_row(
+                photo_id=uuid.uuid4(),
+                tag_id=kwargs["tag_id"],
+                log_date=kwargs["log_date"],
+            ),
+            obsolete_storage_prefixes=(),
         )
 
     tag_repo = MagicMock()
@@ -519,10 +530,13 @@ async def test_upload_progress_photo_files_downloads_and_delegates_to_insert_one
     async def _insert_one(**kwargs):
         """Capture canonical service calls and return persisted-row fixtures."""
         calls.append(kwargs)
-        return _photo_row(
-            photo_id=uuid.uuid4(),
-            tag_id=kwargs["tag_id"],
-            log_date=kwargs["log_date"],
+        return ProgressPhotoWriteResult(
+            row=_photo_row(
+                photo_id=uuid.uuid4(),
+                tag_id=kwargs["tag_id"],
+                log_date=kwargs["log_date"],
+            ),
+            obsolete_storage_prefixes=(),
         )
 
     tag_repo = MagicMock()

@@ -280,6 +280,91 @@ async def test_multiple_photos_per_date_and_tag(session: AsyncSession) -> None:
 
 
 @pytest.mark.asyncio
+async def test_replace_slot_removes_all_old_rows(session: AsyncSession) -> None:
+    """One replacement leaves one row and returns all obsolete object prefixes."""
+    user_key = f"test-{uuid.uuid4().hex}"
+    tag_id = await _seed_tag(session, user_key=user_key)
+    repo = ProgressPhotoRepository(session)
+    log_date = DateValue(2026, 5, 17)
+    old_prefixes: list[str] = []
+    async with transaction(session):
+        for sha in ("sha-v1", "sha-v2"):
+            photo_id = uuid.uuid4()
+            prefix = f"progress/{user_key}/{photo_id}"
+            old_prefixes.append(prefix)
+            await repo.insert(
+                user_key=user_key,
+                log_date=log_date,
+                tag_id=tag_id,
+                photo_id=photo_id,
+                storage_key_prefix=prefix,
+                photo_mime="image/jpeg",
+                bytes_=7,
+                sha256=sha,
+                now=_now(),
+            )
+
+    new_id = uuid.uuid4()
+    async with transaction(session):
+        row, obsolete = await repo.replace_slot(
+            user_key=user_key,
+            log_date=log_date,
+            tag_id=tag_id,
+            photo_id=new_id,
+            storage_key_prefix=f"progress/{user_key}/{new_id}",
+            photo_mime="image/jpeg",
+            bytes_=9,
+            sha256="sha-new",
+            now=_now(),
+        )
+
+    rows = await repo.list_metadata(user_key=user_key, frm=log_date, to=log_date)
+    assert row["id"] == new_id
+    assert rows == [row]
+    assert set(obsolete) == set(old_prefixes)
+
+
+@pytest.mark.asyncio
+async def test_replace_slot_idempotent_replay_keeps_original_row(session: AsyncSession) -> None:
+    """A repeated idempotency key does not replace the stored slot again."""
+    user_key = f"test-{uuid.uuid4().hex}"
+    tag_id = await _seed_tag(session, user_key=user_key)
+    repo = ProgressPhotoRepository(session)
+    log_date = DateValue(2026, 5, 17)
+    idempotency_key = uuid.uuid4()
+    first_id = uuid.uuid4()
+    async with transaction(session):
+        first, _ = await repo.replace_slot(
+            user_key=user_key,
+            log_date=log_date,
+            tag_id=tag_id,
+            photo_id=first_id,
+            storage_key_prefix=f"progress/{user_key}/{first_id}",
+            photo_mime="image/jpeg",
+            bytes_=7,
+            sha256="sha-first",
+            now=_now(),
+            idempotency_key=idempotency_key,
+        )
+    async with transaction(session):
+        replay, obsolete = await repo.replace_slot(
+            user_key=user_key,
+            log_date=log_date,
+            tag_id=tag_id,
+            photo_id=uuid.uuid4(),
+            storage_key_prefix="progress/unused/replay",
+            photo_mime="image/jpeg",
+            bytes_=9,
+            sha256="sha-replay",
+            now=_now(),
+            idempotency_key=idempotency_key,
+        )
+
+    assert replay == first
+    assert obsolete == []
+
+
+@pytest.mark.asyncio
 async def test_list_metadata_filters_by_range(session: AsyncSession) -> None:
     """``list_metadata`` returns only rows whose ``log_date`` falls within ``[frm, to]``."""
     user_key = f"test-{uuid.uuid4().hex}"

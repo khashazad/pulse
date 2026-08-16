@@ -4,8 +4,8 @@ Wraps :func:`process_progress_photo` with date and tag validation and maps the
 pipeline's :class:`PhotoTooLargeError` / :class:`UnsupportedImageError` to
 HTTP 413/415. Exposes :func:`insert_one`, which processes a single tagged
 photo into archive/display/thumb encodings, writes those three objects to the
-photo store under ``progress/{user_key}/{photo_id}/``, then inserts the
-metadata row (blobs are no longer written to Postgres). Also exposes
+photo store under ``progress/{user_key}/{photo_id}/``, then replaces the
+metadata slot for the same date and tag. Also exposes
 :func:`object_keys` and :func:`delete_photo_objects` for store cleanup. Caller
 controls the transaction boundary on the repository.
 """
@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
+from dataclasses import dataclass
 from datetime import UTC
 from datetime import date as DateValue
 from datetime import datetime as DateTimeValue
@@ -42,6 +43,14 @@ MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB
 # Object names under each photo's storage prefix; "full" is the wire-facing
 # size param, "display.jpg" the stored object.
 VARIANT_OBJECTS = {"full": "display.jpg", "thumb": "thumb.jpg", "archive": "archive.jpg"}
+
+
+@dataclass(frozen=True)
+class ProgressPhotoWriteResult:
+    """Carry the stored row and object prefixes that became obsolete."""
+
+    row: dict[str, Any]
+    obsolete_storage_prefixes: tuple[str, ...]
 
 
 def object_keys(prefix: str) -> list[str]:
@@ -131,14 +140,14 @@ async def insert_one(
     tag_id: UUID,
     raw: bytes | bytearray,
     idempotency_key: UUID | None = None,
-) -> dict[str, Any]:
-    """Validate, process, upload, and insert a single tagged progress photo.
+) -> ProgressPhotoWriteResult:
+    """Validate, process, upload, and replace one tagged progress-photo slot.
 
     Verifies the tag belongs to the user before any image processing so a bad
     ``tag_id`` short-circuits without spending CPU on Pillow. Pre-generates the
     photo id, then uploads the archive/display/thumb JPEGs to the photo store
-    under ``progress/{user_key}/{photo_id}/`` before inserting the metadata row
-    — the photo bytes are no longer written to Postgres. The ``sha256`` and
+    under ``progress/{user_key}/{photo_id}/``. It then replaces all rows with
+    the same date and tag. The ``sha256`` and
     ``bytes`` recorded describe the **display** encoding, preserving ETag
     continuity with the pre-cutover full image the client cached against.
 
@@ -165,7 +174,7 @@ async def insert_one(
       previously-inserted row instead of creating a duplicate.
 
     **Outputs:**
-    - dict[str, Any]: The inserted (or pre-existing) progress-photo row.
+    - ProgressPhotoWriteResult: Stored row and obsolete object prefixes.
 
     **Exceptions:**
     - fastapi.HTTPException: Raised with 400 for future dates, 404 when
@@ -203,7 +212,7 @@ async def insert_one(
         failures = [r for r in results if isinstance(r, BaseException)]
         if failures:
             raise failures[0]
-        row = await repo.insert(
+        row, obsolete_prefixes = await repo.replace_slot(
             user_key=user_key,
             log_date=log_date,
             tag_id=tag_id,
@@ -222,4 +231,8 @@ async def insert_one(
         # Idempotent replay: the conflict path returned the original row, so the
         # objects uploaded under the fresh prefix are unreferenced — remove them.
         await delete_photo_objects(store, prefix)
-    return row
+        return ProgressPhotoWriteResult(row=row, obsolete_storage_prefixes=())
+    return ProgressPhotoWriteResult(
+        row=row,
+        obsolete_storage_prefixes=tuple(obsolete_prefixes),
+    )

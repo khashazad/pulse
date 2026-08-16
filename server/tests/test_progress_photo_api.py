@@ -74,8 +74,8 @@ def _photo_row(tag_id: uuid.UUID, sha: str = "deadbeef") -> dict:
     }
 
 
-def _echo_insert(tag_id: uuid.UUID, sha: str = "deadbeef", captured: dict | None = None):
-    """Build a ``repo.insert`` side_effect that echoes the service's kwargs.
+def _echo_replace(tag_id: uuid.UUID, sha: str = "deadbeef", captured: dict | None = None):
+    """Build a ``repo.replace_slot`` side effect that echoes service arguments.
 
     The returned coroutine fakes a row keyed to the service-generated
     ``photo_id`` and ``storage_key_prefix`` so the idempotent-replay cleanup
@@ -97,7 +97,7 @@ def _echo_insert(tag_id: uuid.UUID, sha: str = "deadbeef", captured: dict | None
         row = _photo_row(tag_id, sha)
         row["id"] = kwargs["photo_id"]
         row["storage_key_prefix"] = kwargs["storage_key_prefix"]
-        return row
+        return row, []
 
     return _insert
 
@@ -272,7 +272,7 @@ def test_post_photo_returns_metadata(client: TestClient) -> None:
     tag_id = uuid.uuid4()
 
     photo_repo = MagicMock()
-    photo_repo.insert = AsyncMock(side_effect=_echo_insert(tag_id))
+    photo_repo.replace_slot = AsyncMock(side_effect=_echo_replace(tag_id))
     tag_repo = MagicMock()
     tag_repo.get_by_id = AsyncMock(return_value=_tag_row("front", 0))
     with (
@@ -305,7 +305,7 @@ def test_post_photo_forwards_idempotency_key(client: TestClient) -> None:
     idem = uuid.uuid4()
 
     photo_repo = MagicMock()
-    photo_repo.insert = AsyncMock(side_effect=_echo_insert(tag_id, "sha"))
+    photo_repo.replace_slot = AsyncMock(side_effect=_echo_replace(tag_id, "sha"))
     tag_repo = MagicMock()
     tag_repo.get_by_id = AsyncMock(return_value=_tag_row("front", 0))
     with (
@@ -329,8 +329,8 @@ def test_post_photo_forwards_idempotency_key(client: TestClient) -> None:
             files={"file": ("x.png", src, "image/png")},
         )
     assert resp.status_code == 201, resp.text
-    photo_repo.insert.assert_awaited_once()
-    kwargs = photo_repo.insert.await_args.kwargs
+    photo_repo.replace_slot.assert_awaited_once()
+    kwargs = photo_repo.replace_slot.await_args.kwargs
     assert kwargs["idempotency_key"] == idem
 
 
@@ -547,7 +547,7 @@ def test_create_photo_uploads_three_objects(client: TestClient) -> None:
     captured: dict = {}
 
     photo_repo = MagicMock()
-    photo_repo.insert = AsyncMock(side_effect=_echo_insert(tag_id, captured=captured))
+    photo_repo.replace_slot = AsyncMock(side_effect=_echo_replace(tag_id, captured=captured))
     tag_repo = MagicMock()
     tag_repo.get_by_id = AsyncMock(return_value=_tag_row("front", 0))
     with (
@@ -572,6 +572,51 @@ def test_create_photo_uploads_three_objects(client: TestClient) -> None:
         assert not _object_missing(store, f"{prefix}/{name}")
 
 
+def test_create_photo_replaces_same_date_and_tag_objects(client: TestClient) -> None:
+    """A slot replacement keeps new objects and removes every old variant."""
+    store = _current_store["store"]
+    source = _png_bytes(800, 600)
+    tag_id = uuid.uuid4()
+    old_prefix = f"progress/khash/{uuid.uuid4()}"
+    for name in _VARIANT_FILES:
+        store.put(f"{old_prefix}/{name}", b"old")
+
+    captured: dict = {}
+
+    async def _replace(**kwargs):
+        captured.update(kwargs)
+        row = _photo_row(tag_id, "replacement-sha")
+        row["id"] = kwargs["photo_id"]
+        row["storage_key_prefix"] = kwargs["storage_key_prefix"]
+        return row, [old_prefix]
+
+    photo_repo = MagicMock()
+    photo_repo.replace_slot = AsyncMock(side_effect=_replace)
+    tag_repo = MagicMock()
+    tag_repo.get_by_id = AsyncMock(return_value=_tag_row("front", 0))
+    with (
+        patch(
+            "pulse_server.routers.measures_photos.ProgressPhotoRepository",
+            return_value=photo_repo,
+        ),
+        patch(
+            "pulse_server.routers.measures_photos.ProgressPhotoTagRepository",
+            return_value=tag_repo,
+        ),
+    ):
+        response = client.post(
+            "/measures/photos",
+            headers=HEADERS,
+            data={"log_date": "2026-05-17", "tag_id": str(tag_id)},
+            files={"file": ("front.png", source, "image/png")},
+        )
+
+    assert response.status_code == 201, response.text
+    for name in _VARIANT_FILES:
+        assert _object_missing(store, f"{old_prefix}/{name}")
+        assert not _object_missing(store, f"{captured['storage_key_prefix']}/{name}")
+
+
 def test_create_photo_cleans_up_objects_when_insert_fails(client: TestClient) -> None:
     """`POST /measures/photos` removes uploaded objects if the DB insert fails."""
     store = _current_store["store"]
@@ -584,7 +629,7 @@ def test_create_photo_cleans_up_objects_when_insert_fails(client: TestClient) ->
         raise RuntimeError("insert blew up")
 
     photo_repo = MagicMock()
-    photo_repo.insert = AsyncMock(side_effect=_insert)
+    photo_repo.replace_slot = AsyncMock(side_effect=_insert)
     tag_repo = MagicMock()
     tag_repo.get_by_id = AsyncMock(return_value=_tag_row("front", 0))
     with (
