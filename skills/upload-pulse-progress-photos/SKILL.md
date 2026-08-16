@@ -33,7 +33,7 @@ Use only these fields:
       "filename": "check-in-front.jpg",
       "pose_hint": "flexed front",
       "capture_date": "2026-08-10",
-      "idempotency_key": "6cb7e59a-6d70-4ba4-b232-9bc7b677aa88"
+      "idempotency_key": "<stable-per-photo-key>"
     }
   ],
   "default_date": "2026-08-10"
