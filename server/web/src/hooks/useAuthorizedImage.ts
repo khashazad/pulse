@@ -23,6 +23,14 @@ export function useAuthorizedImage(
   });
 
   useEffect(() => {
+    // Callers that render an absent photo (a pose missing on one side of a
+    // comparison) still have to call this hook unconditionally, so treat an
+    // empty id as "nothing to load" rather than requesting `/measures/photos/`.
+    if (!photoId) {
+      setState({ url: null, loading: false, error: false });
+      return;
+    }
+
     if (import.meta.env.DEV) {
       const previewUrl = previewPhotoUrl(photoId);
       if (previewUrl) {

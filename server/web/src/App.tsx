@@ -11,12 +11,13 @@ import {
   restoreSession,
 } from "./auth/session";
 import { AppShell } from "./components/AppShell";
+import { BottomNav, type ProgressView } from "./components/BottomNav";
 import { LoginView } from "./components/LoginView";
-import type { ProgressView } from "./components/SegmentedControl";
 import { CompareView } from "./features/compare/CompareView";
 import { CalendarModal } from "./features/calendar/CalendarModal";
-import { TimelineView } from "./features/gallery/TimelineView";
+import { BrowseScreen } from "./features/browse/BrowseScreen";
 import { previewIdentity, previewPhotos, previewRangeFrom, previewRangeTo, previewTags, previewWeights } from "./devPreview";
+import { useIsDesktop } from "./hooks/useIsDesktop";
 import { shiftDateKeyYears, toDateKey } from "./lib/date";
 import {
   mergeLoadedSpan,
@@ -39,6 +40,8 @@ interface ProgressData {
 interface CompareSeed {
   left?: string;
   right?: string;
+  /** Distinguishes repeat requests for the same day so each one re-applies. */
+  requestId: number;
 }
 
 /** Merge server records by id while preserving newest-first photo ordering. */
@@ -70,6 +73,7 @@ export function App() {
   const today = toDateKey(new Date());
   const isLocalPreview = import.meta.env.DEV && new URLSearchParams(location.search).get("preview") === "1";
   const initialFrom = shiftDateKeyYears(today, -1);
+  const isDesktop = useIsDesktop();
   const [identity, setIdentity] = useState<Identity | null | undefined>(undefined);
   const [authError, setAuthError] = useState<string>();
   const [view, setView] = useState<ProgressView>("timeline");
@@ -254,7 +258,11 @@ export function App() {
   /** Jump into compare with one seed date against the latest capture. */
   function openCompareFromDate(date: string): void {
     const latest = captureDatesNewestFirst(data.photos)[0];
-    setCompareSeed({ left: date, right: latest });
+    setCompareSeed((current) => ({
+      left: date,
+      right: latest,
+      requestId: (current?.requestId ?? 0) + 1,
+    }));
     setView("compare");
   }
 
@@ -264,7 +272,7 @@ export function App() {
     setCalendarOpen(true);
   }
 
-  /** Navigate the timeline to one capture day selected in the calendar. */
+  /** Navigate Browse to one capture day selected from the calendar or month scrubber. */
   function focusTimelineDate(date: string): void {
     setView("timeline");
     setHighlightDate(date);
@@ -278,40 +286,40 @@ export function App() {
   const token = isLocalPreview ? "preview" : getSessionToken();
   if (!token) return <LoginView onLogin={startLogin} />;
 
+  const showBrowse = isDesktop || view === "timeline";
+
   return (
     <>
       <AppShell
         identity={identity}
-        view={view}
-        onViewChange={(next) => {
-          setView(next);
-          if (next !== "compare") setCompareSeed(null);
-        }}
         onOpenCalendar={() => {
           const trigger = document.querySelector<HTMLElement>('[aria-label="Open photo calendar"]');
           openCalendar(trigger);
         }}
         onLogout={() => void signOut()}
       >
-        {data.error && data.photos.length > 0 ? (
-          <div className="inline-notice" role="status">{data.error}</div>
-        ) : null}
-        {view === "timeline" ? (
-          <TimelineView
+        {showBrowse ? (
+          <BrowseScreen
             photos={data.photos}
             tags={data.tags}
             weights={data.weights}
             token={token}
-            loading={data.loading || data.loadingEarlier}
+            loading={data.loading}
             loadingEarlier={data.loadingEarlier}
             error={data.error}
             highlightDate={highlightDate}
             scrollToDate={scrollToDate}
             onScrollToDateHandled={() => setScrollToDate(null)}
-            onClearHighlight={() => setHighlightDate(null)}
             onRetry={() => setReloadKey((value) => value + 1)}
             onLoadEarlier={() => void loadEarlier()}
             onCompareFromDate={openCompareFromDate}
+            onClearHighlight={() => setHighlightDate(null)}
+            onJumpToDate={focusTimelineDate}
+            isDesktop={isDesktop}
+            compareSeedLeft={compareSeed?.left}
+            compareSeedRight={compareSeed?.right}
+            compareSeedRequestId={compareSeed?.requestId}
+            onEnsureRange={(from, to) => void ensureRangeLoaded(from, to, { background: true })}
           />
         ) : (
           <CompareView
@@ -319,12 +327,24 @@ export function App() {
             tags={data.tags}
             weights={data.weights}
             token={token}
+            variant="full"
             seedLeftDate={compareSeed?.left}
             seedRightDate={compareSeed?.right}
+            seedRequestId={compareSeed?.requestId}
             onEnsureRange={(from, to) => void ensureRangeLoaded(from, to, { background: true })}
           />
         )}
       </AppShell>
+
+      {!isDesktop ? (
+        <BottomNav
+          value={view}
+          onChange={(next) => {
+            setView(next);
+            if (next !== "compare") setCompareSeed(null);
+          }}
+        />
+      ) : null}
 
       <CalendarModal
         open={calendarOpen}

@@ -1,9 +1,7 @@
 import { CalendarDays, Columns2, RefreshCw } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { TagChipFilter } from "../../components/TagChipFilter";
 import { PhotoTile } from "../../components/PhotoTile";
-import { useTagSelection } from "../../hooks/useTagSelection";
 import { formatDaysAgo, formatLongDate } from "../../lib/date";
 import {
   captureDatesNewestFirst,
@@ -22,6 +20,7 @@ interface TimelineViewProps {
   tags: ProgressPhotoTag[];
   weights: WeightEntry[];
   token: string;
+  selectedTagIds: Set<string> | null;
   loading: boolean;
   loadingEarlier: boolean;
   error?: string;
@@ -32,12 +31,13 @@ interface TimelineViewProps {
   onLoadEarlier: () => void;
   onCompareFromDate: (date: string) => void;
   onClearHighlight?: () => void;
+  onVisibleMonthChange?: (monthKey: string) => void;
 }
 
 /** Render gallery skeleton tiles that preserve the final responsive layout. */
 function TimelineSkeleton() {
   return (
-    <div className="photo-grid photo-grid--feature" aria-label="Loading progress photos">
+    <div className="photo-grid" aria-label="Loading progress photos">
       {Array.from({ length: 6 }, (_, index) => (
         <div className="photo-card-skeleton" key={index} />
       ))}
@@ -45,12 +45,13 @@ function TimelineSkeleton() {
   );
 }
 
-/** Render the photo-first timeline with status, tags, and date sections. */
+/** Render the photo-first day feed: date, weight delta, poses, and inline compare. */
 export function TimelineView({
   photos,
   tags,
   weights,
   token,
+  selectedTagIds,
   loading,
   loadingEarlier,
   error,
@@ -61,8 +62,8 @@ export function TimelineView({
   onLoadEarlier,
   onCompareFromDate,
   onClearHighlight,
+  onVisibleMonthChange,
 }: TimelineViewProps) {
-  const { selectedTagIds, selectAll, toggleTag } = useTagSelection(tags.map((tag) => tag.id));
   const [selectedPhotoId, setSelectedPhotoId] = useState<string | null>(null);
   const [viewerTrigger, setViewerTrigger] = useState<HTMLElement | null>(null);
   const loadEarlierRef = useRef<HTMLDivElement>(null);
@@ -86,14 +87,6 @@ export function TimelineView({
     [weights],
   );
   const captureDatesAsc = useMemo(() => captureDatesOldestFirst(photos), [photos]);
-  const latestDate = captureDatesNewestFirst(photos)[0];
-  const previousDate = latestDate ? previousCaptureDate(captureDatesAsc, latestDate) : null;
-  const latestWeight = latestDate ? weightsByDate.get(latestDate) : undefined;
-  const previousWeight = previousDate ? weightsByDate.get(previousDate) : undefined;
-  const latestDelta =
-    latestDate && previousDate
-      ? weightDelta(weightsByDate, previousDate, latestDate)
-      : null;
 
   useEffect(() => {
     if (!scrollToDate) return;
@@ -128,57 +121,38 @@ export function TimelineView({
     return () => observer.disconnect();
   }, [loadingEarlier, onLoadEarlier]);
 
+  useEffect(() => {
+    if (!onVisibleMonthChange || typeof IntersectionObserver === "undefined") return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const visible = entries
+          .filter((entry) => entry.isIntersecting)
+          .toSorted((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+        const date = visible?.target.getAttribute("data-date");
+        if (date) onVisibleMonthChange(date.slice(0, 7));
+      },
+      { rootMargin: "-15% 0px -70% 0px" },
+    );
+    for (const section of sectionRefs.current.values()) observer.observe(section);
+    return () => observer.disconnect();
+  }, [groups, onVisibleMonthChange]);
+
   /** Open one tile in the shared viewer and remember its focus origin. */
   function openPhoto(photoId: string, trigger: HTMLButtonElement): void {
     setViewerTrigger(trigger);
     setSelectedPhotoId(photoId);
   }
 
-  /** Remember one date section element for calendar scrolling. */
+  /** Remember one date section element for calendar and scrubber scrolling. */
   function registerSection(date: string, element: HTMLElement | null): void {
     if (element) sectionRefs.current.set(date, element);
     else sectionRefs.current.delete(date);
   }
 
-  const [featureGroup, ...olderGroups] = groups;
-
   return (
     <section className="timeline-view" aria-label="Progress photo timeline">
-      {latestDate ? (
-        <div className="timeline-status">
-          <div className="timeline-status__primary">
-            <strong>{formatLongDate(latestDate)}</strong>
-            {latestWeight !== undefined ? (
-              <span className="timeline-status__weight">{latestWeight.toFixed(1)} lb</span>
-            ) : null}
-            {latestDelta !== null ? (
-              <span
-                className={
-                  latestDelta <= 0 ? "timeline-status__delta timeline-status__delta--down" : "timeline-status__delta"
-                }
-              >
-                {latestDelta > 0 ? "+" : ""}
-                {latestDelta.toFixed(1)} lb vs previous
-              </span>
-            ) : null}
-          </div>
-          <button
-            type="button"
-            className="button button--quiet timeline-status__compare"
-            onClick={() => onCompareFromDate(latestDate)}
-          >
-            Compare to…
-          </button>
-        </div>
-      ) : null}
-
-      {tags.length > 0 ? (
-        <TagChipFilter
-          tags={tags}
-          selectedTagIds={selectedTagIds}
-          onToggle={toggleTag}
-          onSelectAll={selectAll}
-        />
+      {error && photos.length > 0 ? (
+        <div className="inline-notice" role="status">{error}</div>
       ) : null}
 
       {error && photos.length === 0 ? (
@@ -204,89 +178,56 @@ export function TimelineView({
         </div>
       ) : (
         <div className="timeline-sections">
-          {featureGroup ? (
-            <section
-              className={`date-group date-group--feature${highlightDate === featureGroup.date ? " date-group--highlight" : ""}`}
-              key={featureGroup.date}
-              ref={(element) => registerSection(featureGroup.date, element)}
-              aria-label={`Photos from ${formatLongDate(featureGroup.date)}`}
-            >
-              <header className="date-group__header">
-                <div>
-                  <h2>{formatLongDate(featureGroup.date)}</h2>
-                  <span className="date-group__meta">
-                    {formatDaysAgo(featureGroup.date)}
-                    {weightsByDate.has(featureGroup.date)
-                      ? ` · ${weightsByDate.get(featureGroup.date)?.toFixed(1)} lb`
-                      : ""}
-                  </span>
+          {groups.map((group) => {
+            const previousDate = previousCaptureDate(captureDatesAsc, group.date);
+            const delta = previousDate ? weightDelta(weightsByDate, previousDate, group.date) : null;
+            return (
+              <article
+                className={`day-card${highlightDate === group.date ? " day-card--highlight" : ""}`}
+                key={group.date}
+                data-date={group.date}
+                ref={(element) => registerSection(group.date, element)}
+                aria-label={`Photos from ${formatLongDate(group.date)}`}
+              >
+                <header className="day-card__head">
+                  <div>
+                    <div className="day-card__date">{formatLongDate(group.date)}</div>
+                    <div className="day-card__relative">{formatDaysAgo(group.date)}</div>
+                  </div>
+                  {weightsByDate.has(group.date) ? (
+                    <div className="day-card__weight">
+                      <div className="day-card__weight-value">{weightsByDate.get(group.date)?.toFixed(1)} lb</div>
+                      {delta !== null ? (
+                        <div className={delta <= 0 ? "day-card__delta day-card__delta--down" : "day-card__delta"}>
+                          {delta > 0 ? "+" : ""}
+                          {delta.toFixed(1)} lb
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </header>
+                <div className="day-card__photos">
+                  {group.photos.map((photo) => (
+                    <PhotoTile
+                      key={photo.id}
+                      photo={photo}
+                      tagName={tagNames.get(photo.tag_id) ?? "Progress"}
+                      token={token}
+                      onOpen={(trigger) => openPhoto(photo.id, trigger)}
+                    />
+                  ))}
                 </div>
                 <button
                   type="button"
-                  className="button button--quiet date-group__compare"
-                  aria-label={`Compare ${formatLongDate(featureGroup.date)}`}
-                  onClick={() => onCompareFromDate(featureGroup.date)}
-                >
-                  <Columns2 aria-hidden="true" size={14} />
-                  Compare
-                </button>
-              </header>
-              <div className="photo-grid photo-grid--feature">
-                {featureGroup.photos.map((photo) => (
-                  <PhotoTile
-                    key={photo.id}
-                    photo={photo}
-                    tagName={tagNames.get(photo.tag_id) ?? "Progress"}
-                    weightLb={weightsByDate.get(featureGroup.date)}
-                    token={token}
-                    onOpen={(trigger) => openPhoto(photo.id, trigger)}
-                  />
-                ))}
-              </div>
-            </section>
-          ) : null}
-
-          {olderGroups.map((group) => (
-            <section
-              className={`date-group${highlightDate === group.date ? " date-group--highlight" : ""}`}
-              key={group.date}
-              ref={(element) => registerSection(group.date, element)}
-              aria-label={`Photos from ${formatLongDate(group.date)}`}
-            >
-              <header className="date-group__header">
-                <div>
-                  <h3>{formatLongDate(group.date)}</h3>
-                  <span className="date-group__meta">
-                    {formatDaysAgo(group.date)}
-                    {weightsByDate.has(group.date)
-                      ? ` · ${weightsByDate.get(group.date)?.toFixed(1)} lb`
-                      : ""}
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  className="button button--quiet date-group__compare"
-                  aria-label={`Compare ${formatLongDate(group.date)}`}
+                  className="day-card__compare"
                   onClick={() => onCompareFromDate(group.date)}
                 >
-                  <Columns2 aria-hidden="true" size={14} />
-                  Compare
+                  <Columns2 aria-hidden="true" size={15} />
+                  Compare to earlier photo
                 </button>
-              </header>
-              <div className="photo-grid">
-                {group.photos.map((photo) => (
-                  <PhotoTile
-                    key={photo.id}
-                    photo={photo}
-                    tagName={tagNames.get(photo.tag_id) ?? "Progress"}
-                    weightLb={weightsByDate.get(group.date)}
-                    token={token}
-                    onOpen={(trigger) => openPhoto(photo.id, trigger)}
-                  />
-                ))}
-              </div>
-            </section>
-          ))}
+              </article>
+            );
+          })}
 
           <div className="load-earlier" ref={loadEarlierRef}>
             <button

@@ -90,7 +90,7 @@ describe("App", () => {
     history.replaceState({}, "", "/?preview=1");
     render(<App />);
 
-    expect(await screen.findByRole("button", { name: "Compare to…" })).toBeVisible();
+    expect((await screen.findAllByRole("button", { name: "Compare to earlier photo" }))[0]).toBeVisible();
     expect(screen.getByRole("button", { name: "Toggle Front tag" })).toBeVisible();
     expect(screen.getByText("preview@pulse.local")).toBeVisible();
     expect(fetch).not.toHaveBeenCalled();
@@ -107,8 +107,8 @@ describe("App", () => {
       }),
     ).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Compare view" }));
-    expect(screen.getByLabelText("Choose earlier date")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Compare" }));
+    expect(screen.getByRole("button", { name: /Choose earlier date/ })).toBeVisible();
   });
 
   test("completes a Google callback before loading protected data", async () => {

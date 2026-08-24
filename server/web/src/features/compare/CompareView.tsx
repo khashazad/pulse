@@ -1,10 +1,7 @@
 import { Scale } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { TagChipFilter } from "../../components/TagChipFilter";
-import { PhotoTile } from "../../components/PhotoTile";
 import { DatePickerDialog } from "../calendar/CalendarModal";
-import { useTagSelection } from "../../hooks/useTagSelection";
 import { daysBetween, formatShortDate } from "../../lib/date";
 import {
   adjacentCaptureDate,
@@ -16,10 +13,10 @@ import {
   type ComparePreset,
   weightDelta,
 } from "../../lib/progress";
-import { commonTagsForDates } from "../../lib/tags";
 import { monthBounds } from "../../lib/range";
 import type { ProgressPhoto, ProgressPhotoTag, WeightEntry } from "../../types";
 import { PhotoViewer } from "../gallery/PhotoViewer";
+import { CompareSlider } from "./CompareSlider";
 
 interface CompareViewProps {
   photos: ProgressPhoto[];
@@ -28,35 +25,26 @@ interface CompareViewProps {
   token: string;
   seedLeftDate?: string;
   seedRightDate?: string;
+  /**
+   * Bumped by the caller on every "compare this day" request. The seed dates
+   * are applied once per id, so a later preset or calendar pick sticks instead
+   * of being snapped back to the seed on the next render.
+   */
+  seedRequestId?: number;
+  /** Compact desktop side-panel treatment vs. the full mobile screen. */
+  variant?: "full" | "tray";
   onEnsureRange?: (from: string, to: string) => void;
-}
-
-interface ComparisonPlaceholderProps {
-  tagName: string;
-  date: string;
 }
 
 const PRESETS: Array<{ id: ComparePreset; label: string }> = [
   { id: "first", label: "First" },
-  { id: "1y", label: "1y ago" },
-  { id: "6m", label: "6m ago" },
-  { id: "3m", label: "3m ago" },
-  { id: "1m", label: "1m ago" },
+  { id: "1y", label: "1y" },
+  { id: "6m", label: "6m" },
+  { id: "3m", label: "3m" },
+  { id: "1m", label: "1m" },
 ];
 
-/** Render one explicitly labeled gap where a selected day has no matching photo. */
-function ComparisonPlaceholder({ tagName, date }: ComparisonPlaceholderProps) {
-  return (
-    <div
-      className="comparison-placeholder"
-      aria-label={`No ${tagName} photo on ${formatShortDate(date)}`}
-    >
-      <span>No photo</span>
-    </div>
-  );
-}
-
-/** Render side-by-side progress comparisons with calendar-based date selection. */
+/** Render progress comparison with a pose switcher and a draggable onion-skin slider. */
 export function CompareView({
   photos,
   tags,
@@ -64,6 +52,8 @@ export function CompareView({
   token,
   seedLeftDate,
   seedRightDate,
+  seedRequestId,
+  variant = "full",
   onEnsureRange,
 }: CompareViewProps) {
   const defaults = useMemo(() => defaultComparisonDates(photos), [photos]);
@@ -71,24 +61,29 @@ export function CompareView({
   const latestDate = captureDatesNewestFirst(photos)[0] ?? "";
   const [leftDate, setLeftDate] = useState(defaults?.left ?? "");
   const [rightDate, setRightDate] = useState(defaults?.right ?? "");
+  const [activeTagId, setActiveTagId] = useState<string | null>(null);
   const [activeSide, setActiveSide] = useState<"left" | "right" | null>(null);
   const [pickerTrigger, setPickerTrigger] = useState<HTMLElement | null>(null);
   const [selectedPhotoId, setSelectedPhotoId] = useState<string | null>(null);
   const [viewerTrigger, setViewerTrigger] = useState<HTMLElement | null>(null);
   const compareRef = useRef<HTMLElement>(null);
-  const commonTags = useMemo(
-    () => (leftDate && rightDate ? commonTagsForDates(photos, leftDate, rightDate) : new Set<string>()),
-    [leftDate, photos, rightDate],
-  );
-  const { selectedTagIds, selectAll, toggleTag } = useTagSelection(tags.map((tag) => tag.id));
-  const effectiveTagFilter = useMemo(() => {
-    if (selectedTagIds && selectedTagIds.size > 0) return selectedTagIds;
-    return commonTags.size > 0 ? commonTags : null;
-  }, [commonTags, selectedTagIds]);
+  /** The pose the reader explicitly selected, so date changes do not discard it. */
+  const chosenTagRef = useRef<string | null>(null);
+  /**
+   * The seed request already applied, so a seed never overrides a later pick.
+   * Starts below every real id (callers count from 1, and an id-less caller
+   * normalizes to 0) so the first seed always lands exactly once.
+   */
+  const appliedSeedRef = useRef(-1);
 
   useEffect(() => {
     if (!defaults) return;
-    if (seedLeftDate || seedRightDate) {
+    // Apply an incoming seed only once per request. Re-applying it on every
+    // render (this effect also watches leftDate) would undo the reader's very
+    // next preset or calendar pick.
+    const requested = seedRequestId ?? 0;
+    if ((seedLeftDate || seedRightDate) && requested !== appliedSeedRef.current) {
+      appliedSeedRef.current = requested;
       setLeftDate(seedLeftDate ?? defaults.left);
       setRightDate(seedRightDate ?? defaults.right);
       return;
@@ -97,7 +92,7 @@ export function CompareView({
       setLeftDate(defaults.left);
       setRightDate(defaults.right);
     }
-  }, [defaults, leftDate, rightDate, seedLeftDate, seedRightDate]);
+  }, [defaults, leftDate, rightDate, seedLeftDate, seedRightDate, seedRequestId]);
 
   useEffect(() => {
     if (!leftDate || !rightDate || !onEnsureRange) return;
@@ -106,29 +101,51 @@ export function CompareView({
     onEnsureRange(from, to);
   }, [leftDate, onEnsureRange, rightDate]);
 
+  const rows = useMemo(
+    () => comparisonRows(photos, tags, leftDate, rightDate, null),
+    [leftDate, photos, rightDate, tags],
+  );
+
+  useEffect(() => {
+    if (rows.length === 0) {
+      setActiveTagId(null);
+      return;
+    }
+    // Keep the reader's chosen pose across a date change, but only while it
+    // still has a photo on BOTH sides — holding a pose that can only render
+    // "No photo" would be honest and useless. Otherwise fall back to a pose
+    // that actually compares, and only then to whatever exists.
+    const comparable = (tagId: string): boolean => {
+      const row = rows.find((candidate) => candidate.tag.id === tagId);
+      return Boolean(row?.left && row?.right);
+    };
+    const chosen = chosenTagRef.current;
+    if (chosen && comparable(chosen)) {
+      setActiveTagId(chosen);
+      return;
+    }
+    setActiveTagId((rows.find((row) => row.left && row.right) ?? rows[0]).tag.id);
+  }, [rows]);
+
   useEffect(() => {
     /** Step the focused compare side across adjacent capture dates. */
     function handleKeyDown(event: KeyboardEvent): void {
       if (!compareRef.current?.contains(document.activeElement)) return;
       if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+      if ((document.activeElement as HTMLElement | null)?.getAttribute("role") === "slider") return;
       const direction = event.key === "ArrowLeft" ? -1 : 1;
-      const side = activeSide ?? "left";
-      const current = side === "left" ? leftDate : rightDate;
+      const current = leftDate;
       const next = adjacentCaptureDate(datesAsc, current, direction === -1 ? -1 : 1);
       if (!next) return;
       event.preventDefault();
-      if (side === "left") setLeftDate(next);
-      else setRightDate(next);
+      setLeftDate(next);
     }
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [activeSide, datesAsc, leftDate, rightDate]);
+  }, [datesAsc, leftDate]);
 
-  const rows = useMemo(
-    () => comparisonRows(photos, tags, leftDate, rightDate, effectiveTagFilter),
-    [effectiveTagFilter, leftDate, photos, rightDate, tags],
-  );
+  const activeRow = rows.find((row) => row.tag.id === activeTagId);
   const viewerPhotos = useMemo(() => {
     const seen = new Set<string>();
     return rows.flatMap((row) => [row.left, row.right]).filter((photo): photo is ProgressPhoto => {
@@ -147,8 +164,9 @@ export function CompareView({
   const daySpan = leftDate && rightDate ? daysBetween(leftDate, rightDate) : 0;
 
   /** Open one comparison tile in the shared fullscreen viewer. */
-  function openPhoto(photoId: string, trigger: HTMLButtonElement): void {
-    setViewerTrigger(trigger);
+  function openPhoto(photoId: string | undefined): void {
+    if (!photoId) return;
+    setViewerTrigger(compareRef.current);
     setSelectedPhotoId(photoId);
   }
 
@@ -161,7 +179,7 @@ export function CompareView({
 
   if (!defaults) {
     return (
-      <section className="compare-view state-panel" aria-labelledby="compare-title">
+      <section className={`compare-view compare-view--${variant} state-panel`} aria-labelledby="compare-title">
         <Scale aria-hidden="true" />
         <h2 id="compare-title">Nothing to compare yet</h2>
         <p>Add at least one progress photo from Pulse on iPhone.</p>
@@ -170,57 +188,73 @@ export function CompareView({
   }
 
   return (
-    <section className="compare-view" aria-labelledby="compare-title" ref={compareRef}>
-      <h2 id="compare-title" className="visually-hidden">
-        Compare progress
+    <section className={`compare-view compare-view--${variant}`} aria-labelledby="compare-title" ref={compareRef}>
+      <h2 id="compare-title" className={variant === "tray" ? "compare-view__title" : "visually-hidden"}>
+        Compare
       </h2>
 
-      <div className="compare-header">
-        <div className="compare-header__side">
-          <button
-            type="button"
-            className="compare-date-button"
-            aria-label="Choose earlier date"
-            onClick={(event) => {
-              setPickerTrigger(event.currentTarget);
-              setActiveSide("left");
-            }}
-          >
-            <span className="compare-date-button__label">Earlier</span>
-            <strong>{formatShortDate(leftDate)}</strong>
-            {leftWeight !== undefined ? <small>{leftWeight.toFixed(1)} lb</small> : null}
-          </button>
+      {rows.length > 0 ? (
+        <div className="pose-switcher" role="tablist" aria-label="Compare pose">
+          {rows.map((row) => (
+            <button
+              key={row.tag.id}
+              type="button"
+              role="tab"
+              aria-selected={row.tag.id === activeTagId}
+              className={row.tag.id === activeTagId ? "pose-chip pose-chip--active" : "pose-chip"}
+              onClick={() => {
+                chosenTagRef.current = row.tag.id;
+                setActiveTagId(row.tag.id);
+              }}
+            >
+              {row.tag.name}
+            </button>
+          ))}
         </div>
+      ) : null}
 
-        <div className="compare-header__middle" aria-live="polite">
-          {delta !== null ? (
-            <strong className={delta <= 0 ? "compare-header__delta compare-header__delta--down" : "compare-header__delta"}>
-              {delta > 0 ? "+" : ""}
-              {delta.toFixed(1)} lb
-            </strong>
-          ) : (
-            <strong className="compare-header__delta compare-header__delta--muted">—</strong>
-          )}
-          <span>
+      {activeRow ? (
+        <CompareSlider
+          leftPhoto={activeRow.left}
+          rightPhoto={activeRow.right}
+          leftLabel={formatShortDate(leftDate)}
+          rightLabel={formatShortDate(rightDate)}
+          tagName={activeRow.tag.name}
+          token={token}
+          onExpand={() => openPhoto(activeRow.right?.id ?? activeRow.left?.id)}
+          onEditLeft={() => {
+            setPickerTrigger(compareRef.current);
+            setActiveSide("left");
+          }}
+          onEditRight={() => {
+            setPickerTrigger(compareRef.current);
+            setActiveSide("right");
+          }}
+        />
+      ) : (
+        <div className="state-panel state-panel--compact">
+          <h3>No photos on either day</h3>
+          <p>Choose dates from Browse or the calendar.</p>
+        </div>
+      )}
+
+      <div className="compare-weight-card">
+        <div>
+          <div className="compare-weight-card__range">
+            {leftWeight !== undefined ? leftWeight.toFixed(1) : "—"}
+            {" → "}
+            {rightWeight !== undefined ? rightWeight.toFixed(1) : "—"} lb
+          </div>
+          <div className="compare-weight-card__span">
             {daySpan} day{daySpan === 1 ? "" : "s"} apart
-          </span>
+          </div>
         </div>
-
-        <div className="compare-header__side">
-          <button
-            type="button"
-            className="compare-date-button"
-            aria-label="Choose later date"
-            onClick={(event) => {
-              setPickerTrigger(event.currentTarget);
-              setActiveSide("right");
-            }}
-          >
-            <span className="compare-date-button__label">Later</span>
-            <strong>{formatShortDate(rightDate)}</strong>
-            {rightWeight !== undefined ? <small>{rightWeight.toFixed(1)} lb</small> : null}
-          </button>
-        </div>
+        {delta !== null ? (
+          <div className={delta <= 0 ? "compare-weight-card__delta compare-weight-card__delta--down" : "compare-weight-card__delta"}>
+            {delta > 0 ? "+" : ""}
+            {delta.toFixed(1)} lb
+          </div>
+        ) : null}
       </div>
 
       <div className="compare-presets" role="toolbar" aria-label="Quick compare presets">
@@ -235,54 +269,6 @@ export function CompareView({
           </button>
         ))}
       </div>
-
-      {tags.length > 0 ? (
-        <TagChipFilter
-          tags={tags}
-          selectedTagIds={selectedTagIds}
-          onToggle={toggleTag}
-          onSelectAll={selectAll}
-        />
-      ) : null}
-
-      {rows.length === 0 ? (
-        <div className="state-panel state-panel--compact">
-          <h3>No photos on either day</h3>
-          <p>Choose dates from your timeline or adjust tag filters.</p>
-        </div>
-      ) : (
-        <div className="comparison-rows">
-          {rows.map((row) => (
-            <article className="comparison-row" key={row.tag.id}>
-              <h3>{row.tag.name}</h3>
-              <div className="comparison-pair comparison-pair--large">
-                {row.left ? (
-                  <PhotoTile
-                    photo={row.left}
-                    tagName={row.tag.name}
-                    weightLb={weightsByDate.get(leftDate)}
-                    token={token}
-                    onOpen={(trigger) => openPhoto(row.left!.id, trigger)}
-                  />
-                ) : (
-                  <ComparisonPlaceholder tagName={row.tag.name} date={leftDate} />
-                )}
-                {row.right ? (
-                  <PhotoTile
-                    photo={row.right}
-                    tagName={row.tag.name}
-                    weightLb={weightsByDate.get(rightDate)}
-                    token={token}
-                    onOpen={(trigger) => openPhoto(row.right!.id, trigger)}
-                  />
-                ) : (
-                  <ComparisonPlaceholder tagName={row.tag.name} date={rightDate} />
-                )}
-              </div>
-            </article>
-          ))}
-        </div>
-      )}
 
       {activeSide ? (
         <DatePickerDialog

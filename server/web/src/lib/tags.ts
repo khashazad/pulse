@@ -62,22 +62,3 @@ export function tagSortOrder(tags: ProgressPhotoTag[]): Map<string, number> {
       .map((tag, index) => [tag.id, index]),
   );
 }
-
-/** Keep only tags that appear in both selected capture dates. */
-export function commonTagsForDates(
-  photos: ProgressPhoto[],
-  leftDate: string,
-  rightDate: string,
-): Set<string> {
-  const leftTags = new Set(
-    photos.filter((photo) => photo.date === leftDate).map((photo) => photo.tag_id),
-  );
-  const rightTags = new Set(
-    photos.filter((photo) => photo.date === rightDate).map((photo) => photo.tag_id),
-  );
-  const common = new Set<string>();
-  for (const tagId of leftTags) {
-    if (rightTags.has(tagId)) common.add(tagId);
-  }
-  return common;
-}

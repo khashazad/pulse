@@ -2,7 +2,6 @@ import { describe, expect, test } from "vitest";
 
 import type { ProgressPhoto, ProgressPhotoTag } from "../types";
 import {
-  commonTagsForDates,
   filterPhotosByTags,
   parseStoredTagIds,
   serializeTagIds,
@@ -46,10 +45,6 @@ describe("tag selection helpers", () => {
   test("filters photos to the active multi-select set", () => {
     expect(filterPhotosByTags(photos, new Set(["front", "side"]))).toHaveLength(3);
     expect(filterPhotosByTags(photos, null)).toHaveLength(4);
-  });
-
-  test("finds tags common to two capture dates", () => {
-    expect(commonTagsForDates(photos, "2026-08-01", "2026-07-01")).toEqual(new Set(["front"]));
   });
 
   test("ranks tags by server sort order regardless of input order", () => {

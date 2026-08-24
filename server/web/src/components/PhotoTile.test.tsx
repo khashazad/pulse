@@ -40,7 +40,6 @@ describe("PhotoTile", () => {
       <PhotoTile
         photo={photo}
         tagName="Front"
-        weightLb={182.4}
         token="token"
         onOpen={onOpen}
       />,
@@ -56,7 +55,9 @@ describe("PhotoTile", () => {
         headers: expect.objectContaining({ Authorization: "Bearer token" }),
       }),
     );
-    expect(screen.getByText("182.4 lb")).toBeVisible();
+    // The day's weight moved to the day-card header, so the tile labels only
+    // the pose.
+    expect(screen.getByText("Front")).toBeVisible();
 
     fireEvent.click(button);
     expect(onOpen).toHaveBeenCalledWith(button);

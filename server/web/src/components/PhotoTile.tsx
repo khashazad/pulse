@@ -7,7 +7,6 @@ import type { ProgressPhoto } from "../types";
 interface PhotoTileProps {
   photo: ProgressPhoto;
   tagName: string;
-  weightLb?: number;
   token: string;
   onOpen: (trigger: HTMLButtonElement) => void;
 }
@@ -25,7 +24,6 @@ function tileDate(value: string): string {
 export function PhotoTile({
   photo,
   tagName,
-  weightLb,
   token,
   onOpen,
 }: PhotoTileProps) {
@@ -52,10 +50,7 @@ export function PhotoTile({
           <span className="photo-tile__skeleton" aria-label="Loading photo" />
         )}
       </span>
-      <span className="photo-tile__meta">
-        <span>{tagName}</span>
-        {weightLb !== undefined ? <span>{weightLb.toFixed(1)} lb</span> : null}
-      </span>
+      <span className="photo-tile__meta">{tagName}</span>
     </button>
   );
 }
