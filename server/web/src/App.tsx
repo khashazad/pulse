@@ -13,6 +13,7 @@ import {
 import { AppShell } from "./components/AppShell";
 import { BottomNav, type ProgressView } from "./components/BottomNav";
 import { LoginView } from "./components/LoginView";
+import { ViewSwitcher } from "./components/ViewSwitcher";
 import { CompareView } from "./features/compare/CompareView";
 import { CalendarModal } from "./features/calendar/CalendarModal";
 import { BrowseScreen } from "./features/browse/BrowseScreen";
@@ -266,6 +267,12 @@ export function App() {
     setView("compare");
   }
 
+  /** Switch destinations, dropping a stale compare seed on the way out. */
+  function changeView(next: ProgressView): void {
+    setView(next);
+    if (next !== "compare") setCompareSeed(null);
+  }
+
   /** Open the calendar from the top bar and remember the triggering control. */
   function openCalendar(trigger: HTMLElement | null): void {
     setCalendarTrigger(trigger);
@@ -286,12 +293,14 @@ export function App() {
   const token = isLocalPreview ? "preview" : getSessionToken();
   if (!token) return <LoginView onLogin={startLogin} />;
 
-  const showBrowse = isDesktop || view === "timeline";
+  const showBrowse = view === "timeline";
 
   return (
     <>
       <AppShell
         identity={identity}
+        wide={!showBrowse}
+        nav={isDesktop ? <ViewSwitcher value={view} onChange={changeView} /> : undefined}
         onOpenCalendar={() => {
           const trigger = document.querySelector<HTMLElement>('[aria-label="Open photo calendar"]');
           openCalendar(trigger);
@@ -316,10 +325,6 @@ export function App() {
             onClearHighlight={() => setHighlightDate(null)}
             onJumpToDate={focusTimelineDate}
             isDesktop={isDesktop}
-            compareSeedLeft={compareSeed?.left}
-            compareSeedRight={compareSeed?.right}
-            compareSeedRequestId={compareSeed?.requestId}
-            onEnsureRange={(from, to) => void ensureRangeLoaded(from, to, { background: true })}
           />
         ) : (
           <CompareView
@@ -327,7 +332,6 @@ export function App() {
             tags={data.tags}
             weights={data.weights}
             token={token}
-            variant="full"
             seedLeftDate={compareSeed?.left}
             seedRightDate={compareSeed?.right}
             seedRequestId={compareSeed?.requestId}
@@ -336,15 +340,7 @@ export function App() {
         )}
       </AppShell>
 
-      {!isDesktop ? (
-        <BottomNav
-          value={view}
-          onChange={(next) => {
-            setView(next);
-            if (next !== "compare") setCompareSeed(null);
-          }}
-        />
-      ) : null}
+      {!isDesktop ? <BottomNav value={view} onChange={changeView} /> : null}
 
       <CalendarModal
         open={calendarOpen}

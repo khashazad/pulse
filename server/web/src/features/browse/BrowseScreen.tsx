@@ -8,7 +8,6 @@ import { WeightSnapshotCard } from "../../components/WeightSnapshotCard";
 import { useTagSelection } from "../../hooks/useTagSelection";
 import { monthBucketsFromPhotos, type MonthBucket } from "../../lib/months";
 import type { ProgressPhoto, ProgressPhotoTag, WeightEntry } from "../../types";
-import { CompareView } from "../compare/CompareView";
 import { TimelineView } from "../gallery/TimelineView";
 
 interface BrowseScreenProps {
@@ -28,10 +27,6 @@ interface BrowseScreenProps {
   onClearHighlight?: () => void;
   onJumpToDate: (date: string) => void;
   isDesktop: boolean;
-  compareSeedLeft?: string;
-  compareSeedRight?: string;
-  compareSeedRequestId?: number;
-  onEnsureRange?: (from: string, to: string) => void;
 }
 
 /** Own tag filtering and month navigation, and compose the Browse feed per breakpoint. */
@@ -52,10 +47,6 @@ export function BrowseScreen({
   onClearHighlight,
   onJumpToDate,
   isDesktop,
-  compareSeedLeft,
-  compareSeedRight,
-  compareSeedRequestId,
-  onEnsureRange,
 }: BrowseScreenProps) {
   const { selectedTagIds, selectAll, toggleTag } = useTagSelection(tags.map((tag) => tag.id));
   const months = useMemo(() => monthBucketsFromPhotos(photos), [photos]);
@@ -107,19 +98,6 @@ export function BrowseScreen({
           </>
         }
         center={timeline}
-        tray={
-          <CompareView
-            photos={photos}
-            tags={tags}
-            weights={weights}
-            token={token}
-            variant="tray"
-            seedLeftDate={compareSeedLeft}
-            seedRightDate={compareSeedRight}
-            seedRequestId={compareSeedRequestId}
-            onEnsureRange={onEnsureRange}
-          />
-        }
       />
     );
   }

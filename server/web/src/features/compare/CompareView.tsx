@@ -31,8 +31,6 @@ interface CompareViewProps {
    * of being snapped back to the seed on the next render.
    */
   seedRequestId?: number;
-  /** Compact desktop side-panel treatment vs. the full mobile screen. */
-  variant?: "full" | "tray";
   onEnsureRange?: (from: string, to: string) => void;
 }
 
@@ -44,7 +42,7 @@ const PRESETS: Array<{ id: ComparePreset; label: string }> = [
   { id: "1m", label: "1m" },
 ];
 
-/** Render progress comparison with a pose switcher and a draggable onion-skin slider. */
+/** Render a full-width side-by-side comparison with per-side date selection. */
 export function CompareView({
   photos,
   tags,
@@ -53,7 +51,6 @@ export function CompareView({
   seedLeftDate,
   seedRightDate,
   seedRequestId,
-  variant = "full",
   onEnsureRange,
 }: CompareViewProps) {
   const defaults = useMemo(() => defaultComparisonDates(photos), [photos]);
@@ -184,7 +181,7 @@ export function CompareView({
 
   if (!defaults) {
     return (
-      <section className={`compare-view compare-view--${variant} state-panel`} aria-labelledby="compare-title">
+      <section className="compare-view state-panel" aria-labelledby="compare-title">
         <Scale aria-hidden="true" />
         <h2 id="compare-title">Nothing to compare yet</h2>
         <p>Add at least one progress photo from Pulse on iPhone.</p>
@@ -193,8 +190,8 @@ export function CompareView({
   }
 
   return (
-    <section className={`compare-view compare-view--${variant}`} aria-labelledby="compare-title" ref={compareRef}>
-      <h2 id="compare-title" className={variant === "tray" ? "compare-view__title" : "visually-hidden"}>
+    <section className="compare-view" aria-labelledby="compare-title" ref={compareRef}>
+      <h2 id="compare-title" className="visually-hidden">
         Compare
       </h2>
 
@@ -248,36 +245,38 @@ export function CompareView({
         </div>
       )}
 
-      <div className="compare-weight-card">
-        <div>
-          <div className="compare-weight-card__range">
-            {leftWeight !== undefined ? leftWeight.toFixed(1) : "—"}
-            {" → "}
-            {rightWeight !== undefined ? rightWeight.toFixed(1) : "—"} lb
+      <div className="compare-footer">
+        <div className="compare-weight-card">
+          <div>
+            <div className="compare-weight-card__range">
+              {leftWeight !== undefined ? leftWeight.toFixed(1) : "—"}
+              {" → "}
+              {rightWeight !== undefined ? rightWeight.toFixed(1) : "—"} lb
+            </div>
+            <div className="compare-weight-card__span">
+              {daySpan} day{daySpan === 1 ? "" : "s"} apart
+            </div>
           </div>
-          <div className="compare-weight-card__span">
-            {daySpan} day{daySpan === 1 ? "" : "s"} apart
-          </div>
+          {delta !== null ? (
+            <div className={delta <= 0 ? "compare-weight-card__delta compare-weight-card__delta--down" : "compare-weight-card__delta"}>
+              {delta > 0 ? "+" : ""}
+              {delta.toFixed(1)} lb
+            </div>
+          ) : null}
         </div>
-        {delta !== null ? (
-          <div className={delta <= 0 ? "compare-weight-card__delta compare-weight-card__delta--down" : "compare-weight-card__delta"}>
-            {delta > 0 ? "+" : ""}
-            {delta.toFixed(1)} lb
-          </div>
-        ) : null}
-      </div>
 
-      <div className="compare-presets" role="toolbar" aria-label="Quick compare presets">
-        {PRESETS.map((preset) => (
-          <button
-            key={preset.id}
-            type="button"
-            className="tag-chip"
-            onClick={() => applyPreset(preset.id)}
-          >
-            {preset.label}
-          </button>
-        ))}
+        <div className="compare-presets" role="toolbar" aria-label="Quick compare presets">
+          {PRESETS.map((preset) => (
+            <button
+              key={preset.id}
+              type="button"
+              className="tag-chip"
+              onClick={() => applyPreset(preset.id)}
+            >
+              {preset.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {activeSide ? (

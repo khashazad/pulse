@@ -5,6 +5,10 @@ import type { Identity } from "../types";
 
 interface AppShellProps {
   identity: Identity;
+  /** Optional top-bar view switcher; mobile navigates from the bottom bar instead. */
+  nav?: ReactNode;
+  /** Widen the content column so Compare can use the whole page. */
+  wide?: boolean;
   onOpenCalendar: () => void;
   onLogout: () => void;
   children: ReactNode;
@@ -16,7 +20,7 @@ function emailInitial(email: string): string {
 }
 
 /** Render the signed-in Pulse shell: a minimal top bar plus routed content. */
-export function AppShell({ identity, onOpenCalendar, onLogout, children }: AppShellProps) {
+export function AppShell({ identity, nav, wide, onOpenCalendar, onLogout, children }: AppShellProps) {
   return (
     <div className="app-shell">
       <header className="topbar">
@@ -31,6 +35,8 @@ export function AppShell({ identity, onOpenCalendar, onLogout, children }: AppSh
           </span>
           <span className="brand-word">Pulse</span>
         </a>
+
+        {nav ? <div className="topbar__nav">{nav}</div> : null}
 
         <div className="account">
           <button
@@ -53,7 +59,7 @@ export function AppShell({ identity, onOpenCalendar, onLogout, children }: AppSh
         </div>
       </header>
 
-      <main className="page-shell">{children}</main>
+      <main className={wide ? "page-shell page-shell--wide" : "page-shell"}>{children}</main>
     </div>
   );
 }

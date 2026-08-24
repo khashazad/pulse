@@ -50,6 +50,44 @@
   border-radius: 18px;
 }
 
+.topbar__nav {
+  display: flex;
+  justify-content: center;
+}
+
+.view-switcher {
+  display: inline-grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3px;
+  padding: 4px;
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  background: rgba(30, 32, 48, 0.78);
+}
+
+.view-switcher__item {
+  display: inline-flex;
+  min-width: 116px;
+  height: 36px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 16px;
+  color: var(--subtext-0);
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.view-switcher__item--active {
+  color: var(--text);
+  background: var(--surface-0);
+  box-shadow: 0 5px 15px rgba(9, 10, 18, 0.32);
+}
+
 .account {
   display: flex;
   align-items: center;
@@ -104,6 +142,31 @@
   min-height: calc(100vh - 100px);
   margin: 0 auto;
   padding: 16px 0 48px;
+}
+
+/* Compare is a full-bleed destination: the photos are the content, so it gets
+   the whole page rather than the reading-width column Browse uses. */
+.page-shell--wide {
+  display: flex;
+  width: min(calc(100% - 32px), 1760px);
+  flex-direction: column;
+}
+
+.page-shell--wide .compare-view {
+  flex: 1;
+  min-height: 0;
+}
+
+/* Bound Compare to one screen so both photos are visible at once — scrolling
+   to see the second half of a side-by-side defeats the point. Mobile stacks
+   short enough to fit already and keeps its normal flow, so this is desktop
+   only. */
+@media (min-width: 900px) {
+  .page-shell--wide {
+    height: calc(100vh - 92px);
+    min-height: 0;
+    padding-bottom: 16px;
+  }
 }
 
 .visually-hidden {
@@ -305,7 +368,6 @@
 .pose-switcher {
   display: flex;
   gap: 6px;
-  margin-bottom: 14px;
 }
 
 .pose-chip {
@@ -573,27 +635,36 @@
 
 /* Compare */
 
+/* A flex column, not a grid: the pair claims the leftover height with flex:1
+   while the switcher and footer stay at their content height. As a grid every
+   row stretched, which is what starved the photos. */
 .compare-view {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 14px;
-}
-
-.compare-view__title {
-  margin: 0;
-  font-size: 15px;
-  font-weight: 750;
 }
 
 .compare-pair {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
+  /* Mobile sizes the photos by width, so the pair takes only the height it
+     needs and the summary sits directly beneath them rather than being pushed
+     to the bottom of the screen. Desktop grows it instead. */
+  flex: 0 0 auto;
+}
+
+.compare-footer {
+  display: grid;
+  gap: 14px;
 }
 
 .compare-pane {
   display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 8px;
   min-width: 0;
+  min-height: 0;
 }
 
 /* The date control and the photo are separate buttons so picking a date and
@@ -637,23 +708,30 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Mobile is width-constrained: the photo fills the column and takes its
+   natural 3:4 height, so no letterboxing appears in a taller-than-needed box.
+   Desktop flips this to height-driven below. */
 .compare-pane__media {
   display: block;
   overflow: hidden;
   width: 100%;
-  padding: 0;
+  align-self: start;
   aspect-ratio: 3 / 4;
+  padding: 0;
   border: 0;
   border-radius: var(--radius-md);
   background: var(--mantle);
   cursor: pointer;
 }
 
+/* `contain`, not `cover`: a progress photo cropped at the head or feet is
+   useless for comparison, so the whole frame stays visible and simply scales
+   to whatever room the viewport allows. */
 .compare-pane__media img {
   display: block;
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
 }
 
 .compare-pane__media--empty {
@@ -720,6 +798,48 @@
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+@media (min-width: 900px) {
+  .compare-pair {
+    grid-template-columns: auto auto;
+    justify-content: center;
+    gap: 16px;
+    flex: 1;
+    min-height: 0;
+  }
+
+  .compare-pane__media {
+    /* Height drives the size here; aspect-ratio derives the width, so the
+       column — and the date control above it — end up exactly as wide as the
+       photo, putting the two bodies side by side instead of at opposite edges.
+       The vw cap keeps a tall, narrow window from overflowing sideways. */
+    width: auto;
+    height: 100%;
+    align-self: stretch;
+    max-height: calc((42vw - 24px) * 4 / 3);
+  }
+
+  .pose-switcher {
+    justify-content: center;
+  }
+
+  .pose-chip {
+    flex: 0 0 auto;
+    min-width: 132px;
+  }
+
+  .compare-footer {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+  }
+
+  .compare-weight-card,
+  .compare-presets {
+    flex: 0 0 auto;
+  }
 }
 
 .calendar-modal {
@@ -959,30 +1079,18 @@
 
 .desktop-layout {
   display: grid;
-  grid-template-columns: 280px minmax(0, 1fr) 360px;
+  grid-template-columns: 280px minmax(0, 1fr);
   gap: 24px;
   align-items: start;
 }
 
-.desktop-layout__sidebar,
-.desktop-layout__tray {
+.desktop-layout__sidebar {
   position: sticky;
   top: 76px;
   display: grid;
+  overflow: hidden;
   gap: 18px;
   max-height: calc(100vh - 100px);
-}
-
-.desktop-layout__sidebar {
-  overflow: hidden;
-}
-
-.desktop-layout__tray {
-  overflow-y: auto;
-  padding: 18px;
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius-lg);
-  background: var(--card);
 }
 
 .desktop-layout__center {
