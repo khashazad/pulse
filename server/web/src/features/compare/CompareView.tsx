@@ -16,7 +16,7 @@ import {
 import { monthBounds } from "../../lib/range";
 import type { ProgressPhoto, ProgressPhotoTag, WeightEntry } from "../../types";
 import { PhotoViewer } from "../gallery/PhotoViewer";
-import { CompareSlider } from "./CompareSlider";
+import { ComparePane } from "./ComparePane";
 
 interface CompareViewProps {
   photos: ProgressPhoto[];
@@ -132,7 +132,6 @@ export function CompareView({
     function handleKeyDown(event: KeyboardEvent): void {
       if (!compareRef.current?.contains(document.activeElement)) return;
       if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
-      if ((document.activeElement as HTMLElement | null)?.getAttribute("role") === "slider") return;
       const direction = event.key === "ArrowLeft" ? -1 : 1;
       const current = leftDate;
       const next = adjacentCaptureDate(datesAsc, current, direction === -1 ? -1 : 1);
@@ -163,11 +162,17 @@ export function CompareView({
   const delta = weightDelta(weightsByDate, leftDate, rightDate);
   const daySpan = leftDate && rightDate ? daysBetween(leftDate, rightDate) : 0;
 
-  /** Open one comparison tile in the shared fullscreen viewer. */
-  function openPhoto(photoId: string | undefined): void {
+  /** Open one comparison photo in the shared fullscreen viewer. */
+  function openPhoto(photoId: string | undefined, trigger: HTMLElement | null): void {
     if (!photoId) return;
-    setViewerTrigger(compareRef.current);
+    setViewerTrigger(trigger);
     setSelectedPhotoId(photoId);
+  }
+
+  /** Open the calendar picker for one side of the comparison. */
+  function openDatePicker(side: "left" | "right"): void {
+    setPickerTrigger(compareRef.current);
+    setActiveSide(side);
   }
 
   /** Apply a quick preset to the earlier compare side. */
@@ -214,23 +219,28 @@ export function CompareView({
       ) : null}
 
       {activeRow ? (
-        <CompareSlider
-          leftPhoto={activeRow.left}
-          rightPhoto={activeRow.right}
-          leftLabel={formatShortDate(leftDate)}
-          rightLabel={formatShortDate(rightDate)}
-          tagName={activeRow.tag.name}
-          token={token}
-          onExpand={() => openPhoto(activeRow.right?.id ?? activeRow.left?.id)}
-          onEditLeft={() => {
-            setPickerTrigger(compareRef.current);
-            setActiveSide("left");
-          }}
-          onEditRight={() => {
-            setPickerTrigger(compareRef.current);
-            setActiveSide("right");
-          }}
-        />
+        <div className="compare-pair">
+          <ComparePane
+            label="Earlier"
+            dateLabel={formatShortDate(leftDate)}
+            photo={activeRow.left}
+            weightLb={leftWeight}
+            tagName={activeRow.tag.name}
+            token={token}
+            onPickDate={() => openDatePicker("left")}
+            onOpenPhoto={(trigger) => openPhoto(activeRow.left?.id, trigger)}
+          />
+          <ComparePane
+            label="Later"
+            dateLabel={formatShortDate(rightDate)}
+            photo={activeRow.right}
+            weightLb={rightWeight}
+            tagName={activeRow.tag.name}
+            token={token}
+            onPickDate={() => openDatePicker("right")}
+            onOpenPhoto={(trigger) => openPhoto(activeRow.right?.id, trigger)}
+          />
+        </div>
       ) : (
         <div className="state-panel state-panel--compact">
           <h3>No photos on either day</h3>

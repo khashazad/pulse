@@ -264,6 +264,22 @@
 
 .tag-filter::-webkit-scrollbar { display: none; }
 
+/* Even columns keep every tag visible in a narrow sidebar, where a horizontal
+   strip would push the later ones out of sight. */
+.tag-filter--grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  overflow: visible;
+  padding: 0;
+}
+
+.tag-filter--grid .tag-chip {
+  justify-content: center;
+  width: 100%;
+  padding: 0 10px;
+}
+
 .tag-chip {
   flex: 0 0 auto;
   display: inline-flex;
@@ -568,119 +584,99 @@
   font-weight: 750;
 }
 
-.compare-slider {
-  position: relative;
-  overflow: hidden;
-  aspect-ratio: 3 / 4;
-  border-radius: var(--radius-lg);
+.compare-pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.compare-pane {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* The date control and the photo are separate buttons so picking a date and
+   opening the photo can never be the same click. */
+.compare-pane__date {
+  display: grid;
+  gap: 2px;
+  padding: 9px 11px;
+  text-align: left;
+  color: var(--text);
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
   background: var(--mantle);
-  cursor: ew-resize;
-  touch-action: none;
+  cursor: pointer;
 }
 
-.compare-slider__layer {
-  position: absolute;
-  inset: 0;
+.compare-pane__date:hover {
+  border-color: rgba(198, 160, 246, 0.4);
 }
 
-.compare-slider__layer img {
+.compare-pane__label {
+  color: var(--subtext-0);
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.compare-pane__value {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.compare-pane__weight {
+  color: var(--subtext-0);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.compare-pane__media {
+  display: block;
+  overflow: hidden;
+  width: 100%;
+  padding: 0;
+  aspect-ratio: 3 / 4;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: var(--mantle);
+  cursor: pointer;
+}
+
+.compare-pane__media img {
   display: block;
   width: 100%;
   height: 100%;
   object-fit: cover;
 }
 
-.compare-slider__skeleton {
+.compare-pane__media--empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  text-align: center;
+  color: var(--overlay-0);
+  border: 1px dashed rgba(165, 173, 203, 0.35);
+  cursor: default;
+  font-size: 12px;
+}
+
+.compare-pane__skeleton {
+  display: block;
   width: 100%;
   height: 100%;
   background: linear-gradient(105deg, var(--mantle) 15%, var(--surface-0) 35%, var(--mantle) 55%);
   background-size: 220% 100%;
   animation: shimmer 1.5s linear infinite;
-}
-
-.compare-slider__empty {
-  display: flex;
-  height: 100%;
-  align-items: center;
-  justify-content: center;
-  flex-direction: column;
-  gap: 8px;
-  color: var(--overlay-0);
-  background: var(--mantle);
-  font-size: 12px;
-}
-
-.compare-slider__corner {
-  position: absolute;
-  top: 12px;
-  display: grid;
-  gap: 1px;
-  padding: 5px 9px;
-  color: var(--text);
-  border: 0;
-  border-radius: 8px;
-  background: rgba(9, 10, 18, 0.55);
-  cursor: pointer;
-}
-
-.compare-slider__corner--left { left: 12px; text-align: left; }
-.compare-slider__corner--right { right: 12px; text-align: right; }
-
-.compare-slider__corner-tag {
-  color: var(--subtext-0);
-  font-size: 9px;
-  font-weight: 750;
-  letter-spacing: 0.05em;
-}
-
-.compare-slider__corner span:last-child {
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.compare-slider__divider {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 2px;
-  background: rgba(255, 255, 255, 0.85);
-  pointer-events: none;
-  transform: translateX(-1px);
-}
-
-.compare-slider__grip {
-  position: absolute;
-  top: 50%;
-  display: grid;
-  width: 44px;
-  height: 44px;
-  place-items: center;
-  color: var(--crust);
-  border-radius: 50%;
-  background: var(--text);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
-  pointer-events: none;
-  transform: translate(-50%, -50%);
-}
-
-.compare-slider__expand {
-  position: absolute;
-  right: 12px;
-  bottom: 12px;
-  display: grid;
-  width: 44px;
-  height: 44px;
-  place-items: center;
-  color: var(--text);
-  border: 0;
-  border-radius: 12px;
-  background: rgba(9, 10, 18, 0.55);
-  cursor: pointer;
-}
-
-.compare-slider__expand:hover {
-  color: var(--mauve);
-  background: rgba(9, 10, 18, 0.72);
 }
 
 .compare-weight-card {

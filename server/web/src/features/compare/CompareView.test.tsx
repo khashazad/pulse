@@ -66,23 +66,6 @@ const weights: WeightEntry[] = [
   },
 ];
 
-/** Give the slider a fixed layout box so pointer-position math is deterministic. */
-function stubSliderRect(): HTMLElement {
-  const slider = screen.getByRole("slider");
-  vi.spyOn(slider, "getBoundingClientRect").mockReturnValue({
-    left: 0,
-    right: 300,
-    width: 300,
-    top: 0,
-    bottom: 400,
-    height: 400,
-    x: 0,
-    y: 0,
-    toJSON: () => ({}),
-  } as DOMRect);
-  return slider;
-}
-
 describe("CompareView", () => {
   beforeEach(() => {
     localStorage.clear();
@@ -154,30 +137,7 @@ describe("CompareView", () => {
     expect(screen.getByRole("tab", { name: "Front", selected: true })).toBeVisible();
   });
 
-  test("moves the split as the reader drags across the frame", () => {
-    render(<CompareView photos={photos} tags={tags} weights={weights} token="token" />);
-    const slider = stubSliderRect();
 
-    expect(slider).toHaveAttribute("aria-valuenow", "50");
-    fireEvent.pointerDown(slider, { clientX: 150, pointerId: 1 });
-    fireEvent.pointerMove(slider, { clientX: 75, pointerId: 1 });
-    expect(slider).toHaveAttribute("aria-valuenow", "25");
-
-    fireEvent.pointerUp(slider, { clientX: 75, pointerId: 1 });
-    // Pointer released: further movement must not keep dragging the split.
-    fireEvent.pointerMove(slider, { clientX: 270, pointerId: 1 });
-    expect(slider).toHaveAttribute("aria-valuenow", "25");
-  });
-
-  test("steps the split with the arrow keys when focused", () => {
-    render(<CompareView photos={photos} tags={tags} weights={weights} token="token" />);
-    const slider = screen.getByRole("slider");
-
-    fireEvent.keyDown(slider, { key: "ArrowLeft" });
-    expect(slider).toHaveAttribute("aria-valuenow", "45");
-    fireEvent.keyDown(slider, { key: "ArrowRight" });
-    expect(slider).toHaveAttribute("aria-valuenow", "50");
-  });
 
   test("opens the calendar date picker from a corner date label", () => {
     render(<CompareView photos={photos} tags={tags} weights={weights} token="token" />);
@@ -188,11 +148,30 @@ describe("CompareView", () => {
     expect(screen.getByRole("dialog", { name: "Choose earlier date" })).toBeVisible();
   });
 
-  test("opens the fullscreen viewer from the expand control", () => {
+  test("opens the fullscreen viewer from a photo, not from the date control", () => {
     render(<CompareView photos={photos} tags={tags} weights={weights} token="token" />);
 
-    fireEvent.click(screen.getByRole("button", { name: /full size/ }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Open Side progress photo from Aug 1, 2026" }),
+    );
     expect(screen.getByRole("dialog", { name: "Progress photo viewer" })).toBeVisible();
+  });
+
+  test("shows both sides side by side with their own date controls", () => {
+    render(<CompareView photos={photos} tags={tags} weights={weights} token="token" />);
+
+    expect(
+      screen.getByRole("button", { name: "Choose earlier date, currently Jul 1, 2026" }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Choose later date, currently Aug 1, 2026" }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Open Side progress photo from Jul 1, 2026" }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Open Side progress photo from Aug 1, 2026" }),
+    ).toBeVisible();
   });
 
   test("does not request an image for a pose that is missing on one side", () => {
@@ -204,7 +183,7 @@ describe("CompareView", () => {
     // for `/measures/photos/` with an empty id.
     const requested = vi.mocked(fetch).mock.calls.map((call) => String(call[0]));
     expect(requested.some((url) => url.startsWith("/measures/photos/?"))).toBe(false);
-    expect(screen.getByText("No photo")).toBeVisible();
+    expect(screen.getByText("No Front photo")).toBeVisible();
   });
 
   test("lets the reader steer away from a seeded comparison", () => {

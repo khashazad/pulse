@@ -98,6 +98,7 @@ export function BrowseScreen({
               <TagChipFilter
                 tags={tags}
                 selectedTagIds={selectedTagIds}
+                layout="grid"
                 onToggle={toggleTag}
                 onSelectAll={selectAll}
               />
