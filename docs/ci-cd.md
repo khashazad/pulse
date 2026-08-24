@@ -1,153 +1,42 @@
-# CI/CD Pipeline
+# Backups
 
-High-level guide to the GitHub Actions pipeline. All workflows live in
-`.github/workflows/` at the repo root (GitHub only reads workflows from there —
-per-subproject `.github/` directories are ignored).
+This repo has no CI pipeline. Pulse is a single-user app; automated lint/test/
+security gating was removed to cut GitHub Actions and Backblaze B2 overhead.
+Run tests locally before pushing (see each subproject's `CLAUDE.md` section for
+commands).
 
-## Overview
+The only workflow left is `.github/workflows/backup.yml`, an off-site backup
+that runs every 3 days (and on manual dispatch): a custom-format `pg_dump` of
+the Supabase database (verified with `pg_restore --list`, 30-day retention)
+and an `rclone copy` of the B2 photo bucket into date/tag folders (never
+deletes from the backup), both into Google Drive.
 
-Every PR and every push to `main` runs lint, type checks, the full test suites,
-and a security scan for whichever side of the monorepo changed. Two aggregate
-"gate" jobs — `server-gate` and `ios-gate` — summarize everything and are the
-only checks meant to be marked *required* in branch protection. Deploys are not
-done from CI: Railway auto-deploys `main` and is configured to **wait for CI**,
-so a red pipeline blocks the deploy.
+**Why it is cheap.** Backblaze's free tier caps daily transactions, and this
+job used to blow through it: it ran `rclone copy` + `rclone check` against B2
+for *every* photo on *every* run, so the transaction count grew with the whole
+library rather than with new photos. It now lists the Drive mirror once (Google
+quota, free) and skips any photo whose three variants — `archive`, `display`,
+`thumb` — are already there, so a steady-state run makes **zero** per-photo B2
+calls. The only unconditional B2 cost is one recursive bucket listing for the
+orphan tripwire. Cadence dropped from nightly to every 3 days on top of that.
 
+Completeness is judged by destination listing rather than a stored manifest, so
+the job is self-healing: delete something from the Drive mirror and the next run
+puts it back. A partially-copied folder re-copies rather than being trusted.
+
+Required secrets are documented in the workflow header
+(`BACKUP_DATABASE_URL`, the four `S3_*` values, `GDRIVE_RCLONE_TOKEN`,
+`GDRIVE_FOLDER_ID`). The local equivalents for manual runs remain
+`server/scripts/backup_db.sh` and `server/scripts/backup_photos.sh`.
+
+Restore drill (do this once, and after schema overhauls):
+
+```bash
+rclone copy gdrive:db/<latest>.dump . && pg_restore --list <latest>.dump
+createdb pulse_restore && pg_restore -d pulse_restore --no-owner <latest>.dump
 ```
-PR / push to main
-├── Server CI ──► ruff ─ mypy ─ web test/typecheck/build ─ unit ─ coverage ─ docker ──► server-gate
-├── iOS CI ─────► swiftlint ─ xcodegen+build+test (simulator) ─────────────────► ios-gate
-├── CodeQL (python)          ─ every PR, push to main, weekly
-├── Security                 ─ pip-audit, gitleaks, trivy fs, zizmor
-├── Dependency Review        ─ PRs only
-└── Scorecard                ─ main pushes + weekly
-                                                  main green ──► Railway deploys server
-```
-
-## Workflows
-
-| Workflow | File | Triggers | What it does |
-|---|---|---|---|
-| Server CI | `server-ci.yml` | PR / main push touching `server/**` | ruff (lint + format), mypy, React tests + typecheck + production build on Node 24, Python unit tests on a 3.11/3.12 matrix, full suite + **80% coverage gate** against `postgres:16`, Docker build + Trivy image scan + production-mode boot smoke, aggregated by `server-gate` |
-| Server CI (skip) | `server-ci-skip.yml` | PRs touching *no* server files | Reports a passing `server-gate` so the required check never deadlocks |
-| iOS CI | `ios-ci.yml` | PR / main push touching `ios/**` | SwiftLint `--strict`, then `xcodegen generate` + `xcodebuild test` on a macos-15 runner with a dynamically picked iPhone simulator, aggregated by `ios-gate` |
-| iOS CI (skip) | `ios-ci-skip.yml` | PRs touching *no* ios files | Reports a passing `ios-gate` |
-| CodeQL | `codeql.yml` | every PR, main push, weekly | Python semantic analysis (`security-extended`). Deliberately *not* path-filtered so it can be a required check |
-| Security | `security.yml` | every PR, main push, weekly | `pip-audit` over the exported uv lock, `gitleaks` (full history), Trivy fs/config scan (SARIF → Security tab + CRITICAL/HIGH gate), `zizmor` audit of the workflows themselves |
-| Dependency Review | `dependency-review.yml` | PRs | Blocks PRs introducing high-severity vulnerable dependencies; posts a summary comment on failure |
-| Scorecard | `scorecard.yml` | main push, weekly | OpenSSF supply-chain posture score → Security tab |
-
-Shared server setup (uv install + `uv sync --frozen --all-extras`) lives in the
-composite action `.github/actions/setup-server` — bump the uv pin or sync flags
-there, in one place.
-
-## Key design decisions
-
-**Path filtering + skip companions.** Server CI and iOS CI only run for the
-side that changed. A path-filtered *required* check would block PRs that don't
-trigger it (GitHub waits forever for a check that never reports), so each
-pipeline has a skip companion that reports a passing gate on out-of-path PRs.
-⚠️ The `paths` list in each real workflow and the `paths-ignore` list in its
-skip companion must stay **exact mirrors** — both files carry `KEEP IN SYNC`
-markers.
-
-**Gates, not inner jobs.** Branch protection should require exactly:
-`server-gate`, `ios-gate`, `CodeQL (python)`, `dependency-review` — never the
-inner path-filtered jobs. The gates fail on *any* non-success result
-(including `skipped`), so a job silently not running can't pass the gate.
-
-**Python version strategy.** The package supports Python 3.11+, so the full
-suite (unit + integration + coverage) runs on the 3.11 lower bound and the unit
-matrix adds 3.12. The Docker build and boot smoke validate the pinned Python
-3.14 runtime image separately.
-
-**Co-deployed web app.** The Docker build has a pinned Node stage that runs the
-React tests and production build, then copies only `dist/` into the Python
-runtime image. FastAPI serves `/` and `/login/callback`; authenticated data
-continues to use the existing same-origin JSON API.
-
-**Production-mode boot smoke.** The Docker job boots the built image with
-`APP_ENV=production` and a dummy MCP service token against a real Postgres,
-then polls `/health`. Running in production mode means the non-local startup
-validators (MCP auth, HTTPS redirect, allowlist) are actually exercised — a
-local-mode boot would skip them all.
-
-**Coverage gate.** `fail_under = 80` in `[tool.coverage.report]`
-(`server/pyproject.toml`), enforced by the full-suite job. Measured over unit +
-integration together (the repositories are integration-covered by design).
-
-**iOS specifics.** The Xcode project is generated in CI
-(`PULSE_BASE_URL=https://ci.invalid xcodegen generate`); the simulator is
-picked dynamically (hardcoded names break when runner images rotate); the
-toolchain is pinned via `DEVELOPER_DIR` (bump it when GitHub retires that Xcode
-from the macos-15 image). The job deliberately does **not** pass
-`CODE_SIGNING_ALLOWED=NO` — stripping ad-hoc signing breaks the
-Keychain-backed `AuthSession` tests. The two `ProgressPhotoStore` upload tests
-are timing-sensitive and occasionally flake; a rerun has always cleared them.
-
-**Supply-chain hygiene.** Every third-party action is pinned to a commit SHA
-(with a `# vX.Y.Z` comment); workflows run with least-privilege `permissions`
-and `persist-credentials: false`; Dependabot keeps four ecosystems current
-weekly (grouped): GitHub Actions pins, server Python deps via `uv.lock`, web
-dependencies via `pnpm-lock.yaml`, and the Dockerfile's digest-pinned base
-images. `zizmor` lints the workflows on
-every run. Concurrency cancels superseded PR runs but keys `main` pushes by
-SHA so a quick follow-up merge can't cancel the previous commit's checks.
-
-**Trivy escape hatch.** Both Trivy gates (image + fs) honor
-`server/.trivyignore`. If a CRITICAL/HIGH CVE in the base image blocks
-unrelated PRs before a fixed image is available, add a dated, justified,
-expiring entry there; keep the file empty in the steady state.
 
 ## Deployment
 
-CI never deploys. Railway watches `main`, and its **Wait for CI** setting holds
-the deploy until the commit's checks are green. The push-to-`main` workflow
-runs exist precisely to attach those checks to the deployed commit (PR runs
-attach to the PR head SHA, not the merge commit). Note this gate lives in Railway's
-service settings, not in this repo — if the service is ever recreated,
-re-enable **Wait for CI** or unchecked commits will deploy.
-
-## Backups
-
-`backup.yml` runs nightly (07:00 UTC) and on manual dispatch: a custom-format
-`pg_dump` of the Supabase database (verified with `pg_restore --list`,
-30-day retention) and an incremental `rclone copy` of the B2 photo bucket
-(never deletes from the backup), both into Google Drive. Required secrets are
-documented in the workflow header (`BACKUP_DATABASE_URL`, the four `S3_*`
-values, `GDRIVE_RCLONE_TOKEN`, `GDRIVE_FOLDER_ID`). The local equivalents for
-manual runs remain `server/scripts/backup_db.sh` and
-`server/scripts/backup_photos.sh`.
-
-## Running the same checks locally
-
-```bash
-# Server (from server/)
-uv run ruff check . && uv run ruff format --check .
-uv run mypy src
-DATABASE_URL=postgresql://localhost/test USDA_API_KEY=test APP_ENV=test \
-  uv run pytest -q -m "not integration"
-# Full suite + coverage needs a local Postgres and TEST_DATABASE_URL.
-
-# Web (from server/web/; Node 24)
-corepack prepare pnpm@10.10.0 --activate
-pnpm install --frozen-lockfile
-pnpm test --run && pnpm typecheck && pnpm build
-
-# iOS (from ios/)
-swiftlint lint --strict
-source .envrc && xcodegen generate
-xcodebuild -project Pulse.xcodeproj -scheme Pulse \
-  -destination 'platform=iOS Simulator,name=iPhone 16' test
-
-# Workflow linting (from repo root)
-actionlint && uvx zizmor .github/workflows/
-```
-
-## One-time repo settings (post-merge checklist)
-
-1. **Branch protection** on `main`: require PRs; required status checks =
-   `server-gate`, `ios-gate`, `CodeQL (python)`, `dependency-review`.
-2. **Code security**: enable secret scanning + push protection (Dependabot
-   alerts and the dependency graph are already enabled).
-3. **Railway**: enable *Wait for CI* on the server service.
+Railway auto-deploys `main` directly — pushing to `main` ships. There is no
+CI gate in front of it.

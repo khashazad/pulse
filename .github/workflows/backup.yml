@@ -1,8 +1,18 @@
-# Nightly off-site backups: Postgres → Google Drive, B2 photo bucket → Google Drive.
+# Off-site backups every 3 days: Postgres → Google Drive, B2 photo bucket → Google Drive.
 #
 # Both data stores have exactly one copy without this job (Supabase holds the only
 # DB; the B2 bucket holds the only photo bytes — Postgres keeps metadata only), so
 # this workflow is the disaster-recovery path, not a convenience.
+#
+# Two changes keep this off Backblaze's free-tier daily transaction cap, which
+# was sending "approaching daily cap" warning mail:
+#   1. backup-photos is INCREMENTAL — it lists the Drive mirror once (Google
+#      quota, free) and only touches B2 for photos that are missing or
+#      incomplete. Steady-state per-photo B2 cost is zero; the only
+#      unconditional B2 call is one recursive bucket listing for the coverage
+#      tripwire. Previously every run ran copy+check against B2 for every photo,
+#      so transactions grew with the size of the whole library.
+#   2. It runs every 3 days instead of nightly.
 #
 # Required repository secrets:
 #   BACKUP_DATABASE_URL     — Supabase connection string (session pooler or direct).
@@ -36,7 +46,10 @@ name: backup
 
 on:
   schedule:
-    - cron: "0 7 * * *" # 07:00 UTC nightly (~02:00 Toronto)
+    # 07:00 UTC every 3rd day of the month (~02:00 Toronto). Day-of-month
+    # stepping restarts at each month boundary, so the 31st→1st gap is 1 day
+    # rather than 3 — harmless for an append-only mirror.
+    - cron: "0 7 */3 * *"
   workflow_dispatch:
 
 permissions:
@@ -159,31 +172,67 @@ jobs:
             exit 0
           fi
 
-          # Copy + verify each photo's objects into its date/tag folder. `copy`
+          # ONE Drive listing (Google quota, not Backblaze's) tells us what is
+          # already mirrored. Photos whose three variants are all present are
+          # skipped without touching B2 at all, so per-run B2 transactions scale
+          # with NEW photos rather than total photos — in the steady state the
+          # per-photo cost is zero. This is the fix for Backblaze's daily-cap
+          # warnings: the old loop ran copy+check against B2 for every photo on
+          # every run, so the transaction count grew with the whole library.
+          # Listing by destination (rather than tracking state in a file) keeps
+          # the job self-healing: delete something from Drive and it comes back.
+          declare -A mirrored
+          while IFS= read -r path; do
+            [ -n "$path" ] && mirrored["$path"]=1
+          done < <(rclone lsf --files-only -R "gdrive:photos" --exclude "/progress/**")
+
+          # Copy + verify only the photos that are missing or incomplete. `copy`
           # (not `sync`) never deletes, so a bucket-side deletion cannot propagate
           # into the backup. The --one-way --size-only check fails loudly if any
           # source object is missing from (or differs in size from) the dest;
           # Drive does not expose MD5s for all uploads, so size is the comparison.
-          count=0
+          copied=0
+          skipped=0
           while IFS=$'\t' read -r src dest; do
             [ -n "$src" ] || continue
+            # process_progress_photo always writes exactly these three variants,
+            # so "all three present" is the completeness test. A partial folder
+            # (an interrupted earlier run) re-copies rather than being trusted.
+            complete=1
+            for variant in archive display thumb; do
+              [ -n "${mirrored["${dest#photos/}/$variant.jpg"]:-}" ] || { complete=0; break; }
+            done
+            if [ "$complete" -eq 1 ]; then
+              skipped=$((skipped + 1))
+              continue
+            fi
             rclone copy "PULSE:$S3_BUCKET/$src" "gdrive:$dest" \
               --transfers 8 --stats-one-line --stats 30s
             rclone check "PULSE:$S3_BUCKET/$src" "gdrive:$dest" --one-way --size-only \
               || { echo "verify failed for $src -> $dest" >&2; exit 1; }
-            count=$((count + 1))
+            copied=$((copied + 1))
           done <<< "$mapping"
-          echo "Copied and verified $count photo prefixes."
+          echo "Copied and verified $copied new photo prefix(es); skipped $skipped already mirrored."
 
           # Informational coverage tripwire — NOT a delete gate. The loop above
-          # already verified every DB-mapped photo is present (it aborts otherwise),
-          # so a shortfall here means the bucket holds objects with no DB row:
+          # guarantees every DB-mapped photo is present (it aborts otherwise), so
+          # a shortfall here means the bucket holds objects with no DB row:
           # orphans left when a best-effort delete removed the row but not the
           # bytes. Those are not copied by the DB-driven mirror, so they live only
           # in B2 (and the legacy photos/progress tree, if it still exists). Warn so
           # a human investigates; never act on this count automatically.
+          # This single recursive bucket listing is the job's only unconditional
+          # B2 cost (one class-C transaction per 1000 objects).
           bucket_objs=$(rclone lsf --files-only -R "PULSE:$S3_BUCKET/progress" | wc -l | tr -d ' ')
-          new_objs=$(rclone lsf --files-only -R "gdrive:photos" --exclude "/progress/**" | wc -l | tr -d ' ')
+          if [ "$copied" -gt 0 ]; then
+            # Re-list rather than adding 3 per copy: a resumed partial folder
+            # contributes fewer than three new files, and overcounting here would
+            # mask exactly the shortfall this tripwire exists to catch. Drive
+            # listings are free; only B2 calls are rationed.
+            new_objs=$(rclone lsf --files-only -R "gdrive:photos" --exclude "/progress/**" | wc -l | tr -d ' ')
+          else
+            new_objs=${#mirrored[@]}
+          fi
           echo "Bucket objects: $bucket_objs   New-layout (date-keyed) objects: $new_objs"
           if [ "$new_objs" -lt "$bucket_objs" ]; then
             echo "WARNING: $((bucket_objs - new_objs)) bucket object(s) have no date-keyed" \
