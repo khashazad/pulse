@@ -1,7 +1,7 @@
 # Build the React client first, then copy only its static output into the Python
 # runtime image. The Node toolchain never ships in production.
 # node:24.12.0-alpine3.23
-FROM node:24.12.0-alpine3.23@sha256:c921b97d4b74f51744057454b306b418cf693865e73b8100559189605f6955b8 AS web-build
+FROM node:26.10.0-alpine3.23@sha256:c3c6e314fd42e41962360b2482fc18d150beb47976c3aa7b8b9689d7ef42a5c2 AS web-build
 
 WORKDIR /web
 
