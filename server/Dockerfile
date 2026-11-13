@@ -20,7 +20,7 @@ RUN pnpm test --run \
 # wins — but it tells Dependabot which tag to track when proposing bumps
 # (without it, Dependabot once bumped us to the full non-slim image: PR #39).
 # python:3.14-slim
-FROM python:3.14-slim@sha256:d7a925f9eb9639a93e455b9f12c167569358818c0f62b51b88edbc8fcf34c421
+FROM python:3.15-slim@sha256:65a65fc7b30b06cb6df4930fd4650697cb23f4c2698ab81fc87e4b031bc36928
 
 # ghcr.io/astral-sh/uv:0.12.3
 COPY --from=ghcr.io/astral-sh/uv:0.12.3@sha256:2d890623d310b57771ce840f0da5eed5fc6d657da05ffaa45d82797b53fa3abc /uv /uvx /bin/
